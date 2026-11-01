@@ -48,6 +48,10 @@
     "sentence": "Every person screen loads with no console error and its favicon answers 200"
   },
   {
+    "id": "self-help-sends-nothing",
+    "sentence": "Choosing self-help sends nothing: no registration, consent or ticket request leaves the phone, asserted by request interception"
+  },
+  {
     "id": "tokens-at-phone-width",
     "sentence": "Key screens hold the plan's tap-target, type and no-overflow rules at 390 px"
   },
