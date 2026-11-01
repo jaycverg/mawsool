@@ -1,10 +1,20 @@
 import { evaluateCrisisForAnswers, itemCount } from '@mawsool/instruments';
-import type { Instrument, Screening } from '@mawsool/types';
+import { INSTRUMENTS, type Instrument, type Screening } from '@mawsool/types';
 import { STEP_ROWS, type Range, type StepRow } from './config';
 
-/** True when every item of the instrument has an answer. A partial screening has no meaningful total. */
+/**
+ * True when a screening can supply a score: a known instrument, an answer for every item, and a total that is a
+ * whole number of at least 0. A partial or damaged row has no meaningful total, so row selection skips it. Crisis
+ * detection does not use this check and still sees every row.
+ */
 export function isCompleteScreening(screening: Screening): boolean {
-  return screening.answers.length === itemCount(screening.instrument);
+  return (
+    (INSTRUMENTS as readonly string[]).includes(screening.instrument) &&
+    Array.isArray(screening.answers) &&
+    screening.answers.length === itemCount(screening.instrument) &&
+    Number.isInteger(screening.total) &&
+    screening.total >= 0
+  );
 }
 
 /**
@@ -28,11 +38,12 @@ export function latestByInstrument(screenings: readonly Screening[]): Partial<Re
 }
 
 /**
- * True when a finite total reaches the row's lower bound. Only the lower bound is used, and rows are tried most
+ * True when a total reaches the row's lower bound. Only the lower bound is used, and rows are tried most
  * intensive first, so a total above the instrument's maximum still lands on the top row instead of falling through.
+ * Totals reaching here come from complete screenings, so they are whole numbers of at least 0.
  */
 function reaches(total: number | undefined, range: Range | undefined): boolean {
-  return total !== undefined && Number.isFinite(total) && range !== undefined && total >= range.min;
+  return total !== undefined && range !== undefined && total >= range.min;
 }
 
 export interface RowSelection {
