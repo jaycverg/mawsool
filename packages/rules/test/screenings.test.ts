@@ -56,9 +56,47 @@ describe('selectRow', () => {
     expect(selectRow([phq9(28), gad7(0)]).row.id).toBe('specialist_high');
   });
 
-  it('ignores a total that is not a finite number rather than matching on it', () => {
-    expect(selectRow([screening('phq9', Number.NaN, T1, Array(9).fill(0))]).row.id).toBe('below_5');
-    expect(selectRow([screening('gad7', Number.POSITIVE_INFINITY, T1, Array(7).fill(0)), phq9(11)]).row.id).toBe('gp_or_tele');
+  it.each([
+    ['NaN', Number.NaN],
+    ['null, as NaN comes back from JSON', null],
+    ['undefined', undefined],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['negative', -1],
+    ['fractional', 7.5],
+    ['a string', '18'],
+  ])('skips a complete-length row whose total is unusable (%s), so a finished 18 before it still decides', (_name, total) => {
+    const finished = phq9(18, T1);
+    const damaged = { ...screening('phq9', 3, T2, Array(9).fill(2)), total } as unknown as ReturnType<typeof phq9>;
+    expect(selectRow([finished, damaged]).row.id).toBe('specialist_or_gp');
+    expect(selectRow([finished, damaged]).phq9Total).toBe(18);
+    expect(selectRow([damaged, finished]).row.id).toBe('specialist_or_gp');
+    expect(isCompleteScreening(damaged)).toBe(false);
+  });
+
+  it('treats an instrument with only an unusable total as having no score', () => {
+    const damaged = { ...screening('gad7', 3, T1, Array(7).fill(3)), total: Number.NaN };
+    expect(selectRow([damaged]).row.id).toBe('below_5');
+    expect(selectRow([damaged]).gad7Total).toBeNull();
+  });
+
+  it('skips a row for an unknown instrument without throwing', () => {
+    const unknown = { ...screening('phq9', 25, T2, [1]), instrument: 'nope' } as unknown as ReturnType<typeof phq9>;
+    expect(() => selectRow([unknown, phq9(12, T1)])).not.toThrow();
+    expect(selectRow([unknown, phq9(12, T1)]).row.id).toBe('gp_or_tele');
+    expect(isCompleteScreening(unknown)).toBe(false);
+  });
+
+  it('skips a row whose answers are missing altogether', () => {
+    const noAnswers = { ...phq9(25, T2), answers: null } as unknown as ReturnType<typeof phq9>;
+    expect(selectRow([noAnswers, phq9(12, T1)]).row.id).toBe('gp_or_tele');
+  });
+
+  it('still lets crisis detection see a row that row selection skips', () => {
+    const damaged = { ...phq9(3, T2, 2), total: Number.NaN };
+    expect(isCompleteScreening(damaged)).toBe(false);
+    expect(hasUnresolvedCrisis([phq9(18, T1), damaged], null)).toBe(true);
+    const unknown = { ...screening('phq9', 1, T2, []), instrument: 'nope', item9Flag: true } as unknown as ReturnType<typeof phq9>;
+    expect(hasUnresolvedCrisis([unknown], null)).toBe(true);
   });
 
   it('skips an incomplete screening, so a half-finished check-in does not replace a finished one', () => {
