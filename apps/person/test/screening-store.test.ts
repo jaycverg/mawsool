@@ -105,3 +105,59 @@ describe('saveAnswer', () => {
     expect(await loadScreenings(storage)).toEqual([]);
   });
 });
+
+describe('changing an answer after the check-in is complete', () => {
+  async function finishedGad7(ctx = setup()) {
+    let saved;
+    for (let index = 0; index < 7; index += 1) saved = await saveAnswer(ctx.storage, { instrument: 'gad7', index, value: 1 }, ctx.deps);
+    return { ...ctx, id: saved!.id };
+  }
+
+  it.each([
+    ['the last', 6, 3, 9],
+    ['a middle', 3, 3, 9],
+    ['the first', 0, 0, 6],
+  ])('rescores the same check-in when %s answer changes', async (_name, index, value, total) => {
+    const { storage, deps, id } = await finishedGad7();
+    const changed = await saveAnswer(storage, { instrument: 'gad7', index, value, screeningId: id }, deps);
+    expect(changed).toMatchObject({ id, total, band: 'mild' });
+    expect(changed.answers[index]).toBe(value);
+    expect(await loadScreenings(storage)).toEqual([changed]);
+  });
+
+  it('moves the band when the total crosses one, and keeps the start time', async () => {
+    const { storage, deps, id, clock } = await finishedGad7();
+    const before = (await loadScreenings(storage))[0]!;
+    clock.advance(60);
+    for (let index = 0; index < 7; index += 1) await saveAnswer(storage, { instrument: 'gad7', index, value: 2, screeningId: id }, deps);
+    const [after] = await loadScreenings(storage);
+    expect(after).toMatchObject({ id, total: 14, band: 'moderate', takenAt: before.takenAt });
+  });
+
+  it('moves item 9 from 0 to 1 on a finished PHQ-9: the stored row carries it, flagged', async () => {
+    const ctx = setup();
+    let saved;
+    for (let index = 0; index < 9; index += 1) saved = await saveAnswer(ctx.storage, { instrument: 'phq9', index, value: 0 }, ctx.deps);
+    expect(saved).toMatchObject({ total: 0, item9Flag: false });
+    const changed = await saveAnswer(ctx.storage, { instrument: 'phq9', index: 8, value: 1, screeningId: saved!.id }, ctx.deps);
+    expect(changed).toMatchObject({ id: saved!.id, total: 1, item9Flag: true });
+    expect((await loadScreenings(ctx.storage))[0]).toEqual(changed);
+  });
+
+  it('clears the flag when item 9 goes back to 0', async () => {
+    const ctx = setup();
+    let saved;
+    for (let index = 0; index < 9; index += 1) saved = await saveAnswer(ctx.storage, { instrument: 'phq9', index, value: index === 8 ? 2 : 0 }, ctx.deps);
+    const changed = await saveAnswer(ctx.storage, { instrument: 'phq9', index: 8, value: 0, screeningId: saved!.id }, ctx.deps);
+    expect(changed).toMatchObject({ total: 0, item9Flag: false });
+  });
+
+  it('falls back to the check-in in progress when the id is unknown, and never opens a second one for a known id', async () => {
+    const { storage, deps, id } = await finishedGad7();
+    await saveAnswer(storage, { instrument: 'gad7', index: 0, value: 3, screeningId: id }, deps);
+    expect(await loadScreenings(storage)).toHaveLength(1);
+    const fresh = await saveAnswer(storage, { instrument: 'gad7', index: 0, value: 2, screeningId: '00000000-0000-4000-8000-0000000000ff' }, deps);
+    expect(fresh.id).not.toBe(id);
+    expect(await loadScreenings(storage)).toHaveLength(2);
+  });
+});

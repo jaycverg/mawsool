@@ -10,6 +10,7 @@ import {
   finishButton,
   goOffline,
   msg,
+  pick,
   staticHits,
   takeCheckIn,
   triggerCrisis,
@@ -352,6 +353,42 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page.locator('body')).toHaveCSS('color', 'rgb(16, 48, 45)');
     await expect(page.locator('.btn-primary').first()).toHaveCSS('background-color', 'rgb(14, 107, 99)');
     await expect(page.locator('section').first()).toHaveCSS('border-radius', '16px');
+  },
+
+  async 'edit-after-last-answer'({ page, locale }) {
+    await visitOnline(page, locale);
+    const progress = page.getByRole('progressbar');
+    const back = async (steps: number) => {
+      for (let step = 0; step < steps; step += 1) await page.getByRole('button', { name: msg(locale, 'flow.back'), exact: true }).click();
+    };
+
+    // Seven GAD-7 answers of 1 (total 7), then change the last, a middle one and the first, all on the same check-in.
+    await page.goto(`/${locale}/check-in/?i=gad7`);
+    await answerAll(page, locale, [1, 1, 1, 1, 1, 1, 1]);
+    await pick(page, 3); // last: 7 -> 9
+    await back(3);
+    await expect(progress).toHaveAttribute('aria-valuenow', '4');
+    await pick(page, 3); // middle: 9 -> 11
+    await back(3);
+    await expect(progress).toHaveAttribute('aria-valuenow', '1');
+    await pick(page, 0); // first: 11 -> 10
+    await expect(page.getByText(msg(locale, 'checkIn.saveFailed'))).toHaveCount(0);
+    for (let step = 0; step < 6; step += 1) await page.getByRole('button', { name: msg(locale, 'flow.next'), exact: true }).click();
+    await finishButton(page, locale).click();
+    await expect(page.locator('[data-score]')).toHaveText('10');
+    await expect(page.locator('[data-result="gad7"]')).toContainText(msg(locale, 'result.bands.moderate'));
+    // One check-in, not two.
+    await page.goto(`/${locale}/check-ins/`);
+    await expect(page.locator('ul li')).toHaveCount(1);
+
+    // A finished PHQ-9 whose item 9 moves from "not at all" to "several days" blocks, and the result carries it.
+    await page.goto(`/${locale}/check-in/?i=phq9`);
+    await answerAll(page, locale, [0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    await page.locator('input[type="radio"][value="1"]').click();
+    await expect(page).toHaveURL(crisisUrl(locale));
+    await page.getByRole('button', { name: msg(locale, 'crisis.safeNow'), exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/${locale}/result/\\?id=`));
+    await expect(page.locator('[data-score]')).toHaveText('1');
   },
 
   async 'console-clean-and-favicon'({ page, locale }) {

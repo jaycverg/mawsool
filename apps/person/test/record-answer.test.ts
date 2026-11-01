@@ -94,3 +94,30 @@ describe('recordAnswer', () => {
     expect(order[0]).toBe('get screenings');
   });
 });
+
+describe('recordAnswer on a check-in that is already complete', () => {
+  it('blocks when item 9 moves from 0 to 1 afterwards, and the stored row carries the new answer', async () => {
+    const { base, crisis, storage } = setup();
+    await firstEight(base);
+    const first = await recordAnswer({ instrument: 'phq9', index: 8, value: 0 }, base);
+    if (first.kind !== 'saved') throw new Error('expected a saved answer');
+    expect((await crisis.read()).status).toBe('clear');
+
+    const outcome = await recordAnswer({ instrument: 'phq9', index: 8, value: 1, screeningId: first.screening.id }, base);
+    expect(outcome).toMatchObject({ kind: 'crisis', blockSaved: true, screening: { id: first.screening.id, item9Flag: true } });
+    const rows = await loadScreenings(storage);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.answers[8]).toBe(1);
+    expect((await crisis.read()).record).toMatchObject({ blocked: true, resumeScreeningId: first.screening.id });
+  });
+
+  it('saves a changed non-trigger answer on the finished check-in', async () => {
+    const { base, storage } = setup();
+    let last;
+    for (let index = 0; index < 7; index += 1) last = await recordAnswer({ instrument: 'gad7', index, value: 1 }, base);
+    if (last?.kind !== 'saved') throw new Error('expected saved');
+    const changed = await recordAnswer({ instrument: 'gad7', index: 6, value: 3, screeningId: last.screening.id }, base);
+    expect(changed).toMatchObject({ kind: 'saved', screening: { total: 9 } });
+    expect(await loadScreenings(storage)).toHaveLength(1);
+  });
+});

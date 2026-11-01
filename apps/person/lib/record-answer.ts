@@ -50,10 +50,10 @@ function within<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
  * patience, and the outcome is `crisis` however they turn out: a full disk, a blocked database or a slow one must
  * not stand between a person and the help screen. Any other answer that cannot be saved is a plain failure.
  */
-export async function recordAnswer(input: { instrument: Instrument; index: number; value: number }, deps: RecordAnswerDeps): Promise<AnswerOutcome> {
-  const { instrument, index, value } = input;
+export async function recordAnswer(input: { instrument: Instrument; index: number; value: number; screeningId?: string | null }, deps: RecordAnswerDeps): Promise<AnswerOutcome> {
+  const { instrument, index, value, screeningId } = input;
   const trigger = answerFiresCrisis(instrument, index, value);
-  const save = saveAnswer(deps.storage, { instrument, index, value }, { now: deps.now, newId: deps.newId });
+  const save = saveAnswer(deps.storage, { instrument, index, value, screeningId }, { now: deps.now, newId: deps.newId });
 
   if (!trigger) {
     try {
