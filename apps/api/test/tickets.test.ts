@@ -154,12 +154,27 @@ describe('tickets', () => {
 
     it('answers 409 to a forged transition that the table does not have, for every route that moves state', async () => {
       const ticket = await issue(ctx, person, ticketRequest(gpA));
-      for (const to of ['closed', 'remeasured', 'rerouted'] as const) {
-        const res = to === 'rerouted' ? await post(`/me/tickets/${ticket.id}/events`, person.headers, { to: 'issued', reason: 'x' }) : await post(`/me/tickets/${ticket.id}/events`, person.headers, { to });
-        expect(res.statusCode, to).toBe(to === 'rerouted' ? 403 : 409);
-      }
+      const before = await count(schema.tickets);
+      for (const to of ['closed', 'remeasured']) expect((await post(`/me/tickets/${ticket.id}/events`, person.headers, { to })).statusCode, to).toBe(409);
       expect((await post(`/tickets/${ticket.id}/events`, staff(tokenA), { to: 'closed' })).statusCode).toBe(409);
       expect(await eventStates(testDb.db, ticket.id)).toHaveLength(1);
+      expect(await count(schema.tickets)).toBe(before);
+    });
+
+    it('refuses a person’s own `rerouted` event, so only the reroute route fires it: no state change, no child, no consent', async () => {
+      const ticket = await issue(ctx, person, ticketRequest(gpA));
+      const before = [await count(schema.tickets), await count(schema.consents)];
+      const res = await post(`/me/tickets/${ticket.id}/events`, person.headers, { to: 'rerouted' });
+      expect(res.statusCode).toBe(409);
+      expect(await eventStates(testDb.db, ticket.id)).toHaveLength(1);
+      expect([await count(schema.tickets), await count(schema.consents)]).toEqual(before);
+    });
+
+    it('answers 409, and records nothing, to a move to the state the ticket is already in, so a repeated acknowledge is refused', async () => {
+      const ticket = await issue(ctx, person, ticketRequest(gpA));
+      expect((await post(`/tickets/${ticket.id}/events`, staff(tokenA), { to: 'acknowledged' })).statusCode).toBe(200);
+      expect((await post(`/tickets/${ticket.id}/events`, staff(tokenA), { to: 'acknowledged' })).statusCode).toBe(409);
+      expect(await eventStates(testDb.db, ticket.id)).toHaveLength(2);
     });
 
     it('lets a clinician at the right facility acknowledge and mark seen, and never at another facility', async () => {
@@ -182,15 +197,28 @@ describe('tickets', () => {
       expect(row!.state).toBe('seen');
     });
 
-    it('accepts "unable to see" from a clinic with a reason, leaves the state alone, and refuses it without one, from a person, or when a reroute is not possible', async () => {
+    it('accepts "unable to see" from a clinic with a reason from the fixed list and leaves the state alone', async () => {
       const ticket = await issue(ctx, person, ticketRequest(gpA));
-      expect((await post(`/tickets/${ticket.id}/events`, staff(tokenA), { to: 'issued' })).statusCode).toBe(400);
-      expect((await post(`/me/tickets/${ticket.id}/events`, person.headers, { to: 'issued', reason: 'no' })).statusCode).toBe(403);
-      const res = await post(`/tickets/${ticket.id}/events`, staff(tokenA), { to: 'issued', reason: 'The person could not be reached' });
+      const res = await post(`/tickets/${ticket.id}/events`, staff(tokenA), { unable: true, reason: 'could_not_reach' });
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toMatchObject({ state: 'issued', event: { seq: 2, fromState: 'issued', toState: 'issued', actor: 'clinic', reason: 'The person could not be reached' } });
+      expect(res.json()).toMatchObject({ state: 'issued', event: { seq: 2, fromState: 'issued', toState: 'issued', actor: 'clinic', reason: 'could_not_reach' } });
+    });
+
+    it('refuses "unable to see" without a reason, with free text, from a person, or where a reroute is not possible', async () => {
+      const ticket = await issue(ctx, person, ticketRequest(gpA));
+      expect((await post(`/tickets/${ticket.id}/events`, staff(tokenA), { unable: true })).statusCode).toBe(400);
+      expect((await post(`/tickets/${ticket.id}/events`, staff(tokenA), { unable: true, reason: 'The person could not be reached' })).statusCode).toBe(400);
+      expect((await post(`/me/tickets/${ticket.id}/events`, person.headers, { unable: true, reason: 'other' })).statusCode).toBe(403);
+      expect(await eventStates(testDb.db, ticket.id)).toHaveLength(1);
       await post(`/me/tickets/${ticket.id}/events`, person.headers, { to: 'seen' });
-      expect((await post(`/tickets/${ticket.id}/events`, staff(tokenA), { to: 'seen', reason: 'again' })).statusCode).toBe(409);
+      expect((await post(`/tickets/${ticket.id}/events`, staff(tokenA), { unable: true, reason: 'other' })).statusCode).toBe(409);
+    });
+
+    it('accepts no reason on an ordinary move, so no free text reaches the event log', async () => {
+      const ticket = await issue(ctx, person, ticketRequest(gpA));
+      expect((await post(`/tickets/${ticket.id}/events`, staff(tokenA), { to: 'acknowledged', reason: 'a note about the person' })).statusCode).toBe(400);
+      expect((await post(`/me/tickets/${ticket.id}/events`, person.headers, { to: 'seen', reason: 'a note' })).statusCode).toBe(400);
+      expect(await eventStates(testDb.db, ticket.id)).toHaveLength(1);
     });
 
     it('turns a withdrawal sent as an event into a revoke: the data goes with the state', async () => {
