@@ -130,6 +130,20 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page.locator('[data-tier]')).toHaveCount(0);
   },
 
+  async 'direct-unslashed-lands-on-crisis'({ page, context, locale }) {
+    await visitOnline(page, locale);
+    const before = await goOffline(context);
+    await triggerCrisis(page, locale);
+    for (const screen of ['options', 'consent', 'ticket', 'check-in', 'check-ins', 'result']) {
+      await page.goto(`/${locale}/${screen}`);
+      await expect(page).toHaveURL(crisisUrl(locale));
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(msg(locale, 'crisis.heading'));
+    }
+    await expect(page.locator('[data-tier]')).toHaveCount(0);
+    // All of it came from the service worker's cache: the server saw nothing while offline.
+    expect(await staticHits()).toEqual(before);
+  },
+
   async 'numbers-visible-and-tappable'({ page, context, locale }) {
     await visitOnline(page, locale);
     await goOffline(context);

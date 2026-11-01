@@ -127,6 +127,25 @@ describe('with the network down after one online visit', () => {
     expect(await request({ url: abs('/en/?id=abc'), mode: 'navigate' })).toBe('precached:/en/');
   });
 
+  it.each(['/en', '/ar', '/en/options', '/ar/consent', '/en/ticket', '/ar/crisis'])('opens the cached page for %s, with no trailing slash', async (path) => {
+    const slashed = `${path}/`;
+    const { install, request, stores } = load({ network: offline });
+    await install();
+    stores.get('mawsool-shell-v-test')!.set(abs(slashed), `precached:${slashed}`);
+    expect(await request({ url: abs(path), mode: 'navigate' })).toBe(`precached:${slashed}`);
+    expect(await request({ url: abs(`${path}?id=abc`), mode: 'navigate' })).toBe(`precached:${slashed}`);
+  });
+
+  it('does not add a slash to a file address, or to a request that is not a page navigation', async () => {
+    const { install, request, stores } = load({ network: offline });
+    await install();
+    stores.get('mawsool-shell-v-test')!.set(abs('/icons/icon-192.png/'), 'wrong');
+    expect(await request({ url: abs('/icons/icon-192.png'), mode: 'no-cors' })).toBe('precached:/icons/icon-192.png');
+    stores.get('mawsool-shell-v-test')!.set(abs('/en/options/'), 'page');
+    expect(await request({ url: abs('/en/options'), mode: 'no-cors' })).toBe('error-response');
+    await expect(request({ url: abs('/other.txt'), mode: 'navigate' })).rejects.toThrow('offline');
+  });
+
   it('serves anything the runtime cache saved earlier', async () => {
     const { stores, request } = load({ network: offline });
     stores.set('mawsool-runtime-v-test', new Map([[abs('/fonts/extra.woff2'), 'runtime-hit']]));
