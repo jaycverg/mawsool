@@ -68,7 +68,7 @@ export const PHQ9_WORDING: InstrumentWording = {
     },
     "ar": {
       "locale": "ar",
-      "wordingStatus": "verified",
+      "wordingStatus": "unverified",
       "sourceId": "phq9-ar",
       "stem": "كم عانيت من المشاكل التالية خلال الأسبوعين الماضيين؟",
       "options": [

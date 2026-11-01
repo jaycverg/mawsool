@@ -1,10 +1,13 @@
 import type { Instrument, Locale } from '@mawsool/types';
 
 /**
- * `verified` means the text was copied from the named published source and checked against it.
- * It does not mean the translation is clinically validated for any particular population.
- * `unverified` means the text was not obtained from a published source in machine-checkable form,
- * or was not obtained at all (`text` is then null). The UI shows a visible label for every unverified item.
+ * `verified` means published validated wording: the text is copied from a published source that was obtained,
+ * and a published validation study of that same instrument and language form is cited in `SOURCES.md`.
+ *
+ * `unverified` is everything less, and shows a visible label wherever the wording appears. That covers text that
+ * is only copied from a source with no validation evidence for that form (the Arabic PHQ-9 and GAD-7 editions
+ * filed for Tunisia print no validation statement), text transcribed by hand, a form whose validation was not
+ * established, and a locale with no text at all (`text` is then null).
  */
 export type WordingStatus = 'verified' | 'unverified';
 
@@ -49,6 +52,10 @@ export interface WordingSource {
   licence: string;
   /** What the source itself says about validation. Never filled from outside knowledge. */
   validationStatement: string;
+  /** Why the locale has the status it has, in one sentence. */
+  statusBasis: string;
+  /** The published validation study behind a `verified` status. Null for every `unverified` row. */
+  validationSource: { citation: string; url: string } | null;
   caveat: string;
 }
 
