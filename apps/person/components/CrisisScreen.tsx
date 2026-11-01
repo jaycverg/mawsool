@@ -113,7 +113,7 @@ export function CrisisScreen() {
       </header>
 
       <main className="flex flex-1 flex-col gap-3.5 px-5 pb-5 pt-2">
-        <h1 className="text-[28px] font-semibold leading-[34px]">{t('heading')}</h1>
+        <h1 className="t-h1">{t('heading')}</h1>
         <p className="text-[16px] leading-6 text-[#4D3330]">{t('body')}</p>
 
         <a
