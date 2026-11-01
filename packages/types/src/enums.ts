@@ -94,3 +94,11 @@ export type Coverage = z.infer<typeof CoverageSchema>;
 export const TIMES_OF_DAY = ['morning', 'afternoon', 'evening'] as const;
 export const TimeOfDaySchema = z.enum(TIMES_OF_DAY);
 export type TimeOfDay = z.infer<typeof TimeOfDaySchema>;
+
+/** Why a person moves on from a stalled or unsuitable referral. `unable_to_see` is what a clinic reports. */
+export const REROUTE_REASONS = ['could_not_book', 'cost', 'wait_too_long', 'change_option', 'unable_to_see', 'other'] as const;
+export const RerouteReasonSchema = z.enum(REROUTE_REASONS);
+export type RerouteReason = z.infer<typeof RerouteReasonSchema>;
+
+/** Instruments whose scores can be shared. C-SSRS answers are never shared. */
+export const SHAREABLE_INSTRUMENTS = ['who5', 'phq9', 'gad7'] as const;
