@@ -27,6 +27,12 @@ export interface AnswerInput {
   /** 0-based position of the question. At most one past the last answered, so answers never leave a gap. */
   index: number;
   value: number;
+  /**
+   * The check-in the screen is holding, if it has one. The answer then edits that row, finished or not, so changing
+   * an answer after the last one rescores the same check-in instead of failing or starting a second one. Without it,
+   * the check-in in progress for the instrument is used, or a new one opened.
+   */
+  screeningId?: string | null;
 }
 
 /**
@@ -36,7 +42,7 @@ export interface AnswerInput {
  * progress. Its `takenAt` never changes after that: a crisis resolved at a later moment then covers every answer in
  * it, and finishing the check-in cannot make an old item 9 answer fire again. Answers form an unbroken run from
  * the first question, with no empty slots. The last answer completes the check-in and fills in its total, band and
- * item 9 flag. Returns the saved check-in.
+ * item 9 flag; an answer changed afterwards rescores all three. Returns the saved check-in.
  */
 export function saveAnswer(storage: StorageAdapter, input: AnswerInput, deps: { now: Now; newId: NewId }): Promise<Screening> {
   return withStoreLock(storage, () => saveAnswerNow(storage, input, deps));
@@ -48,7 +54,8 @@ async function saveAnswerNow(storage: StorageAdapter, input: AnswerInput, deps: 
     throw new RangeError(`${String(value)} is not an answer to ${instrument}`);
   }
   const all = await loadScreenings(storage);
-  const draft = findDraft(all, instrument);
+  const held = input.screeningId ? all.find((screening) => screening.id === input.screeningId && screening.instrument === instrument) : undefined;
+  const draft = held ?? findDraft(all, instrument);
   const answers = [...(draft?.answers ?? [])];
   if (!Number.isInteger(index) || index < 0 || index > answers.length || index >= itemCount(instrument)) {
     throw new RangeError(`question ${index + 1} of ${instrument} cannot be answered before the ones above it`);

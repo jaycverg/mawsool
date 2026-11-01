@@ -83,7 +83,7 @@ export function CheckInFlow() {
   async function choose(value: number, device: Device) {
     setFailed(false);
     const outcome = await recordAnswer(
-      { instrument, index, value },
+      { instrument, index, value, screeningId },
       { storage: device.storage, crisis: device.crisis, now: deviceNow, newId: () => crypto.randomUUID(), locale: lang },
     );
     if (outcome.kind === 'failed') return setFailed(true);
