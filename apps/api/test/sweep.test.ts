@@ -49,7 +49,7 @@ describe('the overdue sweep', () => {
     ctx.clock.advance(30 * 24 * 3600 * 1000);
     await sweep(testDb.db, ctx.clock);
     const again = await sweep(testDb.db, ctx.clock);
-    expect(again).toEqual({ marked: 0, lostRace: 0, skipped: 0 });
+    expect(again).toEqual({ marked: 0, lostRace: 0, skipped: 0, draftsDeleted: 0 });
     expect(await overdueEvents(id)).toHaveLength(1);
   });
 

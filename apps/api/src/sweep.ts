@@ -1,4 +1,4 @@
-import { and, inArray, lte } from 'drizzle-orm';
+import { and, inArray, isNull, lt, lte } from 'drizzle-orm';
 import type { Clock } from './clock';
 import { schema, type Db } from './db/client';
 import { appendEvent, lastEvent } from './tickets/events';
@@ -30,10 +30,28 @@ export interface SweepResult {
   marked: number;
   lostRace: number;
   skipped: number;
+  /** Logged drafts that no ticket claimed within the retention window and were deleted. */
+  draftsDeleted: number;
+}
+
+/** How long a logged summary draft may wait for its ticket before it is deleted: a pick that was abandoned. */
+export const DRAFT_RETENTION_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Deletes drafts that no ticket ever claimed and that are older than the retention window. This also covers a draft
+ * that finishes being written after "Delete everything" has already run, which nothing else would remove.
+ */
+export async function deleteStaleDrafts(db: Db, clock: Clock): Promise<number> {
+  const cutoff = new Date(clock.now().getTime() - DRAFT_RETENTION_MS);
+  const gone = await db
+    .delete(schema.summaryLogs)
+    .where(and(isNull(schema.summaryLogs.ticketId), lt(schema.summaryLogs.createdAt, cutoff)))
+    .returning({ id: schema.summaryLogs.id });
+  return gone.length;
 }
 
 /**
- * Finds every ticket past its deadline that has not been seen and appends one `overdue` event to each. Safe to run
+ * Also removes stale unclaimed drafts (`deleteStaleDrafts`). Finds every ticket past its deadline that has not been seen and appends one `overdue` event to each. Safe to run
  * from several places at once and every minute: a ticket that is already overdue, or that another sweep got to first,
  * is left alone, so there is never a second `overdue` event.
  */
@@ -42,12 +60,13 @@ export async function sweep(db: Db, clock: Clock, hooks: SweepHooks = {}): Promi
     .select({ id: schema.tickets.id })
     .from(schema.tickets)
     .where(and(inArray(schema.tickets.state, ['issued', 'acknowledged']), lte(schema.tickets.deadlineAt, clock.now())));
-  const result: SweepResult = { marked: 0, lostRace: 0, skipped: 0 };
+  const result: SweepResult = { marked: 0, lostRace: 0, skipped: 0, draftsDeleted: 0 };
   for (const { id } of due) {
     const outcome = await markOverdue(db, clock, id, hooks);
     if (outcome === 'marked') result.marked += 1;
     else if (outcome === 'lost_race') result.lostRace += 1;
     else result.skipped += 1;
   }
+  result.draftsDeleted = await deleteStaleDrafts(db, clock);
   return result;
 }

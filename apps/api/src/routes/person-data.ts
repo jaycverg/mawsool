@@ -16,7 +16,7 @@ import { z } from 'zod';
 import { eraseEverything, grantConsent, revokeConsent, type ConsentDeps } from '../consents/service';
 import { schema } from '../db/client';
 import { personIdOf, sendError } from '../plugins/auth';
-import { SUMMARY_LOG_CONTEXT } from '../tickets/service';
+import { summaryLogContext } from '../tickets/service';
 
 const Errors = { 400: ErrorResponseSchema, 404: ErrorResponseSchema, 409: ErrorResponseSchema, 410: ErrorResponseSchema };
 
@@ -51,7 +51,7 @@ export function registerPersonDataRoutes(app: FastifyInstance, deps: PersonDataD
     async (request, reply) => {
       const revoked = await revokeConsent(deps, personId(request), request.params.id);
       if (revoked.kind === 'not_found') return sendError(reply, 404, 'not_found', 'Consent not found');
-      return { revoked: revoked.revoked, ticketState: revoked.ticketState };
+      return { revoked: revoked.revoked, ticketState: revoked.ticketState, summaryRemoved: revoked.summaryRemoved };
     },
   );
 
@@ -93,7 +93,7 @@ export function registerPersonDataRoutes(app: FastifyInstance, deps: PersonDataD
         ticketId: null,
         requestId,
         kind: 'draft',
-        ciphertext: deps.cipher.encrypt(draft.text, SUMMARY_LOG_CONTEXT),
+        ciphertext: deps.cipher.encrypt(draft.text, summaryLogContext(personIdOf(request), requestId, 'draft')),
         createdAt: deps.clock.now(),
       });
       return { source: draft.source, text: draft.text };

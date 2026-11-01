@@ -2,7 +2,7 @@ import { randomInt } from 'node:crypto';
 import { redact, withinWordLimit } from '@mawsool/consent';
 import { HANDOFF_WINDOWS_DAYS, computeDeadline } from '@mawsool/rules';
 import { SHORT_CODE_ALPHABET, type CreateTicketRequest, type PersonTicketView, type TicketState } from '@mawsool/types';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import type { Clock } from '../clock';
 import type { Cipher } from '../crypto';
 import { schema, type Db } from '../db/client';
@@ -28,7 +28,13 @@ export function summaryContext(ticketId: string): string {
   return `summary:${ticketId}`;
 }
 
-export const SUMMARY_LOG_CONTEXT = 'summary-log';
+/**
+ * What a logged summary is bound to: the person, the request it belongs to and whether it is a draft or the approved
+ * text. A ciphertext copied onto another row does not decrypt there.
+ */
+export function summaryLogContext(personId: string, requestId: string, kind: 'draft' | 'approved'): string {
+  return `summary-log:${personId}:${requestId}:${kind}`;
+}
 
 /** `MW` and four characters from the unambiguous alphabet. */
 function randomShortCode(): string {
@@ -160,12 +166,16 @@ export async function issueTicket(deps: TicketDeps, personId: string, request: C
           ticketId: ticket.id,
           requestId: request.summaryRequestId ?? request.clientRequestId,
           kind: 'approved',
-          ciphertext: cipher.encrypt(request.approvedSummary, SUMMARY_LOG_CONTEXT),
+          ciphertext: cipher.encrypt(request.approvedSummary, summaryLogContext(personId, request.summaryRequestId ?? request.clientRequestId, 'approved')),
           createdAt: now,
         });
       }
       if (request.summaryRequestId) {
-        await tx.update(schema.summaryLogs).set({ ticketId: ticket.id }).where(eq(schema.summaryLogs.requestId, request.summaryRequestId));
+        // Only this person's own drafts can be linked: another person's request id leaves their rows alone.
+        await tx
+          .update(schema.summaryLogs)
+          .set({ ticketId: ticket.id })
+          .where(and(eq(schema.summaryLogs.requestId, request.summaryRequestId), eq(schema.summaryLogs.personId, personId)));
       }
       return ticket.id;
     });

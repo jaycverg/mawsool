@@ -32,7 +32,7 @@ function readContent(cipher: Cipher, ticketId: string, ciphertext: string | null
 }
 
 export type RevokeResult =
-  | { kind: 'revoked'; revoked: ConsentRecord[]; ticketState: TicketState }
+  | { kind: 'revoked'; revoked: ConsentRecord[]; ticketState: TicketState; summaryRemoved: boolean }
   | { kind: 'not_found' };
 
 class StateRace extends Error {}
@@ -53,48 +53,85 @@ export async function revokeConsent(deps: ConsentDeps, personId: string, consent
 
   if (consent.revokedAt !== null) {
     const last = await lastEvent(db, ticketId);
-    return { kind: 'revoked', revoked: [], ticketState: last?.state ?? 'issued' };
+    return { kind: 'revoked', revoked: [], ticketState: last?.state ?? 'issued', summaryRemoved: false };
   }
 
   return db.transaction(async (tx) => {
-    const { revoked, state } = consent.element === 'ticket' ? await endShare(tx, personId, ticketId, now) : await dropElement(tx, cipher, consent, now);
-    return { kind: 'revoked' as const, revoked: revoked.map(record), ticketState: state };
+    const { revoked, state, summaryRemoved } = consent.element === 'ticket' ? await endShare(tx, personId, ticketId, now) : await dropElement(tx, cipher, consent, now);
+    return { kind: 'revoked' as const, revoked: revoked.map(record), ticketState: state, summaryRemoved };
   });
 }
 
 interface Revoked {
   revoked: ConsentRow[];
   state: TicketState;
+  summaryRemoved: boolean;
 }
 
+/** Deletes every logged summary of a ticket: the drafts and approved text it was issued with. */
+async function deleteSummaryLogs(tx: Executor, ticketId: string): Promise<number> {
+  return (await tx.delete(schema.summaryLogs).where(eq(schema.summaryLogs.ticketId, ticketId)).returning({ id: schema.summaryLogs.id })).length;
+}
+
+/**
+ * Stops one optional element. The bundle is rewritten without it. An approved summary or logged draft may have been
+ * built from what is being stopped, so when one exists both go in the same transaction and the result says so: the
+ * person is told the summary was removed and can write and approve a new one.
+ */
 async function dropElement(tx: Executor, cipher: Cipher, consent: ConsentRow, now: Date): Promise<Revoked> {
   const ticketId = consent.ticketId!;
   const revoked = await tx.update(schema.consents).set({ revokedAt: now }).where(eq(schema.consents.id, consent.id)).returning();
   const [bundle] = await tx.select().from(schema.sharedBundles).where(eq(schema.sharedBundles.ticketId, ticketId)).for('update');
+  let summaryRemoved = false;
   if (bundle && bundle.contentCiphertext !== null) {
     const content = withoutElement(readContent(cipher, ticketId, bundle.contentCiphertext), consent.element);
-    await tx.update(schema.sharedBundles).set({ contentCiphertext: cipher.encrypt(JSON.stringify(content), bundleContext(ticketId)) }).where(eq(schema.sharedBundles.id, bundle.id));
+    const hadSummary = bundle.approvedSummaryCiphertext !== null;
+    await tx
+      .update(schema.sharedBundles)
+      .set({ contentCiphertext: cipher.encrypt(JSON.stringify(content), bundleContext(ticketId)), ...(hadSummary ? { approvedSummaryCiphertext: null } : {}) })
+      .where(eq(schema.sharedBundles.id, bundle.id));
+    const logs = await deleteSummaryLogs(tx, ticketId);
+    summaryRemoved = hadSummary || logs > 0;
   }
-  return { revoked, state: (await lastEvent(tx, ticketId))?.state ?? 'issued' };
+  return { revoked, state: (await lastEvent(tx, ticketId))?.state ?? 'issued', summaryRemoved };
 }
 
 /** Ends the whole share of a ticket. See `revokeConsent`. */
 async function endShare(tx: Executor, personId: string, ticketId: string, now: Date): Promise<Revoked> {
   const revoked = await tx.update(schema.consents).set({ revokedAt: now }).where(and(eq(schema.consents.ticketId, ticketId), isNull(schema.consents.revokedAt))).returning();
+  const [existing] = await tx.select({ summary: schema.sharedBundles.approvedSummaryCiphertext }).from(schema.sharedBundles).where(eq(schema.sharedBundles.ticketId, ticketId));
   await tx
     .update(schema.sharedBundles)
     .set({ contentCiphertext: null, approvedSummaryCiphertext: null, deletedAt: now })
     .where(eq(schema.sharedBundles.ticketId, ticketId));
   const [ticket] = await tx.select({ requestId: schema.tickets.clientRequestId }).from(schema.tickets).where(eq(schema.tickets.id, ticketId)).limit(1);
-  await tx
+  // The ticket's own logs, any draft made under its request id, and this person's other drafts that no ticket ever claimed
+  // (a pick they abandoned): none of it outlives the share.
+  const deletedLogs = await tx
     .delete(schema.summaryLogs)
-    .where(and(eq(schema.summaryLogs.personId, personId), or(eq(schema.summaryLogs.ticketId, ticketId), ticket?.requestId ? eq(schema.summaryLogs.requestId, ticket.requestId) : undefined)));
+    .where(
+      and(
+        eq(schema.summaryLogs.personId, personId),
+        or(eq(schema.summaryLogs.ticketId, ticketId), isNull(schema.summaryLogs.ticketId), ticket?.requestId ? eq(schema.summaryLogs.requestId, ticket.requestId) : undefined),
+      ),
+    )
+    .returning({ id: schema.summaryLogs.id });
 
+  const summaryRemoved = (existing?.summary ?? null) !== null || deletedLogs.length > 0;
   const last = await lastEvent(tx, ticketId);
-  if (!last || TERMINAL_STATES.includes(last.state)) return { revoked, state: last?.state ?? 'issued' };
+  if (!last || TERMINAL_STATES.includes(last.state)) return { revoked, state: last?.state ?? 'issued', summaryRemoved };
   const moved = await appendEvent(tx, { ticketId, seq: last.seq + 1, from: last.state, to: 'withdrawn', actor: 'person', channel: 'app', reason: 'consent_revoked', at: now });
   if (!moved) throw new StateRace();
-  return { revoked, state: 'withdrawn' };
+  return { revoked, state: 'withdrawn', summaryRemoved };
+}
+
+/**
+ * True once the person has ended the share of a ticket: it was issued with a `ticket` consent and none is live now.
+ * A ticket that never had a consent (a seeded one) is not "ended". Staff routes answer 410 for an ended share.
+ */
+export async function shareEnded(db: Db, ticketId: string): Promise<boolean> {
+  const rows = await db.select({ revokedAt: schema.consents.revokedAt }).from(schema.consents).where(and(eq(schema.consents.ticketId, ticketId), eq(schema.consents.element, 'ticket')));
+  return rows.length > 0 && rows.every((row) => row.revokedAt !== null);
 }
 
 export type GrantResult = { kind: 'granted'; consent: ConsentRecord } | { kind: 'not_found' } | { kind: 'gone' } | { kind: 'conflict' };
@@ -151,7 +188,8 @@ export interface EraseResult {
 /**
  * "Delete everything" on the server: revokes the `ticket` consent of every ticket the person holds that is still
  * shared (which revokes the rest and withdraws what is live), deletes every logged summary the person has, and
- * clears the equity buckets. The tickets themselves and their events remain, as pseudonymous timings with no data.
+ * clears the equity buckets. The tickets themselves and their events remain, as pseudonymous timings with no data: an
+ * event's reason is a code from a fixed list, never free text.
  */
 export async function eraseEverything(deps: ConsentDeps, personId: string): Promise<EraseResult> {
   const { db } = deps;

@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { schema } from '../src/db/client';
+import { summaryLogContext } from '../src/tickets/service';
 import { runSeed } from '../src/seed/run';
 import { createTestApp, signIn, type TestApp } from './helpers/app';
 import { createTestDb, type TestDb } from './helpers/db';
@@ -97,7 +98,7 @@ describe('consent, revoke and the bundle', () => {
         expect(row.ciphertext).toMatch(/^v1\./);
         expect(row.ciphertext).not.toContain(SUMMARY_MARKER);
       }
-      expect(cipher.decrypt(approved[0]!.ciphertext, 'summary-log')).toBe(SUMMARY_MARKER);
+      expect(cipher.decrypt(approved[0]!.ciphertext, summaryLogContext(person.id, approved[0]!.requestId, 'approved'))).toBe(SUMMARY_MARKER);
     });
   });
 
@@ -156,7 +157,7 @@ describe('consent, revoke and the bundle', () => {
       const { ticket } = await fullTicket();
       const res = await revoke(consentId(ticket, 'free_text'));
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toMatchObject({ ticketState: 'issued', revoked: [{ element: 'free_text' }] });
+      expect(res.json()).toMatchObject({ ticketState: 'issued', revoked: [{ element: 'free_text' }], summaryRemoved: true });
 
       const stored = await storedContent(testDb.db, ticket.id);
       expect(Object.keys(stored!).sort()).toEqual(['conditions', 'preferences', 'scores', 'trajectory']);
@@ -165,8 +166,12 @@ describe('consent, revoke and the bundle', () => {
       const read = await readBundle(ticket.id);
       expect(read.statusCode).toBe(200);
       expect(read.json().notShared).toEqual(['free_text']);
-      expect(read.json().approvedSummary).toBe(SUMMARY_MARKER);
+      // The approved summary was written with the note in view, so it goes with it, and so do the logged drafts.
+      expect(read.json().approvedSummary).toBeNull();
+      expect((await rawBundle(testDb.db, ticket.id)).approvedSummaryCiphertext).toBeNull();
+      expect(await testDb.db.select().from(schema.summaryLogs).where(eq(schema.summaryLogs.ticketId, ticket.id))).toHaveLength(0);
       expect(read.body).not.toContain(FREE_TEXT);
+      expect(read.body).not.toContain(SUMMARY_MARKER);
       expect(await eventStates(testDb.db, ticket.id)).toHaveLength(1);
     });
   });
@@ -224,7 +229,7 @@ describe('consent, revoke and the bundle', () => {
       const before = await eventStates(testDb.db, ticket.id);
       const again = await revoke(consentId(ticket, 'ticket'));
       expect(again.statusCode).toBe(200);
-      expect(again.json()).toEqual({ revoked: [], ticketState: 'withdrawn' });
+      expect(again.json()).toEqual({ revoked: [], ticketState: 'withdrawn', summaryRemoved: false });
       expect(await eventStates(testDb.db, ticket.id)).toEqual(before);
     });
 
