@@ -103,7 +103,7 @@ describe('revoke reach and completeness', () => {
   });
 
   describe('summaries that outlive what they were built from', () => {
-    it('keeps the approved summary and the logs when nothing was stopped, and tells the person when stopping an element removes them', async () => {
+    it('removes the approved summary and the logs when an element is stopped, and says so', async () => {
       const requestId = crypto.randomUUID();
       await draft(person.headers, requestId);
       const ticket = await issue(ctx, person, ticketRequest(gpA, { clientRequestId: requestId, approvedSummary: 'APPROVED-WORDS', summaryRequestId: requestId }));

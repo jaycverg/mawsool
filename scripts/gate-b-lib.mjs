@@ -3,8 +3,8 @@
 // ran and passed? Kept apart from the runner so it can be tested, including the cases that must fail.
 
 /**
- * @typedef {{ file: string, name?: string }} TestRef
- *   `file` is relative to the project. With `name`, exactly one test in that file must match (a substring of its full
+ * @typedef {{ file: string, name?: string, project?: string }} TestRef
+ *   `file` is relative to the project; `project` overrides the entry's. With `name`, exactly one test in that file must match (a substring of its full
  *   name); without `name`, the file must hold at least one test and every one of them must pass.
  * @typedef {{ id: string, sentence: string, project?: string, tests?: TestRef[], browser?: string }} Entry
  *   `project` is the default project of the entry's tests. `browser` names a test id in the browser gate's registry
@@ -33,7 +33,7 @@ export function evaluateRegistry(registry, reports, browserIds) {
     if (refs.length === 0 && !entry.browser) problems.push(`${entry.id}: no test is named for this sentence`);
     if (entry.browser && !browserIds.includes(entry.browser)) problems.push(`${entry.id}: the browser test "${entry.browser}" is not in the browser gate's registry`);
     for (const ref of refs) {
-      const project = entry.project ?? '';
+      const project = ref.project ?? entry.project ?? '';
       const results = (reports[project] ?? []).filter((result) => result.file.endsWith(ref.file));
       const label = `${entry.id}: ${project}/${ref.file}${ref.name ? ` "${ref.name}"` : ''}`;
       if (!(project in reports)) {
