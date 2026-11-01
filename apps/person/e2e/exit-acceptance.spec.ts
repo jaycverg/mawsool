@@ -484,6 +484,42 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     }
   },
 
+  async 'self-help-sends-nothing'({ page, locale }) {
+    const seen: string[] = [];
+    // Interception, not a log: every request to the API origin passes through here before it leaves.
+    await page.route(`${API}/**`, async (route) => {
+      seen.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
+      await route.continue();
+    });
+    const afterChoice: string[] = [];
+    let chosen = false;
+    page.on('request', (request) => {
+      if (chosen) afterChoice.push(`${request.method()} ${request.url()}`);
+    });
+
+    await visitOnline(page, locale);
+    await page.goto(`/${locale}/options/`);
+    const lead = page.locator('[data-tier][data-lead]');
+    await expect(lead).toHaveAttribute('data-tier', 'self_help');
+    await expect(page.locator('[data-tier]').first()).toBeVisible();
+
+    // Positive control: a request the page makes after the choice would be seen by both the interception and the log.
+    chosen = true;
+    await lead.getByRole('button', { name: msg(locale, 'options.choose'), exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: msg(locale, 'options.savedTitle') })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/${locale}/options/`));
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+    expect(afterChoice, 'choosing self-help sent nothing').toEqual([]);
+    chosen = false;
+
+    await page.evaluate((url) => fetch(`${url}/health?control=1`).catch(() => undefined), API);
+    expect(seen.filter((entry) => entry.includes('/health')), 'the interception sees a request the page makes').toEqual(['GET /health']);
+    // Everything that ever went to the API on this device is the unfiltered directory read: no registration, no consent, no ticket.
+    expect(seen.filter((entry) => !entry.includes('/health')).every((entry) => entry === 'GET /services')).toBe(true);
+    expect(seen.some((entry) => /^(POST|PUT|DELETE|PATCH) /.test(entry))).toBe(false);
+  },
+
   async 'tokens-at-phone-width'({ page, locale }) {
     await visitOnline(page, locale);
     const lineHeight = locale === 'ar' ? { h1: '34px', body: '24px' } : { h1: '30px', body: '22px' };
