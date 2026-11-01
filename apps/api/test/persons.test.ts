@@ -122,7 +122,7 @@ describe('person bearer authentication', () => {
       db: testDb.db,
       clock: ctx.clock,
       notifier: ctx.notifier,
-      config: { corsOrigins: [], staffLinkBaseUrl: 'http://localhost:3001' },
+      config: { corsOrigins: [], clinicianAppUrl: 'http://localhost:3001', opsAppUrl: 'http://localhost:3002' },
       extraRoutes: (app) => {
         app.get('/whoami', { config: { access: 'person' } }, async (request) => request.principal);
       },

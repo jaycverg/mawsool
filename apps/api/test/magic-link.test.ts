@@ -33,7 +33,7 @@ describe('staff magic-link sign-in', () => {
     expect(ctx.notifier.sent).toHaveLength(before + 1);
     const message = ctx.notifier.sent.at(-1)!;
     expect(message.to).toBe(EMAIL);
-    expect(message.link).toMatch(/^http:\/\/localhost:3001\/sign-in\?token=[A-Za-z0-9_-]{43}$/);
+    expect(message.link).toMatch(/^http:\/\/localhost:3001\/en\/sign-in\/\?token=[A-Za-z0-9_-]{43}$/);
   });
 
   it('stores only the hash of the token, never the token', async () => {
