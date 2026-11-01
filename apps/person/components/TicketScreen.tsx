@@ -13,6 +13,7 @@ import { calendarDaysLeft, formatDate } from '../lib/format';
 import { href } from '../lib/routes';
 import { callServer, type ServerDeps } from '../lib/server';
 import { loadTickets } from '../lib/share';
+import { hasServerFootprint } from '../lib/server';
 import { useDevice, type Device } from '../lib/use-device';
 import { BottomNav } from './BottomNav';
 import { HomeHeader } from './HomeHeader';
@@ -52,9 +53,18 @@ export function TicketScreen() {
   const refresh = useCallback(async () => {
     if (device === null || device === 'unavailable') return;
     setLoad({ status: 'loading' });
-    const id = requested ?? (await loadTickets(device.storage).catch(() => [])).at(-1)?.id;
-    if (!id) return setLoad({ status: 'none' });
     const deps = serverDeps(device);
+    let id = requested ?? (await loadTickets(device.storage).catch(() => [])).at(-1)?.id;
+    if (!id) {
+      // This phone has no note of a ticket. If it has never given the server anything there is nothing to ask for, and
+      // no request is made; if it has (a send whose local note failed), the server's own list says what exists.
+      if (!(await hasServerFootprint(device.storage).catch(() => false))) return setLoad({ status: 'none' });
+      const list = await callServer<unknown>(deps, 'GET', '/me/tickets');
+      const newest = list.ok ? PersonTicketListSchema.safeParse(list.body) : null;
+      if (!newest?.success) return setLoad({ status: 'failed' });
+      id = newest.data.at(-1)?.id;
+      if (!id) return setLoad({ status: 'none' });
+    }
     const [ticket, reads, list] = await Promise.all([
       callServer<unknown>(deps, 'GET', `/me/tickets/${id}`),
       callServer<unknown>(deps, 'GET', `/me/tickets/${id}/reads`),
@@ -172,7 +182,10 @@ function Ready({ t, lang, ticket, reads, all, savedWarning, notice, panel, setPa
           <QrCode payload={ticket.qrPayload} label={t('qrLabel', { code: ticket.shortCode })} />
         </div>
         <div className="flex flex-col gap-1.5 px-4 py-3.5">
-          <span className="text-[17px] font-semibold" dir="auto">{ticket.serviceName}</span>
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="text-[17px] font-semibold" dir="auto">{ticket.serviceName}</span>
+            <span className="inline-flex whitespace-nowrap rounded-chip bg-mock px-2 py-[3px] text-[12px] font-semibold text-mock-ink" data-sample>{t('sample')}</span>
+          </span>
           <span className="flex items-center gap-1.5 text-[15px]" data-deadline>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0E6B63" strokeWidth="2" strokeLinecap="round" aria-hidden="true" className="shrink-0">
               <circle cx="12" cy="12" r="9" />
@@ -191,7 +204,7 @@ function Ready({ t, lang, ticket, reads, all, savedWarning, notice, panel, setPa
       {shareEnded && <p role="status" className="rounded-staff bg-accent-tint px-3.5 py-3 text-[14px]" data-share-ended>{t('withdrawnNote')}</p>}
       {earlier && (
         <p className="t-small text-muted" data-earlier>
-          {t('earlier')} · <a className="font-semibold text-accent" href={href(lang, 'ticket', { id: earlier.id })}>{`${earlier.shortCode.slice(0, 2)}-${earlier.shortCode.slice(2)}`}</a>
+          {t('earlier')} · <a className="inline-flex min-h-tap items-center font-semibold text-accent" href={href(lang, 'ticket', { id: earlier.id })}>{`${earlier.shortCode.slice(0, 2)}-${earlier.shortCode.slice(2)}`}</a>
         </p>
       )}
       {ticket.state === 'overdue' && (
@@ -251,6 +264,7 @@ function Ready({ t, lang, ticket, reads, all, savedWarning, notice, panel, setPa
       <section className="flex flex-col gap-2 rounded-card border border-border bg-surface p-4" data-panel="sharing">
         <h2 className="text-[16px] font-semibold">{t('sharingTitle')}</h2>
         <p className="t-small text-muted">{t('sharingBody')}</p>
+        {notice === 'summaryRemoved' && <p role="status" className="rounded-chip bg-accent-tint px-3 py-2 text-[14px]" data-notice="summary-removed">{t('summaryRemoved')}</p>}
         <ul className="m-0 flex list-none flex-col gap-1 p-0">
           {ticket.consents.map((consent) => (
             <li key={consent.id} className="flex min-h-tap items-center justify-between gap-2" data-consent={consent.element} data-revoked={consent.revokedAt !== null || undefined}>
@@ -278,7 +292,6 @@ function Ready({ t, lang, ticket, reads, all, savedWarning, notice, panel, setPa
           </div>
         )}
         <h3 className="mt-1 text-[13px] font-semibold text-muted">{t('readsTitle')}</h3>
-        {notice === 'summaryRemoved' && <p role="status" className="t-small text-ink" data-notice="summary-removed">{t('summaryRemoved')}</p>}
         {reads === 'failed' ? <p role="alert" className="t-small text-danger" data-reads-failed>{t('readsFailed')}</p> : reads.length === 0 ? <p className="t-small text-muted">{t('readsNone')}</p> : <ul className="m-0 list-none p-0 text-[14px]" data-reads>{reads.map((read) => <li key={read.at}>{t('readLine', { facility: read.facilityName, date: formatDate(read.at, lang) })}</li>)}</ul>}
       </section>
       {failed && <p role="alert" className="t-body text-danger">{t('actionFailed')}</p>}
@@ -332,7 +345,7 @@ function Timeline({ t, lang, ticket }: { t: Translate; lang: 'ar' | 'en'; ticket
                   </svg>
                 </span>
               ) : (
-                <span className="size-5 shrink-0 rounded-full border-2 bg-surface" style={{ borderColor: next === 'next' ? '#0E6B63' : GREY }} />
+                <span className="size-6 shrink-0 rounded-full border-2 bg-surface" style={{ borderColor: next === 'next' ? '#0E6B63' : GREY }} />
               )}
               {index < steps.length - 1 && <span className={`w-0.5 flex-1 ${joinsNext ? 'bg-accent' : 'bg-border'}`} />}
             </div>
