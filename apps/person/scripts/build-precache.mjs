@@ -2,7 +2,7 @@
 // Runs after `next build`: writes the real precache list into out/sw.js.
 //
 // The service worker source (public/sw.js) holds a placeholder list. This step replaces it with the pages in
-// PRECACHE_ROUTES, the built CSS and JS under _next/static, the Latin and Arabic font files, the manifest and the
+// PRECACHE_ROUTES, the built CSS and JS under _next/static, the Latin and Arabic font files, the manifest, the favicon and the
 // icons, and derives the cache version from that list and the page contents. A new build therefore changes the
 // bytes of sw.js, which is what makes browsers install the new worker and drop the old cache.
 //
@@ -12,8 +12,18 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+/** Locales the app is built in. */
+const LOCALES = ['en', 'ar'];
+
+/**
+ * Screens that open offline in every locale after one online visit: the whole person app is local-first, and the
+ * crisis screen, the check-in and the result in particular must never depend on the network. Each is a directory
+ * route with a page in the export; a screen with a query string (`/result/?id=`) is the same page.
+ */
+export const OFFLINE_SCREENS = ['crisis', 'check-in', 'check-ins', 'result', 'options', 'settings', 'consent', 'ticket'];
+
 /** Pages that must open offline after one online visit. Each is a directory route that exists in the export. */
-export const PRECACHE_ROUTES = ['/', '/en/', '/ar/'];
+export const PRECACHE_ROUTES = ['/', ...LOCALES.flatMap((locale) => [`/${locale}/`, ...OFFLINE_SCREENS.map((screen) => `/${locale}/${screen}/`)])];
 
 /** Built font files worth caching: woff2 in the Latin and Arabic subsets. Other subsets load on demand. */
 const FONT_FILE = /-(latin|arabic)-\d+-normal\.[\w-]+\.woff2$/;
@@ -54,7 +64,7 @@ export function buildPrecache(outDir, routes = PRECACHE_ROUTES) {
   const built = listFiles(staticDir)
     .filter((file) => /\.(css|js)$/.test(file) || FONT_FILE.test(file))
     .map((file) => toUrl(outDir, file));
-  const publicFiles = ['manifest.webmanifest', ...listFiles(join(outDir, 'icons')).map((f) => relative(outDir, f))]
+  const publicFiles = ['manifest.webmanifest', 'icon.svg', ...listFiles(join(outDir, 'icons')).map((f) => relative(outDir, f))]
     .filter((rel) => existsSync(join(outDir, rel)))
     .map((rel) => `/${rel.split(sep).join('/')}`);
   const urls = [...new Set([...routes, ...built, ...publicFiles])];

@@ -140,8 +140,17 @@ describe('encrypted storage', () => {
 
   it('does not remember a failed key creation: the next call tries again', async () => {
     const raw = createIndexedDbStorage({ indexedDB: new IDBFactory() });
-    const flaky: StorageAdapter = { ...raw, setIfAbsent: vi.fn(raw.setIfAbsent.bind(raw)) };
-    vi.mocked(flaky.setIfAbsent).mockRejectedValueOnce(new Error('disk full'));
+    let failNext = true;
+    const flaky: StorageAdapter = {
+      ...raw,
+      async setIfAbsent(key, value) {
+        if (failNext) {
+          failNext = false;
+          throw new Error('disk full');
+        }
+        return raw.setIfAbsent(key, value);
+      },
+    };
     const secure = createEncryptedStorage(flaky, crypto);
     await expect(secure.set('a', 1)).rejects.toThrow('disk full');
     await secure.set('a', 1);
