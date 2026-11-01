@@ -133,6 +133,16 @@ describe('Delete everything', () => {
     expect(stuck.store.data.has('screenings')).toBe(true);
   });
 
+  it('stops with nothing deleted when the phone cannot read its own device secret to ask the server', async () => {
+    const s = setup({ footprint: true });
+    await s.prepare();
+    const ifAbsent = s.store.storage.setIfAbsent.bind(s.store.storage);
+    s.store.storage.setIfAbsent = (async (key: string, value: unknown) => (key === 'identity' ? Promise.reject(new Error('unreadable')) : ifAbsent(key, value))) as typeof ifAbsent;
+    expect(await eraseEverything(s.deps)).toEqual({ status: 'blocked' });
+    expect(s.calls).not.toContain('CLEAR');
+    expect(s.store.data.has('screenings')).toBe(true);
+  });
+
   it('carries on when it cannot tell whether a crisis screen is open', async () => {
     const s = setup();
     await s.prepare();

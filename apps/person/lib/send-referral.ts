@@ -5,7 +5,10 @@ import { callServer, markServerFootprint, type ServerDeps } from './server';
 import { rememberTicket } from './share';
 
 export type SendOutcome =
-  | { status: 'sent'; ticketId: string }
+  /** The server holds the ticket. `saved` is false when this phone could not keep its own note of it: the referral still stands. */
+  | { status: 'sent'; ticketId: string; saved: boolean }
+  /** The phone's own store refused before anything was sent, so nothing was. */
+  | { status: 'not_saved' }
   /** The phone is offline or the server is down: nothing is lost, and sending again is the same request. */
   | { status: 'offline' }
   /** The server said no (409: the ticket can no longer be changed). */
@@ -43,7 +46,11 @@ export function ticketRequest(input: SendInput): CreateTicketRequest {
  */
 export async function sendReferral(deps: ServerDeps, input: SendInput): Promise<SendOutcome> {
   const { storage } = deps;
-  await markServerFootprint(storage, input.now);
+  try {
+    await markServerFootprint(storage, input.now);
+  } catch {
+    return { status: 'not_saved' };
+  }
   const body = ticketRequest(input);
   const reroute = input.pending.reroute;
   const path = reroute ? `/me/tickets/${reroute.ticketId}/reroute` : '/tickets';
@@ -55,8 +62,15 @@ export async function sendReferral(deps: ServerDeps, input: SendInput): Promise<
   const parsed = CreatedTicketSchema.safeParse(sent.body);
   if (!parsed.success) return { status: 'rejected' };
   const ticket = parsed.data.ticket;
-  await rememberTicket(storage, { id: ticket.id, shortCode: ticket.shortCode, serviceId: ticket.serviceId, tier: ticket.tier, issuedAt: ticket.createdAt });
-  await saveChoice(storage, { tier: input.pending.tier, serviceId: input.pending.serviceId, chosenAt: input.pending.chosenAt, confirmed: true });
-  await clearPendingChoice(storage);
-  return { status: 'sent', ticketId: ticket.id };
+  // The server has the ticket now. What the phone keeps for itself is best effort: a failure here is reported as a
+  // warning and never undoes or hides a referral that was sent.
+  let saved = true;
+  for (const keep of [
+    () => rememberTicket(storage, { id: ticket.id, shortCode: ticket.shortCode, serviceId: ticket.serviceId, tier: ticket.tier, issuedAt: ticket.createdAt }),
+    () => saveChoice(storage, { tier: input.pending.tier, serviceId: input.pending.serviceId, chosenAt: input.pending.chosenAt, confirmed: true }),
+    () => clearPendingChoice(storage),
+  ]) {
+    saved = (await keep().then(() => true, () => false)) && saved;
+  }
+  return { status: 'sent', ticketId: ticket.id, saved };
 }

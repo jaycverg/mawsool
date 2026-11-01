@@ -36,3 +36,16 @@ export function partOfDay(date: Date): Part {
   if (hour < 12) return 'morning';
   return hour < 17 ? 'afternoon' : 'evening';
 }
+
+/** The calendar day an instant falls on in the deployment time zone, as a day number (UTC+4, no daylight saving). */
+function dubaiDay(ms: number): number {
+  return Math.floor((ms + 4 * 3_600_000) / DAY_MS);
+}
+
+/**
+ * Days left until a deadline, counted as calendar days in Asia/Dubai: the day it is issued on is day 0, so a 7-day
+ * promise issued this morning reads 7, not 8, and the deadline day itself reads 0. Never negative.
+ */
+export function calendarDaysLeft(deadlineIso: string, now: Date): number {
+  return Math.max(0, dubaiDay(Date.parse(deadlineIso)) - dubaiDay(now.getTime()));
+}

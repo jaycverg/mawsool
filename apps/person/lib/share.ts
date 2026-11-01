@@ -77,3 +77,19 @@ export function rememberTicket(storage: StorageAdapter, ticket: StoredTicket): P
     await storage.set(KEYS.tickets, [...all.filter((item) => item.id !== ticket.id), ticket]);
   });
 }
+
+/** Whether this phone has opted in to the equity group totals, and the four buckets given, so the choice can be shown and undone. */
+const EquitySchema = z.object({
+  optIn: z.boolean(),
+  buckets: z.object({ ageBand: z.string().nullable(), gender: z.string().nullable(), language: z.string().nullable(), region: z.string().nullable() }).partial().default({}),
+});
+export type StoredEquity = z.infer<typeof EquitySchema>;
+
+export async function loadEquity(storage: StorageAdapter): Promise<StoredEquity> {
+  const parsed = EquitySchema.safeParse(await storage.get<unknown>(KEYS.equity));
+  return parsed.success ? parsed.data : { optIn: false, buckets: {} };
+}
+
+export function saveEquity(storage: StorageAdapter, equity: StoredEquity): Promise<void> {
+  return storage.set(KEYS.equity, equity);
+}
