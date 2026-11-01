@@ -247,7 +247,8 @@
     "unsavedNote": "This phone could not save your choice. It will ask again if the app is reopened.",
     "hotlineTitle": "Call {name}",
     "hotlineDetail": "{number} · 24/7 mental health support · Arabic and English",
-    "callEmergency": "Call {number}"
+    "callEmergency": "Call {number}",
+    "reachedNotSaved": "We couldn't save that on this phone. You can still call at any time, and the numbers stay on this screen."
   },
   "settings": {
     "title": "Privacy and your data",

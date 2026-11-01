@@ -1,6 +1,6 @@
-import { createTabFlag } from '@mawsool/ui';
+import { createTabMark } from '@mawsool/ui';
 import { describe, expect, it, vi } from 'vitest';
-import { createCrisisStore } from '../lib/crisis';
+import { createCrisisStore, isCrisisMark, type CrisisMark } from '../lib/crisis';
 import { recordAnswer, type RecordAnswerDeps } from '../lib/record-answer';
 import { loadScreenings } from '../lib/screening-store';
 import { fixtureClock, memoryStorage } from './helpers/memory';
@@ -9,7 +9,7 @@ function setup() {
   const memory = memoryStorage();
   const clock = fixtureClock();
   const deps = { now: clock.now, newId: clock.newId };
-  const fallback = createTabFlag(undefined, 'crisis');
+  const fallback = createTabMark<CrisisMark>(undefined, 'crisis', isCrisisMark);
   const crisis = createCrisisStore(memory.storage, { ...deps, fallback, readPatienceMs: 20 });
   const base: RecordAnswerDeps = { storage: memory.storage, crisis, ...deps, locale: 'en', patienceMs: 20 };
   return { ...memory, crisis, base, fallback };
@@ -76,11 +76,11 @@ describe('recordAnswer', () => {
     let seenWhenStorageFirstRead: boolean | null = null;
     const realGet = storage.get.bind(storage);
     storage.get = (async (key: string) => {
-      seenWhenStorageFirstRead ??= fallback.get();
+      seenWhenStorageFirstRead ??= fallback.get() !== null;
       return realGet(key);
     }) as typeof storage.get;
     const pending = recordAnswer(ITEM9, base);
-    expect(fallback.get()).toBe(true); // synchronously, before the first await settles
+    expect(fallback.get()).not.toBeNull(); // synchronously, before the first await settles
     await pending;
     expect(seenWhenStorageFirstRead).toBe(true);
   });
@@ -96,7 +96,7 @@ describe('recordAnswer', () => {
     expect(outcome).toEqual({ kind: 'crisis', screening: null, blockSaved: false });
     expect(performance.now() - started).toBeLessThan(1000);
     // The block reads as blocked even though storage never answers, because the tab flag holds it.
-    expect(fallback.get()).toBe(true);
+    expect(fallback.get()).not.toBeNull();
     expect((await crisis.read()).status).toBe('blocked');
   });
 

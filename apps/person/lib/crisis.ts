@@ -1,6 +1,6 @@
 import { evaluateCrisis } from '@mawsool/instruments';
-import { CrisisEventSubmissionSchema, type CrisisEventSubmission, type CrisisNumber, type CrisisTrigger, type Instrument, type Locale } from '@mawsool/types';
-import type { StorageAdapter, TabFlagAdapter } from '@mawsool/ui';
+import { CrisisEventSubmissionSchema, CrisisTriggerSchema, type CrisisEventSubmission, type CrisisNumber, type CrisisTrigger, type Instrument, type Locale } from '@mawsool/types';
+import type { StorageAdapter, TabMarkAdapter } from '@mawsool/ui';
 import type { NewId, Now } from './clock';
 import { enqueueEventLocked } from './crisis-outbox';
 import { KEYS } from './keys';
@@ -41,15 +41,40 @@ export const CLEAR_RECORD: CrisisRecord = { blocked: false, trigger: null, block
 /** A write that reached storage is `saved`; one that did not is `failed`, and the change then lives in memory only. */
 export type WriteStatus = 'saved' | 'failed';
 
+/**
+ * What the tab holds about an open crisis, so that a store which refused or hung when the trigger was answered can
+ * be repaired later: which trigger it was, the id of the one event this crisis will have, and when it was shown.
+ * Each is a field a crisis event already holds. It never holds an item answer, a score or a person id.
+ */
+export interface CrisisMark {
+  trigger: CrisisTrigger;
+  eventId: string;
+  shownAt: string;
+}
+
+export function isCrisisMark(value: unknown): value is CrisisMark {
+  const candidate = value as Partial<CrisisMark> | null;
+  return (
+    typeof candidate === 'object' &&
+    candidate !== null &&
+    CrisisTriggerSchema.safeParse(candidate.trigger).success &&
+    typeof candidate.eventId === 'string' &&
+    candidate.eventId.length > 0 &&
+    typeof candidate.shownAt === 'string' &&
+    !Number.isNaN(Date.parse(candidate.shownAt))
+  );
+}
+
 export interface CrisisDeps {
   now: Now;
   newId: NewId;
   /**
-   * The tab's synchronous copy of "blocked". It is set before any storage call and cleared at the start of a
-   * resolution, so a store that refuses or hangs cannot lose the block, and it survives a page navigation in the tab.
+   * The tab's synchronous copy of "a crisis is open". It is set before any storage call, and cleared at the start of
+   * a resolution, so a store that refuses or hangs cannot lose the block, and it survives a page navigation in the
+   * tab. It holds the event id too, so every writer and the repair open the same single event.
    */
-  fallback?: TabFlagAdapter;
-  /** How long a read waits on storage when only the tab flag knows about the block. */
+  fallback: TabMarkAdapter<CrisisMark>;
+  /** How long a read waits on storage when only the tab mark knows about the block. Reads for a change never use it. */
   readPatienceMs?: number;
 }
 
@@ -73,16 +98,26 @@ export function createCrisisStore(storage: StorageAdapter, deps: CrisisDeps) {
   /** The newest record that storage refused to take, kept so this page-load still behaves as if it was saved. */
   let unsaved: CrisisRecord | null = null;
 
+  /**
+   * The state for a screen or a guard, which must answer in good time. With the tab mark on it is blocked whatever
+   * storage says or fails to say; storage is asked only for the open event, and only briefly. A stored record that
+   * is clear shows no event: an old resolved one is not this crisis's.
+   */
   async function read(): Promise<BlockState> {
     if (unsaved) return { status: unsaved.blocked ? 'blocked' : 'clear', record: unsaved };
-    // The tab flag says blocked: it is blocked, whatever storage says or fails to say. Storage is asked only for
-    // the detail (the open event), and only briefly.
-    if (deps.fallback?.get()) {
+    if (deps.fallback.get()) {
       const stored = await within(readStored(), deps.readPatienceMs ?? 300, null);
-      const record = stored && stored.status === 'blocked' && stored.record ? stored.record : { ...CLEAR_RECORD, blocked: true };
-      return { status: 'blocked', record };
+      if (stored?.status === 'blocked') return stored;
+      return { status: 'blocked', record: { ...(stored?.record ?? CLEAR_RECORD), blocked: true, event: null } };
     }
     return readStored();
+  }
+
+  /** The record a change starts from: the real stored one, however long the read takes. A guard's patience is not used here. */
+  async function readForUpdate(): Promise<CrisisRecord> {
+    if (unsaved) return unsaved;
+    const stored = await readStored();
+    return stored.record ?? { ...CLEAR_RECORD, blocked: true };
   }
 
   async function readStored(): Promise<BlockState> {
@@ -119,23 +154,60 @@ export function createCrisisStore(storage: StorageAdapter, deps: CrisisDeps) {
   /** Reads, changes and writes the record under the store lock, then queues the event it carries. */
   function update(change: (current: CrisisRecord) => CrisisRecord | null): Promise<{ record: CrisisRecord; status: WriteStatus } | null> {
     return withStoreLock(storage, async () => {
-      const state = await read();
-      const current = state.record ?? { ...CLEAR_RECORD, blocked: true };
+      const current = await readForUpdate();
       const next = change(current);
       if (!next) return null;
+      const retrying = current === unsaved; // the last write was refused, and so may have been the queue's
       const status = await write(next);
-      // Only an event that actually changed is queued, so touching a resolved crisis re-sends nothing.
-      if (next.event && JSON.stringify(next.event) !== JSON.stringify(current.event)) await queue(next.event);
+      // Only an event that actually changed is queued, so touching a resolved crisis re-sends nothing. Queueing the
+      // same event again is harmless: the queue keeps one entry per event id.
+      if (next.event && (retrying || JSON.stringify(next.event) !== JSON.stringify(current.event))) await queue(next.event);
       return { record: next, status };
     });
+  }
+
+  /** The tab's mark for the open crisis, made now if there is none. Synchronous: no storage, no lock. */
+  function ensureMark(trigger: CrisisTrigger): CrisisMark {
+    const held = deps.fallback.get();
+    if (held) return held;
+    const mark: CrisisMark = { trigger, eventId: deps.newId(), shownAt: deps.now().toISOString() };
+    deps.fallback.set(mark);
+    return mark;
+  }
+
+  /**
+   * Opens the crisis's one event in the stored record, from the tab's mark. Shared by `raise` and `repair`, which
+   * use the same event id, so whichever runs first makes the event and the other adds nothing. It does nothing if
+   * the crisis was resolved, or replaced by a newer one, since `mark` was taken. An event that is already open is
+   * left alone, except that it learns which check-in it belongs to and that an unsaved record is written again.
+   */
+  function openEvent(current: CrisisRecord, mark: CrisisMark, locale: Locale, screeningId: string | null): CrisisRecord | null {
+    if (deps.fallback.get()?.eventId !== mark.eventId) return null;
+    if (current.blocked && current.event) {
+      if (screeningId && !current.resumeScreeningId) return { ...current, resumeScreeningId: screeningId };
+      return current === unsaved ? current : null;
+    }
+    const event = CrisisEventSubmissionSchema.parse({
+      id: mark.eventId,
+      trigger: mark.trigger,
+      shownAt: mark.shownAt,
+      callTapped: null,
+      contextShared: false,
+      humanContactConfirmed: false,
+      contactSource: null,
+      contactAt: null,
+      resolvedAt: null,
+      locale,
+    });
+    return { ...current, blocked: true, trigger: mark.trigger, blockedAt: mark.shownAt, resumeScreeningId: screeningId, event };
   }
 
   return {
     read,
 
-    /** Sets the tab flag at once, with no storage involved. Called the moment a trigger answer is decided. */
-    markBlocked(): void {
-      deps.fallback?.set(true);
+    /** Sets the tab's mark at once, with no storage involved. Called the moment a trigger answer is decided. */
+    markBlocked(trigger: CrisisTrigger): void {
+      ensureMark(trigger);
     },
 
     /**
@@ -143,25 +215,25 @@ export function createCrisisStore(storage: StorageAdapter, deps: CrisisDeps) {
      * event that is open. Never throws, so the caller can go to the crisis screen whatever happens.
      */
     raise(input: { trigger: CrisisTrigger; screeningId: string | null; locale: Locale }): Promise<WriteStatus> {
-      deps.fallback?.set(true); // synchronously, before the store lock
-      return update((current) => {
-        if (current.blocked && current.event) return null;
-        const event = CrisisEventSubmissionSchema.parse({
-          id: deps.newId(),
-          trigger: input.trigger,
-          shownAt: deps.now().toISOString(),
-          callTapped: null,
-          contextShared: false,
-          humanContactConfirmed: false,
-          contactSource: null,
-          contactAt: null,
-          resolvedAt: null,
-          locale: input.locale,
-        });
-        return { ...current, blocked: true, trigger: input.trigger, blockedAt: event.shownAt, resumeScreeningId: input.screeningId, event };
-      }).then(
+      const mark = ensureMark(input.trigger); // synchronously, before the store lock
+      return update((current) => openEvent(current, mark, input.locale, input.screeningId)).then(
         (result) => result?.status ?? 'saved',
         () => 'failed',
+      );
+    },
+
+    /**
+     * Makes the stored block and the one event exist, if the tab says a crisis is open and the stored record has no
+     * open event: the case where storage refused or hung when the trigger was answered. It uses the event id the tab
+     * holds, so running it twice, at the same time or one after the other, or after a late `raise`, makes one event.
+     * It does nothing once the crisis is resolved. Never throws.
+     */
+    repair(locale: Locale): Promise<'repaired' | 'nothing'> {
+      const mark = deps.fallback.get();
+      if (!mark) return Promise.resolve('nothing');
+      return update((current) => openEvent(current, mark, locale, null)).then(
+        (result) => (result ? 'repaired' : 'nothing'),
+        () => 'nothing',
       );
     },
 
@@ -182,7 +254,7 @@ export function createCrisisStore(storage: StorageAdapter, deps: CrisisDeps) {
 
     /** "I'm with someone safe" or "I'm safe right now": releases the block and records when. */
     resolve(): Promise<{ record: CrisisRecord; status: WriteStatus } | null> {
-      deps.fallback?.set(false); // synchronously: releasing never waits on storage
+      deps.fallback.set(null); // synchronously: releasing never waits on storage
       return update((current) => {
         const resolvedAt = deps.now().toISOString();
         return {

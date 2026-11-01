@@ -39,7 +39,7 @@ export async function recordAnswer(input: { instrument: Instrument; index: numbe
   const trigger = answerFiresCrisis(instrument, index, value);
   // Before anything asynchronous: the tab's crisis flag is set at once, so whatever storage does next, Back and a
   // direct visit to a guarded screen in this tab still land on the crisis screen.
-  if (trigger) deps.crisis.markBlocked();
+  if (trigger) deps.crisis.markBlocked(trigger);
   const save = saveAnswer(deps.storage, { instrument, index, value, screeningId }, { now: deps.now, newId: deps.newId });
 
   if (!trigger) {
