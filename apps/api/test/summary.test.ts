@@ -2,6 +2,7 @@ import type { SummaryPrompt, SummaryProvider } from '@mawsool/summary';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { schema } from '../src/db/client';
+import { summaryLogContext } from '../src/tickets/service';
 import { runSeed } from '../src/seed/run';
 import { createTestApp, type TestApp } from './helpers/app';
 import { createTestDb, type TestDb } from './helpers/db';
@@ -112,7 +113,7 @@ describe('POST /summary/draft', () => {
     expect(log).toMatchObject({ kind: 'draft', personId: person.id, ticketId: null });
     expect(log!.ciphertext).toMatch(/^v1\./);
     expect(log!.ciphertext).not.toContain(PROVIDER_TEXT);
-    expect(cipher.decrypt(log!.ciphertext, 'summary-log')).toBe(PROVIDER_TEXT);
+    expect(cipher.decrypt(log!.ciphertext, summaryLogContext(person.id, requestId, 'draft'))).toBe(PROVIDER_TEXT);
   });
 
   it('needs a device credential and refuses an unknown field', async () => {
