@@ -606,5 +606,15 @@
     "id": "browser-snapshot-ticket",
     "sentence": "The ticket screen matches its baseline in both languages (browser)",
     "browser": "snapshot-ticket"
+  },
+  {
+    "id": "browser-approving-with-an-element-unticked-keeps-the-approval",
+    "sentence": "Approving with an element unticked keeps the approval and the element stays out of what is stored (browser)",
+    "browser": "approving-with-an-element-unticked-keeps-the-approval"
+  },
+  {
+    "id": "browser-ticket-tab-finds-a-ticket-after-a-failed-local-save",
+    "sentence": "After a failed local save the ticket tab finds the ticket from the server, a failed list is an error and a phone that never shared makes no request (browser)",
+    "browser": "ticket-tab-finds-a-ticket-after-a-failed-local-save"
   }
 ]

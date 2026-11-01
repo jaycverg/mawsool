@@ -98,5 +98,13 @@
   {
     "id": "snapshot-ticket",
     "sentence": "The ticket screen matches its committed snapshot at 390 x 844, with the code and QR masked"
+  },
+  {
+    "id": "approving-with-an-element-unticked-keeps-the-approval",
+    "sentence": "Approving a summary while an element it used is unticked keeps the approval, a hand-written summary is never unapproved by a tick, and the element is absent from what is stored"
+  },
+  {
+    "id": "ticket-tab-finds-a-ticket-after-a-failed-local-save",
+    "sentence": "After a send whose local note failed, the ticket tab finds the ticket from the server's list; a failed list is an error, and a phone that never shared makes no request"
   }
 ]

@@ -1,7 +1,8 @@
-import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page, type Request } from '@playwright/test';
 import acceptance from './acceptance-phase3.json';
 import {
   API,
+  BASE,
   INSPECT,
   LOCALES,
   computed,
@@ -429,6 +430,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
 
     // The new ticket links back, and the list reaches both.
     await expect(page.locator('[data-panel="referrals"] [data-ticket-link]')).toHaveCount(2);
+    expect((await page.locator('[data-earlier] a').boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await page.locator('[data-earlier] a').click();
     await expect(page).toHaveURL(new RegExp(`id=${parent}`));
     await expect(page.locator('[data-ticket]')).toBeVisible();
@@ -452,6 +454,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
   async 'stopping-removes-the-summary-and-unticking-unapproves'({ page, locale }) {
     await toConsent(page, locale);
     await tick(page, 'scores');
+    await page.locator('#use-ai').check(); // a draft made with the AI box ticked is built from what is ticked
     await page.getByRole('button', { name: msg(locale, 'consent.draft'), exact: true }).click();
     await page.locator('#summary').fill('SUMMARY-WORDS written with the scores in view');
     await page.getByRole('button', { name: msg(locale, 'consent.approve'), exact: true }).click();
@@ -472,6 +475,10 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
 
     await page.locator('[data-consent="scores"] button').click();
     await expect(page.locator('[data-notice="summary-removed"]')).toHaveText(msg(locale, 'ticket.summaryRemoved'));
+    // The notice is about sharing: it sits at the top of the sharing panel, above the list of what is shared.
+    await expect(page.locator('[data-panel="sharing"] [data-notice="summary-removed"]')).toHaveCount(1);
+    const noticeBox = (await page.locator('[data-notice="summary-removed"]').boundingBox())!;
+    expect(noticeBox.y).toBeLessThan((await page.locator('[data-consent]').first().boundingBox())!.y);
     const after = await stored(id);
     expect(after.bundle!.approvedSummaryCiphertext).toBeNull();
     expect(after.summaryLogs).toBe(0);
@@ -666,6 +673,92 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page).toHaveScreenshot(`ticket-${locale}.png`, { fullPage: true, mask: [page.locator('[data-code]'), page.locator('svg[data-qr]')] });
   },
 
+
+  async 'approving-with-an-element-unticked-keeps-the-approval'({ page, locale }) {
+    const sent: { approvedSummary: string | null; summaryBuiltFrom: string[]; consents: string[] }[] = [];
+    page.on('request', (request) => {
+      if (request.url() === `${API}/tickets` && request.method() === 'POST') sent.push(JSON.parse(request.postData() ?? '{}'));
+    });
+    const approve = (page: Page) => page.getByRole('button', { name: msg(locale, 'consent.approve'), exact: true });
+
+    // A draft made with the AI box ticked, the element then unticked: Approve works from that state, and the element stays out.
+    await toConsent(page, locale);
+    await tick(page, 'scores');
+    await page.locator('#use-ai').check();
+    await page.getByRole('button', { name: msg(locale, 'consent.draft'), exact: true }).click();
+    await page.locator('#summary').fill('WRITTEN-WITHOUT-THE-SCORES-NOW');
+    await page.locator('input[data-element="scores"]').uncheck();
+    await expect(page.locator('[data-stale]')).toBeVisible();
+    await approve(page).click();
+    await expect(page.getByText(msg(locale, 'consent.approved'))).toBeVisible();
+    await expect(page.locator('[data-stale]')).toHaveCount(0);
+    await page.waitForTimeout(300); // the approval must survive the effect that watches the ticks
+    await expect(page.getByText(msg(locale, 'consent.approved'))).toBeVisible();
+    await send(page, locale);
+    await expect(page).toHaveURL(ticketUrl(locale));
+    expect(sent[0]).toMatchObject({ approvedSummary: 'WRITTEN-WITHOUT-THE-SCORES-NOW', consents: ['ticket'], summaryBuiltFrom: ['ticket'] });
+    const first = await stored(ticketIdOf(page));
+    expect(first.bundle!.approvedSummaryCiphertext).toMatch(/^v1\./);
+    expect(first.bundle!.content).toEqual({});
+
+    // A summary written by hand (AI box unticked) is never unapproved by a tick.
+    await page.goto(`/${locale}/options/`);
+    await page.locator('[data-tier][data-lead] button').click();
+    await expect(page).toHaveURL(consentUrl(locale));
+    await tick(page, 'scores');
+    await page.locator('#use-ai').uncheck(); // the tick was kept from the last visit; this summary is written by hand
+    await page.getByRole('button', { name: msg(locale, 'consent.draft'), exact: true }).click();
+    await page.locator('#summary').fill('WRITTEN-BY-HAND');
+    await approve(page).click();
+    await page.locator('input[data-element="scores"]').uncheck();
+    await page.locator('input[data-element="scores"]').check();
+    await page.locator('input[data-element="scores"]').uncheck();
+    await expect(page.getByText(msg(locale, 'consent.approved'))).toBeVisible();
+    await expect(page.locator('[data-stale]')).toHaveCount(0);
+    await send(page, locale);
+    await expect(page).toHaveURL(ticketUrl(locale));
+    expect(sent[1]).toMatchObject({ approvedSummary: 'WRITTEN-BY-HAND', summaryBuiltFrom: [] });
+    expect((await stored(ticketIdOf(page))).bundle!.approvedSummaryCiphertext).toMatch(/^v1\./);
+  },
+
+  async 'ticket-tab-finds-a-ticket-after-a-failed-local-save'({ page, locale }) {
+    await installFailingIndexedDb(page);
+    await toConsent(page, locale);
+    await page.route(`${API}/tickets`, async (route) => {
+      const real = await route.fetch();
+      await setIdbMode(page, 'refuse-writes');
+      await route.fulfill({ response: real });
+    });
+    await send(page, locale);
+    await expect(page).toHaveURL(/\/ticket\/\?id=.*saved=0/);
+    const id = ticketIdOf(page);
+    await setIdbMode(page, null);
+    await page.unroute(`${API}/tickets`);
+
+    // The phone kept no note of the ticket, but it did give the server something: the tab asks for the list and opens the newest.
+    await page.goto(`/${locale}/ticket/`);
+    await expect(page.locator('[data-ticket]')).toBeVisible();
+    expect(ticketIdOf(page) ?? id).toBeTruthy();
+    await expect(page.getByText(msg(locale, 'ticket.noTicket'))).toHaveCount(0);
+
+    // If that list cannot be had, the person is told so, never that they have no referral.
+    await page.route(`${API}/me/tickets`, (route) => route.abort());
+    await page.goto(`/${locale}/ticket/`);
+    await expect(page.getByRole('alert').filter({ hasText: msg(locale, 'ticket.loadFailed') })).toBeVisible();
+    await expect(page.getByText(msg(locale, 'ticket.noTicket'))).toHaveCount(0);
+
+    // A phone that never shared anything makes no request for it.
+    const fresh = await (await page.context().browser()!.newContext({ viewport: { width: 390, height: 844 } })).newPage();
+    const asked: string[] = [];
+    fresh.on('request', (request: Request) => {
+      if (request.url().startsWith(API) && !(request.method() === 'GET' && new URL(request.url()).pathname === '/services')) asked.push(`${request.method()} ${new URL(request.url()).pathname}`);
+    });
+    await fresh.goto(`${BASE}/${locale}/ticket/`);
+    await expect(fresh.getByText(msg(locale, 'ticket.noTicket'))).toBeVisible();
+    await fresh.waitForTimeout(500);
+    expect(asked).toEqual([]);
+  },
+
   async 'consent-and-ticket-measure-at-390'({ page, locale }) {
     const ar = locale === 'ar';
     const h1 = { 'font-size': '24px', 'font-weight': '600', 'line-height': ar ? '34px' : '30px', color: 'rgb(16, 48, 45)' };
@@ -684,6 +777,9 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     const button = (await draft.boundingBox())!;
     expect(Math.abs(text.y + text.height / 2 - (button.y + button.height / 2))).toBeLessThan(button.height); // on one row
     expect(button.x === text.x ? 0 : 1).toBe(1);
+    // The "Sample service" chip never breaks across lines.
+    expect(await computed(page, '[data-sample]', ['white-space', 'display', 'background-color', 'color'])).toMatchObject({ 'white-space': 'nowrap', display: 'inline-flex', 'background-color': 'rgb(231, 228, 242)', color: 'rgb(62, 52, 112)' });
+    expect((await page.locator('[data-sample]').boundingBox())!.height).toBeLessThan(40); // one line; two would be over 50
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 
     await tick(page, 'scores');
@@ -695,6 +791,9 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect(await computed(page, '[data-code]', ['font-family'])).toMatchObject({ 'font-family': expect.stringMatching(/IBM Plex Mono/) });
     expect(await computed(page, '[data-ticket]', ['border-top-left-radius', 'background-color', 'border-top-color'])).toMatchObject({ 'border-top-left-radius': '18px', 'background-color': rgb.white, 'border-top-color': rgb.border });
     expect(await computed(page, '[data-ticket] > div:first-child', ['background-color'])).toMatchObject({ 'background-color': rgb.accent });
+    // The mock directory is labelled on the ticket too, in the same chip.
+    await expect(page.locator('[data-ticket] [data-sample]')).toHaveText(msg(locale, 'ticket.sample'));
+    expect(await computed(page, '[data-ticket] [data-sample]', ['background-color', 'color', 'white-space'])).toMatchObject({ 'background-color': 'rgb(231, 228, 242)', color: 'rgb(62, 52, 112)', 'white-space': 'nowrap' });
     // The QR box is 84 of code and 4 of white on each side: 92 square.
     expect(await computed(page, 'svg[data-qr]', ['padding-top', 'background-color', 'border-top-left-radius'])).toMatchObject({ width: 92, height: 92, 'padding-top': '4px', 'background-color': rgb.white, 'border-top-left-radius': '8px' });
     expect((await page.locator('svg[data-qr]').getAttribute('width'))).toBe('84');
@@ -704,8 +803,8 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     // Timeline: done badges 24, the next step a 20 px ring in the brand colour, the rest grey with muted titles.
     expect(await computed(page, '[data-step][data-done="true"] > div:first-child > span:first-child', [])).toMatchObject({ width: 24, height: 24 });
     const next = page.locator('[data-step][data-pending="next"]');
-    expect(await computed(page, '[data-step][data-pending="next"] > div:first-child > span:first-child', ['border-top-width', 'border-top-color'])).toMatchObject({ width: 20, height: 20, 'border-top-width': '2px', 'border-top-color': rgb.accent });
-    expect(await computed(page, '[data-step][data-pending="later"] > div:first-child > span:first-child', ['border-top-color'])).toMatchObject({ width: 20, height: 20, 'border-top-color': rgb.grey });
+    expect(await computed(page, '[data-step][data-pending="next"] > div:first-child > span:first-child', ['border-top-width', 'border-top-color'])).toMatchObject({ width: 24, height: 24, 'border-top-width': '2px', 'border-top-color': rgb.accent });
+    expect(await computed(page, '[data-step][data-pending="later"] > div:first-child > span:first-child', ['border-top-color'])).toMatchObject({ width: 24, height: 24, 'border-top-color': rgb.grey });
     expect(await computed(page, '[data-step][data-pending="later"] > div:last-child > div:first-child', ['color'])).toMatchObject({ color: rgb.muted });
     expect(await computed(page, '[data-step][data-pending="next"] > div:last-child > div:first-child', ['color'])).toMatchObject({ color: rgb.ink });
     await expect(next).toHaveCount(1);
