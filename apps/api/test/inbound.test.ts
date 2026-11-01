@@ -1,6 +1,6 @@
 import { createHmac, randomBytes } from 'node:crypto';
 import { INBOUND_SOURCES, INBOUND_WINDOW_SECONDS, type InboundSource } from '@mawsool/types';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { schema } from '../src/db/client';
 import { INBOUND_HEADERS, checkInbound, signInbound } from '../src/inbound/signing';
@@ -217,10 +217,28 @@ describe('POST /inbound/screens', () => {
     expect((await counts()).invites).toBe(before.invites);
   });
 
-  it('spends the nonce of a signed request even when its body is refused, so it cannot be retried with a fix', async () => {
-    const spent = nonce();
-    expect((await post({ body: { ...BODY, result: 'negative' }, nonce: spent })).statusCode).toBe(400);
-    expect((await post({ nonce: spent })).statusCode).toBe(401);
+  it('does not spend the nonce of a request whose body is refused: nothing was stored, so the corrected request is not a replay', async () => {
+    const free = nonce();
+    const before = await counts();
+    expect((await post({ body: { ...BODY, result: 'negative' }, nonce: free })).statusCode).toBe(400);
+    expect(await counts()).toEqual(before);
+    expect((await post({ nonce: free })).statusCode).toBe(201);
+    expect((await post({ nonce: free })).statusCode).toBe(401);
+  });
+
+  it('leaves the request retriable when the invite cannot be written: the nonce is not spent, and the same request then succeeds once', async () => {
+    const request = nonce();
+    const before = await counts();
+    // The invite insert fails after the nonce was taken (a constraint that refuses every row stands in for a database fault).
+    await testDb.db.execute(sql`ALTER TABLE inbound_invites ADD CONSTRAINT refuse_every_invite CHECK (false) NOT VALID`);
+    const failed = await post({ nonce: request, timestamp: Math.floor(ctx.clock.now().getTime() / 1000) });
+    await testDb.db.execute(sql`ALTER TABLE inbound_invites DROP CONSTRAINT refuse_every_invite`);
+    expect(failed.statusCode).toBe(500);
+    expect(await counts()).toEqual(before); // no invite, and no nonce spent
+    const again = await post({ nonce: request });
+    expect(again.statusCode).toBe(201);
+    expect(await counts()).toEqual({ ...before, invites: before.invites + 1, nonces: before.nonces + 1 });
+    expect((await post({ nonce: request })).json()).toMatchObject({ error: 'replayed' });
   });
 
   it('is not used by other routes: the raw-body parser lives in its own scope', async () => {
@@ -376,6 +394,34 @@ describe('claiming an invite and its source reaching the ticket', () => {
     const sent = await Promise.all([ticketRequest(gp, { inviteId: racing.inviteId }), ticketRequest(gp, { inviteId: racing.inviteId })].map((body) => ctx.app.inject({ method: 'POST', url: '/tickets', headers: person.headers, payload: body })));
     expect(sent.map((res) => res.statusCode)).toEqual([201, 201]);
     expect(sent.map((res) => res.json().ticket.source).sort()).toEqual(['app', 'phc']);
+  });
+
+  it('is deleted by Delete everything: the invites the person claimed, used or not, leave no row tying their id to a screen, and the ticket keeps its source', async () => {
+    const person = await registerPerson(ctx);
+    const bystander = await registerPerson(ctx);
+    const unused = await newInvite('phc');
+    const used = await newInvite('tamm');
+    const theirs = await newInvite('school');
+    const unclaimed = await newInvite('tamm');
+    await claim(person, unused.code);
+    await claim(person, used.code);
+    await claim(bystander, theirs.code);
+    const ticket = await issue(ctx, person, ticketRequest(gp, { inviteId: used.inviteId }));
+    expect((await inviteRow(used.inviteId)).ticketId).toBe(ticket.id);
+
+    const erased = await ctx.app.inject({ method: 'DELETE', url: '/me/data', headers: person.headers });
+    expect(erased.statusCode).toBe(200);
+
+    // Raw rows: nothing is left that names this person.
+    expect(await testDb.db.select().from(schema.inboundInvites).where(eq(schema.inboundInvites.claimedBy, person.id))).toEqual([]);
+    for (const gone of [unused, used]) expect(await testDb.db.select().from(schema.inboundInvites).where(eq(schema.inboundInvites.id, gone.inviteId))).toEqual([]);
+    // Someone else's claim and an unclaimed invite are untouched.
+    expect((await inviteRow(theirs.inviteId)).claimedBy).toBe(bystander.id);
+    expect((await inviteRow(unclaimed.inviteId)).claimedBy).toBeNull();
+    // The ticket keeps its own source, and the deleted codes cannot be claimed again.
+    const [stored] = await testDb.db.select({ source: schema.tickets.source }).from(schema.tickets).where(eq(schema.tickets.id, ticket.id));
+    expect(stored!.source).toBe('tamm');
+    expect((await claim(await registerPerson(ctx), unused.code)).statusCode).toBe(404);
   });
 
   it('does not apply an invite to a reroute, and the child ticket is an app ticket', async () => {
