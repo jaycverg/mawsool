@@ -3,9 +3,10 @@
 import { useLocale } from 'next-intl';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
-import { isBlocking } from '../lib/crisis';
+import { isBlocking, type BlockState } from '../lib/crisis';
 import { href, isGuardedPath } from '../lib/routes';
 import { getDevice } from '../lib/use-device';
+import { within } from '../lib/within';
 
 type Check = 'checking' | 'clear';
 
@@ -31,7 +32,8 @@ export function CrisisGuard({ children }: { children: ReactNode }) {
     const check = async () => {
       let blocked = true; // failing safe: an unreadable block counts as blocked
       try {
-        blocked = isBlocking(await getDevice().crisis.read());
+        // A read that takes over a second counts as unknown, which is blocked: the crisis screen needs no storage.
+        blocked = isBlocking(await within(getDevice().crisis.read(), 1000, { status: 'unknown', record: null } as BlockState));
       } catch {
         // Storage is unavailable; nothing can be matched without it, and the crisis screen needs none.
       }
