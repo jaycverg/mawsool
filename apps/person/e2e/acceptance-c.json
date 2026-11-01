@@ -1,0 +1,42 @@
+[
+  {
+    "id": "demo-steps-1-to-12",
+    "sentence": "The whole demo script, steps 1 to 12, runs with the demo clock moved from the admin panel and no console error, and ends with Noura's ticket seen with no overdue event on it, a logged contact-confirmed crisis event for Rashid, and the Urdu row flagged 18 to 22 points below overall"
+  },
+  {
+    "id": "dashboard-funnel-formula-and-note",
+    "sentence": "The positive-screen stage equals unclaimed unexpired invites plus parentless tickets plus crisis events, counted straight from the tables, and the tile shows its note"
+  },
+  {
+    "id": "dashboard-shows-suppressed-cells",
+    "sentence": "A funnel stage or equity group under 10 people shows as suppressed, with no number, bar, flag or rate"
+  },
+  {
+    "id": "admin-panel-controls-clock-and-reset",
+    "sentence": "The admin panel shows the crisis numbers' last_verified date, moves the demo clock by its three steps, resets to the seed and the real clock, and the API refuses the ops role the same controls"
+  },
+  {
+    "id": "clinic-queue-follows-the-demo-clock",
+    "sentence": "The clinic queue counts days left from the demo clock, so overdue marks agree with the API"
+  },
+  {
+    "id": "mock-label-audit",
+    "sentence": "Every mock or sample surface that exists carries its label: the mock TAMM page, the unverified instrument wording, the sample directory and indicative insurance, the Malaffi-ready export, and the dashboard's simulated data"
+  },
+  {
+    "id": "staff-apps-have-icons-and-log-no-console-error",
+    "sentence": "The clinician and ops apps declare an icon that loads, and their sign-in and home pages log no console error"
+  },
+  {
+    "id": "dashboard-toggle-and-rtl",
+    "sentence": "The ops dashboard has the Arabic and English toggle and runs right to left in Arabic"
+  },
+  {
+    "id": "dashboard-holds-the-board-and-plan-tokens",
+    "sentence": "The ops dashboard holds the board's type, colours, radii, chart sizes and 44 px tap targets"
+  },
+  {
+    "id": "snapshot-ops-dashboard",
+    "sentence": "The ops dashboard matches the committed snapshot"
+  }
+]

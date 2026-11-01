@@ -74,5 +74,21 @@
   {
     "id": "snapshot-clinician",
     "sentence": "The clinician queue and ticket detail match the committed snapshots"
+  },
+  {
+    "id": "clinician-sign-in-has-language-toggle",
+    "sentence": "At 390 wide, in both languages, the clinician sign-in page has the language toggle, naming the other language, as a 44 px target"
+  },
+  {
+    "id": "queue-tier-select-filters",
+    "sentence": "Choosing a tier in the queue's tier select narrows the list to that tier, and clearing it brings the rest back"
+  },
+  {
+    "id": "demo-off-routes-404-and-admin-panel-shows-last-verified",
+    "sentence": "With DEMO_MODE unset the demo routes return 404 for everyone, the clock read answers zero, and the admin panel disables its controls and still shows last_verified"
+  },
+  {
+    "id": "phone-recovers-when-the-server-forgets-it",
+    "sentence": "A phone whose person the server no longer holds registers again, settles on a screen with no ticket and a way forward instead of an error, and can send a new referral"
   }
 ]

@@ -12,9 +12,9 @@
 //   5. checks the report holds exactly the tests in the gate's registry, in both languages, none skipped;
 //   6. stops every server by process id, whatever happened.
 //
-// Ports are the dev ports plus the gate's shift (phase 2: 250, phase 3: 300, phase 4: 375, with PORT_OFFSET added), so a
+// Ports are the dev ports plus the gate's shift (phase 2: 250, phase 3: 300, phase 4: 375, gate C: 450, with PORT_OFFSET added), so a
 // gate runs beside `pnpm dev` and beside the other gates; 375 is not a multiple of 50, so no PORT_OFFSET in steps of
-// 100 makes it meet another gate's ports. No Docker is needed. Everything is bounded: 60 s per test, 10 minutes for
+// 100 makes it meet another gate's ports, and 450 meets none of the others at any such offset. No Docker is needed. Everything is bounded: 60 s per test, 10 minutes for
 // the suite, 16 minutes in all.
 //
 // `E2E_GREP=<text>` runs only the tests whose title contains the text, to work on one test. A subset run checks
@@ -24,12 +24,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ROOT, killTree, resolveEnv } from './lib.mjs';
 
-const TOTAL_LIMIT_MS = 16 * 60_000;
+const DEFAULT_TOTAL_LIMIT_MS = 16 * 60_000;
 const LOCALES = ['ar', 'en'];
 
 /**
- * @typedef {{ name: string, spec: string, registry: string, portShift: number, clinician?: boolean, ops?: boolean }} Gate
- * `spec` and `registry` are paths under apps/person/e2e. `clinician` and `ops` also build and serve that staff app.
+ * @typedef {{ name: string, spec: string, registry: string, portShift: number, clinician?: boolean, ops?: boolean, demo?: boolean, limitMs?: number, suiteTimeoutMs?: number }} Gate
+ * `spec` and `registry` are paths under apps/person/e2e. `clinician` and `ops` also build and serve that staff app. `demo` starts
+ * the API with `DEMO_MODE` on (the demo clock and reset routes); every other gate leaves them unregistered. `limitMs` and
+ * `suiteTimeoutMs` raise the gate's total limit (default 16 minutes) and Playwright's suite limit (default 10) for a longer run.
  */
 
 /** @param {Gate} gate */
@@ -106,10 +108,11 @@ async function finish(code) {
   process.exit(code);
 }
 
+const totalLimitMs = gate.limitMs ?? DEFAULT_TOTAL_LIMIT_MS;
 const watchdog = setTimeout(() => {
-  log(`gave up after ${TOTAL_LIMIT_MS / 60_000} minutes`);
+  log(`gave up after ${totalLimitMs / 60_000} minutes`);
   void finish(1);
-}, TOTAL_LIMIT_MS);
+}, totalLimitMs);
 watchdog.unref();
 for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) process.on(signal, () => void finish(130));
 
@@ -130,6 +133,7 @@ try {
     E2E_API_PORT: String(apiPort),
     E2E_INSPECT_PORT: String(inspectPort),
     E2E_ORIGIN: base,
+    ...(gate.demo ? { E2E_DEMO_MODE: '1' } : {}),
     ...staffUrlEnv,
   });
   serve('node', ['apps/person/e2e/serve-static.mjs'], { E2E_STATIC_PORT: String(staticPort) });
@@ -149,6 +153,7 @@ try {
     E2E_BASE_URL: base,
     E2E_API_URL: api,
     E2E_INSPECT_URL: inspect,
+    ...(gate.suiteTimeoutMs ? { E2E_SUITE_TIMEOUT_MS: String(gate.suiteTimeoutMs) } : {}),
     ...staffUrlEnv,
   });
 

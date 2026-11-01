@@ -6,9 +6,10 @@
  * @typedef {{ file: string, name?: string, project?: string }} TestRef
  *   `file` is relative to the project; `project` overrides the entry's. With `name`, exactly one test in that file must match (a substring of its full
  *   name); without `name`, the file must hold at least one test and every one of them must pass.
- * @typedef {{ id: string, sentence: string, project?: string, tests?: TestRef[], browser?: string }} Entry
- *   `project` is the default project of the entry's tests. `browser` names a test id in the browser gate's registry
- *   (`gate:phase3`), for a sentence only a browser can prove.
+ * @typedef {{ id: string, sentence: string, project?: string, tests?: TestRef[], browser?: string, delegated?: { gate: string, id: string } }} Entry
+ *   `project` is the default project of the entry's tests. `browser` names a test id in this gate's own browser registry, for
+ *   a sentence only a browser can prove; `delegated` names a test id in another gate's browser registry (`gate`, such as
+ *   `gate:phase4`, and the id there) for a sentence whose browser proof needs that gate's setup.
  * @typedef {{ file: string, fullName: string, status: string }} Result
  * @typedef {Record<string, Result[]>} Reports  project path -> every test result from its run
  */
@@ -16,10 +17,11 @@
 /**
  * @param {Entry[]} registry
  * @param {Reports} reports
- * @param {string[]} browserIds ids in the browser gate's registry
+ * @param {string[]} browserIds ids in the gate's own browser registry
+ * @param {Record<string, string[]>} [delegatedIds] ids in the browser registries of the other gates a sentence may name, by gate
  * @returns {string[]} one line per problem; empty when every sentence is covered by passing tests
  */
-export function evaluateRegistry(registry, reports, browserIds) {
+export function evaluateRegistry(registry, reports, browserIds, delegatedIds = {}) {
   /** @type {string[]} */
   const problems = [];
   const ids = registry.map((entry) => entry.id);
@@ -30,7 +32,10 @@ export function evaluateRegistry(registry, reports, browserIds) {
 
   for (const entry of registry) {
     const refs = entry.tests ?? [];
-    if (refs.length === 0 && !entry.browser) problems.push(`${entry.id}: no test is named for this sentence`);
+    if (refs.length === 0 && !entry.browser && !entry.delegated) problems.push(`${entry.id}: no test is named for this sentence`);
+    if (entry.delegated && !(delegatedIds[entry.delegated.gate] ?? []).includes(entry.delegated.id)) {
+      problems.push(`${entry.id}: the browser test "${entry.delegated.id}" is not in the registry of ${entry.delegated.gate}`);
+    }
     if (entry.browser && !browserIds.includes(entry.browser)) problems.push(`${entry.id}: the browser test "${entry.browser}" is not in the browser gate's registry`);
     for (const ref of refs) {
       const project = ref.project ?? entry.project ?? '';

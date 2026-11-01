@@ -9,16 +9,18 @@
 //
 // Usage: tsx src/cli/serve-e2e.ts   (E2E_API_PORT, E2E_INSPECT_PORT, E2E_ORIGIN, E2E_CLINICIAN_URL, E2E_OPS_URL)
 import { PGlite } from '@electric-sql/pglite';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, isNull, sql } from 'drizzle-orm';
 import { validateFhir } from '@mawsool/fhir/validate';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { createServer } from 'node:http';
 import { buildApp } from '../app';
+import { systemClock } from '../clock';
 import { createCipher } from '../crypto';
 import { schema, type Db } from '../db/client';
 import { MIGRATIONS_FOLDER } from '../db/migrate';
-import { runSeed } from '../seed/run';
+import { readStaffAccess, runSeed } from '../seed/run';
+import { startOfDubaiDay } from '../metrics/facts';
 import { E2E_INBOUND_KEYS } from './e2e-keys';
 import { FACILITY_A_ID, STAFF } from '../seed/fixtures';
 import { sha256Hex } from '../security';
@@ -145,6 +147,23 @@ const inspect = createServer(async (request, response) => {
   } else if (/^\/invites\/[0-9a-f-]{36}$/.test(url.pathname)) {
     const [invite] = await db.select().from(schema.inboundInvites).where(eq(schema.inboundInvites.id, url.pathname.split('/')[2]!));
     response.end(JSON.stringify(invite ?? null));
+  } else if (url.pathname === '/funnel-parts') {
+    // The first funnel stage counted straight from the tables with plain SQL, independent of the metrics code, so a test
+    // can hold the dashboard to the plan's formula: unclaimed unexpired invites + parentless tickets + crisis events.
+    const now = new Date(url.searchParams.get('now') ?? 0);
+    const since = url.searchParams.get('since') ? new Date(url.searchParams.get('since')!) : new Date(0);
+    const count = async (query: Promise<{ n: number }[]>) => (await query)[0]!.n;
+    const [openInvites, journeys, crisisEvents] = await Promise.all([
+      count(db.select({ n: sql<number>`count(*)::int` }).from(schema.inboundInvites).where(and(isNull(schema.inboundInvites.claimedBy), gt(schema.inboundInvites.expiresAt, now), gte(schema.inboundInvites.createdAt, since)))),
+      count(db.select({ n: sql<number>`count(*)::int` }).from(schema.tickets).where(and(isNull(schema.tickets.parentTicketId), gte(schema.tickets.createdAt, since)))),
+      count(db.select({ n: sql<number>`count(*)::int` }).from(schema.crisisEvents).where(gte(schema.crisisEvents.shownAt, since))),
+    ]);
+    response.end(JSON.stringify({ openInvites, journeys, crisisEvents, total: openInvites + journeys + crisisEvents }));
+  } else if (request.method === 'POST' && url.pathname === '/e2e/reseed') {
+    // Puts the database back to the seed behind every phone's back, the way a lost database would: the people are gone.
+    // Staff sign-ins are kept. Not a product route.
+    await runSeed(db, startOfDubaiDay(systemClock.now()), await readStaffAccess(db));
+    response.end('{}');
   } else if (url.pathname === '/persons/count') {
     response.end(JSON.stringify({ count: (await db.select({ id: schema.persons.id }).from(schema.persons)).length }));
   } else {
