@@ -4,6 +4,10 @@
  */
 export interface StorageAdapter {
   get<T>(key: string): Promise<T | undefined>;
+  /**
+   * Resolves once the value is committed to the store, not when the write was merely accepted: a write that is later
+   * rolled back (quota, a closing database) rejects. Revoke and delete rely on this to know a record is really gone.
+   */
   set<T>(key: string, value: T): Promise<void>;
   /**
    * Stores `value` only if nothing is stored under `key`, and returns whatever is stored afterwards: the existing
@@ -41,6 +45,23 @@ function open({ indexedDB, dbName = 'mawsool', storeName = 'kv' }: IndexedDbStor
   });
 }
 
+/** Resolves when the transaction has committed, and rejects if it fails or is aborted, whatever its requests said. */
+function committed(tx: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error('IndexedDB transaction failed'));
+    tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'));
+  });
+}
+
+/** Runs one write in its own transaction and waits for the commit. */
+async function write(db: () => Promise<IDBDatabase>, storeName: string, operation: (store: IDBObjectStore) => IDBRequest): Promise<void> {
+  const tx = (await db()).transaction(storeName, 'readwrite');
+  const done = committed(tx);
+  operation(tx.objectStore(storeName));
+  await done;
+}
+
 /** A key-value store in IndexedDB. Values are stored with the structured clone algorithm. */
 export function createIndexedDbStorage(options: IndexedDbStorageOptions): StorageAdapter {
   const storeName = options.storeName ?? 'kv';
@@ -52,9 +73,7 @@ export function createIndexedDbStorage(options: IndexedDbStorageOptions): Storag
     async get<T>(key: string) {
       return (await request((await store('readonly')).get(key))) as T | undefined;
     },
-    async set<T>(key: string, value: T) {
-      await request((await store('readwrite')).put(value, key));
-    },
+    set: (key, value) => write(db, storeName, (store) => store.put(value, key)),
     async setIfAbsent<T>(key: string, value: T) {
       // One readwrite transaction: IndexedDB runs these one after another, so the second racer sees the first's write.
       const tx = (await db()).transaction(storeName, 'readwrite');
@@ -71,14 +90,10 @@ export function createIndexedDbStorage(options: IndexedDbStorageOptions): Storag
         tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'));
       });
     },
-    async remove(key) {
-      await request((await store('readwrite')).delete(key));
-    },
+    remove: (key) => write(db, storeName, (store) => store.delete(key)),
     async keys() {
       return (await request((await store('readonly')).getAllKeys())).map(String);
     },
-    async clear() {
-      await request((await store('readwrite')).clear());
-    },
+    clear: () => write(db, storeName, (store) => store.clear()),
   };
 }
