@@ -16,7 +16,7 @@ Source of the strings: `apps/person/messages/en.json` and `ar.json`, namespaces 
 | Hopeful and calm, never alarming; no countdown, no red warning text | Met by copy; the call buttons are red, which is the one alarm-coloured element | `crisis.heading`, `crisis.body` |
 | Reaching out is framed as a strength, not a failure | Met: "It is good that you reached out" | `crisis.reachedThanks` |
 | No blame, no pressure to explain, no "you should" | Met: every action is an offer ("Call now", "I'm with someone safe") | `crisis.callNow`, `withSomeone`, `safeNow` |
-| A real person is the next step, with numbers as text and as tap-to-call | Met: three numbers, each as text and as a link | `crisis.callSakina`, `call998`, `call999` |
+| A real person is the next step, with numbers as text and as tap-to-call | Met: three numbers, each as text and as a link | `crisis.hotlineTitle`, `hotlineDetail`, `callEmergency` |
 | The way out is the person's choice; nothing dismisses itself | Met: only two buttons release the screen; no timer, no swipe | `crisis.withSomeone`, `safeNow` |
 | Emergency numbers stay visible after the person says they are safe | Met: "Help now" is on every other screen and goes straight here | `common.helpNow` |
 | Works without internet | Met: the screen and its numbers are in the page itself, precached by the service worker | `crisis.offline` |
