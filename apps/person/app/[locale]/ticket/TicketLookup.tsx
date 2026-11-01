@@ -10,9 +10,9 @@ export function TicketLookup() {
   const t = useTranslations('ticket');
   const id = useSearchParams().get('id');
   return (
-    <>
+    <div className="flex min-h-dvh flex-col">
       <HomeHeader />
-      <main className="mx-auto flex max-w-md flex-col gap-3 p-4">
+      <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-3 p-4">
         <h1 className="t-h1">{t('heading')}</h1>
         {id ? (
           <p className="t-body">
@@ -23,6 +23,6 @@ export function TicketLookup() {
         )}
       </main>
       <BottomNav />
-    </>
+    </div>
   );
 }

@@ -35,9 +35,9 @@ export function HomeScreen() {
   const nextCheckIn = latest ? formatDate(addWeeks(latest.takenAt, selectRow(list.filter(isCompleteScreening)).row.recheckWeeks), lang, 'long') : null;
 
   return (
-    <>
+    <div className="flex min-h-dvh flex-col">
       <HomeHeader />
-      <main className="mx-auto flex max-w-md flex-col gap-4 px-4 py-5">
+      <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 px-4 py-5">
         {part && <p className="text-[15px] text-muted">{t(part === 'morning' ? 'greetingMorning' : part === 'afternoon' ? 'greetingAfternoon' : 'greetingEvening')}</p>}
 
         {screenings === 'unavailable' && (
@@ -57,7 +57,7 @@ export function HomeScreen() {
             </a>
           )}
           <div className="flex flex-wrap items-center gap-x-4 text-small text-muted">
-            <span>{t('direct')}</span>
+            <span className="basis-full">{t('direct')}</span>
             <a className="tap inline-flex items-center font-semibold text-accent" href={href(lang, 'check-in', { i: 'phq9' })}>
               {t('directPhq9')}
             </a>
@@ -95,6 +95,6 @@ export function HomeScreen() {
         </p>
       </main>
       <BottomNav />
-    </>
+    </div>
   );
 }

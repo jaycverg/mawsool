@@ -24,9 +24,9 @@ export function CheckInsScreen() {
   const finished = (Array.isArray(screenings) ? screenings : []).filter(isCompleteScreening).sort((a, b) => Date.parse(b.takenAt) - Date.parse(a.takenAt));
 
   return (
-    <>
+    <div className="flex min-h-dvh flex-col">
       <HomeHeader />
-      <main className="mx-auto flex max-w-md flex-col gap-4 px-4 py-5">
+      <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 px-4 py-5">
         <h1 className="t-h1">{t('title')}</h1>
         {screenings !== null && finished.length === 0 && (
           <>
@@ -72,6 +72,6 @@ export function CheckInsScreen() {
         )}
       </main>
       <BottomNav />
-    </>
+    </div>
   );
 }

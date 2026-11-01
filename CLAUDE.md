@@ -31,7 +31,10 @@ Node comes from `.nvmrc` (`nvm use`); pnpm is pinned by `packageManager`. Copy `
 | `pnpm gate:a` | crisis triggers fire with every network entry point stubbed to throw |
 | `pnpm gate:facility-scope` | a clinician at one facility gets 404 on another facility's ticket |
 | `pnpm gate:seed` | seed content, determinism and the planted Urdu gap |
+| `pnpm gate:phase2` | Phase 2 exit acceptance: builds the person export, serves it with the real API on in-process Postgres, and runs the Playwright suite in `apps/person/e2e` in `ar` and `en` with a real service worker. No Docker. Not part of `verify` |
 | `pnpm db:up` / `db:down` / `db:migrate` / `db:seed` | Postgres lifecycle, migrations, deterministic seed |
+
+`gate:phase2` installs Chromium on first use (only Chromium), runs on ports 250 above the dev ports (api 4250, export 3250, plus `PORT_OFFSET`), is bounded at 60 s a test and 9 minutes for the suite, and fails unless the report holds exactly the tests in `apps/person/e2e/acceptance.json`, in both languages. It rebuilds `apps/person/out` with its own API address baked in, so run `pnpm build` again before serving that folder elsewhere. It stays out of `verify` because it downloads a browser and takes minutes; run it before merging anything that touches the person app.
 
 Tests that need a database use in-process PGlite with the real migrations, so `pnpm test` and the `gate:*` commands need no Docker. `pnpm verify` ends with `smoke:dev`, and `smoke:dev` and `db:*` do need Docker.
 
@@ -60,5 +63,7 @@ Second copy of the repo on one machine (for example a gate run from another work
 - A commit message is one line. No ticket numbers in code comments or product identifiers.
 - Tests: a case per recovery branch; prove a guard by deleting it and watching its test fail; no disjunctive assertions.
 - The person app stays wrappable as a native app: static export, no server components or actions, platform access only through `packages/ui` adapters.
-- The person app's service worker gets its precache list from `apps/person/scripts/build-precache.mjs` after `next build` (pages, built CSS and JS, fonts, manifest, icons, version from the build). To make a screen open offline, add its route to `PRECACHE_ROUTES` there.
+- `.pnpmfile.cjs` drops Next's optional `@playwright/test` peer, so installing Playwright in one package does not make pnpm resolve a second copy of Next for it.
+- The person app keeps everything on the device in an AES-GCM encrypted IndexedDB (`packages/ui/src/platform/encrypted-storage.ts`, key non-extractable). A trigger answer sets a persisted crisis block (`apps/person/lib/crisis.ts`); `CrisisGuard` in the `[locale]` layout sends `GUARDED_ROUTES` (`apps/person/lib/routes.ts`) to `/crisis` until it is resolved. Add a new matching or ticket screen to that list.
+- The person app's service worker gets its precache list from `apps/person/scripts/build-precache.mjs` after `next build` (pages, built CSS and JS, fonts, manifest, icons, version from the build). To make a screen open offline, add it to `OFFLINE_SCREENS` there.
 - `.local/` (plans, spec, design boards) is git-ignored and lives outside worktrees; read it by absolute path.
