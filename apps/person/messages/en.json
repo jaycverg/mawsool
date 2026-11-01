@@ -14,8 +14,7 @@
     "back": "Back",
     "next": "Next",
     "loading": "Loading…",
-    "retry": "Try again",
-    "sample": "Sample data"
+    "retry": "Try again"
   },
   "home": {
     "greetingMorning": "Good morning",
@@ -49,7 +48,7 @@
     "close": "Close check-in",
     "progress": "Question {current} of {total}",
     "finish": "See my result",
-    "note": "This is a validated screening questionnaire. There are no right or wrong answers, and you can stop at any time.",
+    "note": "This is a screening questionnaire. There are no right or wrong answers, and you can stop at any time.",
     "saved": "Answers are saved on this phone only.",
     "saveFailed": "This answer could not be saved on this phone. Try again.",
     "unavailable": "This browser cannot keep your answers private on this phone, so the check-in cannot start. If you need help now, tap Help now."
@@ -62,7 +61,6 @@
     "title": "Your result",
     "back": "Back",
     "outOf": "out of {max}",
-    "bandLabel": "Severity bands",
     "how": "How you've changed",
     "span": "{unit, select, week {{count, plural, one {# week} other {# weeks}}} other {{count, plural, one {# day} other {# days}}}}",
     "points": "{count, plural, one {# point} other {# points}}",
@@ -250,8 +248,6 @@
     "reachedNo": "Not yet",
     "reachedThanks": "Thank you for telling us. It is good that you reached out. You can call again at any time.",
     "reachedLater": "You can call again at any time. The numbers stay on this screen.",
-    "pinned": "Help now",
-    "manualBack": "Back",
     "unsavedNote": "This phone could not save your choice. It will ask again if the app is reopened."
   },
   "settings": {

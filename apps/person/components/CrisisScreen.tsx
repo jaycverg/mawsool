@@ -1,6 +1,6 @@
 'use client';
 
-import { CRISIS_NUMBERS_CONFIG, isCompleteScreening } from '@mawsool/rules';
+import { isCompleteScreening } from '@mawsool/rules';
 import type { CrisisNumber } from '@mawsool/types';
 import { createWebDialler, isLocale } from '@mawsool/ui';
 import { BrandMark, LanguageToggle } from '@mawsool/ui/components';
@@ -8,6 +8,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CrisisRecord } from '../lib/crisis';
+import { crisisLines, formatDialNumber } from '../lib/crisis-numbers';
 import { href } from '../lib/routes';
 import { loadScreenings } from '../lib/screening-store';
 import { useDevice } from '../lib/use-device';
@@ -15,8 +16,14 @@ import { syncNow } from '../lib/sync';
 
 type Reached = 'unasked' | 'asking' | 'yes' | 'later';
 
-const SAKINA: CrisisNumber = '800725462';
-const SPACED: Record<CrisisNumber, string> = { '800725462': '800 725462', '999': '999', '998': '998' };
+const LINES = crisisLines();
+const SAKINA: CrisisNumber = LINES.primary;
+/** Message keys for each number's title and one-line description. The numbers themselves come from the config. */
+const WORDS: Record<CrisisNumber, { title: string; detail: string }> = {
+  '800725462': { title: 'callSakina', detail: 'sakinaDetail' },
+  '998': { title: 'call998', detail: 'ambulance' },
+  '999': { title: 'call999', detail: 'police' },
+};
 
 /**
  * The crisis screen: calm, full screen, no tab bar, no auto-dismiss. Works offline and with no AI.
@@ -52,10 +59,7 @@ export function CrisisScreen() {
     if (reached === 'asking') promptRef.current?.focus();
   }, [reached]);
 
-  const known = (number: CrisisNumber) => CRISIS_NUMBERS_CONFIG.some((entry) => entry.number === number);
-
   function call(number: CrisisNumber) {
-    if (!known(number)) return;
     dialler.dial(number);
     if (reached === 'unasked' || reached === 'later') setReached('asking');
     if (device && device !== 'unavailable') {
@@ -126,15 +130,16 @@ export function CrisisScreen() {
             </svg>
           </span>
           <span className="flex flex-col gap-0.5">
-            <span className="text-[20px] font-bold">{t('callSakina')}</span>
-            <span className="text-[14px] leading-[19px] text-[#FBE3E0]">
-              <bdi dir="ltr">{SPACED[SAKINA]}</bdi> · {t('sakinaDetail')}
-            </span>
+            <span className="text-[20px] font-bold">{t(WORDS[SAKINA].title)}</span>
+            <bdi dir="ltr" className="self-start text-[16px] font-semibold">
+              {formatDialNumber(SAKINA)}
+            </bdi>
+            <span className="text-[14px] leading-[19px] text-[#FBE3E0]">{t(WORDS[SAKINA].detail)}</span>
           </span>
         </a>
 
         <div className="grid grid-cols-2 gap-2.5">
-          {(['998', '999'] as const).map((number) => (
+          {LINES.emergency.map((number) => (
             <a
               key={number}
               href={`tel:${number}`}
@@ -144,8 +149,8 @@ export function CrisisScreen() {
               }}
               className={`${tile} no-underline`}
             >
-              <span className="text-[20px] font-bold">{t(number === '998' ? 'call998' : 'call999')}</span>
-              <span className="text-[14px] text-[#4D3330]">{t(number === '998' ? 'ambulance' : 'police')}</span>
+              <span className="text-[20px] font-bold">{t(WORDS[number].title)}</span>
+              <span className="text-[14px] text-[#4D3330]">{t(WORDS[number].detail)}</span>
             </a>
           ))}
         </div>

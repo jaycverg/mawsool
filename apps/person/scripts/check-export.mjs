@@ -83,9 +83,12 @@ const allHtml = [en, ar].join('\n');
 need(!/fonts\.(googleapis|gstatic)\.com/.test(allHtml), 'pages reference a font CDN');
 
 // The crisis screen ships with its numbers in the page itself, in both languages, so it opens offline from the cache.
-for (const [locale, call] of [['en', 'Call 800-SAKINA'], ['ar', 'اتصل بـ 800-SAKINA']]) {
+for (const locale of ['en', 'ar']) {
   const crisis = html(`${locale}/crisis/index.html`);
-  need(crisis.includes(call) && crisis.includes('800 725462') && crisis.includes('tel:998') && crisis.includes('tel:999'), `${locale} crisis page is missing its numbers`);
+  need(
+    crisis.includes('800-SAKINA') && crisis.includes('800 725462') && crisis.includes('tel:800725462') && crisis.includes('tel:998') && crisis.includes('tel:999'),
+    `${locale} crisis page is missing its numbers`,
+  );
 }
 // A guarded screen's static page holds only the waiting state: no option or check-in content before the block is read.
 for (const locale of ['en', 'ar']) {
