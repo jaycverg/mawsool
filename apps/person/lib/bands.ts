@@ -21,7 +21,7 @@ export const BAND_SEGMENTS: Partial<Record<Instrument, BandSegment[]>> = {
     { id: 'minimal', values: 5, color: '#E0F0EC' },
     { id: 'mild', values: 5, color: '#A9D4CA' },
     { id: 'moderate', values: 5, color: '#E8B46A' },
-    { id: 'severe', values: 6, color: '#B3621B' },
+    { id: 'severe', values: 7, color: '#B3621B' },
   ],
 };
 
