@@ -168,6 +168,7 @@ export async function issueTicket(deps: TicketDeps, personId: string, request: C
           ticketId: ticket.id,
           requestId: request.summaryRequestId ?? request.clientRequestId,
           kind: 'approved',
+          builtFrom: [...new Set(request.summaryBuiltFrom)],
           ciphertext: cipher.encrypt(request.approvedSummary, summaryLogContext(personId, request.summaryRequestId ?? request.clientRequestId, 'approved')),
           createdAt: now,
         });

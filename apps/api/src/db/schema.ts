@@ -269,6 +269,8 @@ export const summaryLogs = pgTable(
     requestId: uuid('request_id').notNull(),
     kind: text('kind').notNull(),
     ciphertext: text('ciphertext').notNull(),
+    /** The consent elements the draft was made from (what `POST /summary/draft` was told was consented), or the ticket's built-from list for an approved row. Stopping one of them deletes the row. */
+    builtFrom: consentElementEnum('built_from').array().notNull().default(sql`'{}'`),
     createdAt: at('created_at').notNull(),
   },
   (t) => [index('summary_logs_person_idx').on(t.personId), index('summary_logs_ticket_idx').on(t.ticketId), check('summary_logs_kind', sql`${t.kind} IN ('draft', 'approved')`)],

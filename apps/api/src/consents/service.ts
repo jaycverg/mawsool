@@ -1,6 +1,6 @@
 import { notShared, redact, withoutElement } from '@mawsool/consent';
 import { BundleContentSchema, type BundleContent, type ConsentElement, type ConsentRecord, type GrantConsentRequest, type StaffBundleView, type TicketState } from '@mawsool/types';
-import { and, eq, isNull, or } from 'drizzle-orm';
+import { and, arrayContains, eq, isNull, or } from 'drizzle-orm';
 import type { Clock } from '../clock';
 import type { Cipher } from '../crypto';
 import { schema, type Db } from '../db/client';
@@ -71,9 +71,10 @@ interface Revoked {
 /**
  * Deletes a ticket's logged summaries: the person's rows linked to it, and any draft made under the ticket's own request
  * id that was never linked (a draft whose page was reloaded before the ticket was sent). With `unclaimed`, also the
- * person's drafts that no ticket ever claimed. Returns how many rows went.
+ * person's drafts that no ticket ever claimed. With `holding`, only the rows whose `built_from` holds that element go.
+ * Returns how many rows went.
  */
-async function deleteSummaryLogs(tx: Executor, personId: string, ticketId: string, options: { unclaimed: boolean }): Promise<number> {
+async function deleteSummaryLogs(tx: Executor, personId: string, ticketId: string, options: { unclaimed: boolean; holding?: ConsentElement }): Promise<number> {
   const [ticket] = await tx.select({ requestId: schema.tickets.clientRequestId }).from(schema.tickets).where(eq(schema.tickets.id, ticketId)).limit(1);
   const gone = await tx
     .delete(schema.summaryLogs)
@@ -81,6 +82,7 @@ async function deleteSummaryLogs(tx: Executor, personId: string, ticketId: strin
       and(
         eq(schema.summaryLogs.personId, personId),
         or(eq(schema.summaryLogs.ticketId, ticketId), ticket?.requestId ? eq(schema.summaryLogs.requestId, ticket.requestId) : undefined, options.unclaimed ? isNull(schema.summaryLogs.ticketId) : undefined),
+        options.holding ? arrayContains(schema.summaryLogs.builtFrom, [options.holding]) : undefined,
       ),
     )
     .returning({ id: schema.summaryLogs.id });
@@ -90,8 +92,10 @@ async function deleteSummaryLogs(tx: Executor, personId: string, ticketId: strin
 /**
  * Stops one optional element. The bundle is rewritten without it, and nothing else in the row changes, with one
  * exception: if the approved summary was written from the element being stopped (the bundle records which elements it
- * was written from), the approved summary and the ticket's logged drafts go in the same transaction and the result says
- * so. A summary written from other things, or by hand, stays, and so do its logs.
+ * was written from), the approved summary and all the ticket's logged drafts go in the same transaction and the result
+ * says so. A summary written from other things, or by hand, stays. Either way, every logged draft or approved text of this
+ * person's that was made from the stopped element (its `built_from` holds it) goes too, since the words in it came from
+ * that element; log rows made from other elements stay.
  */
 async function dropElement(tx: Executor, cipher: Cipher, consent: ConsentRow, now: Date): Promise<Revoked> {
   const ticketId = consent.ticketId!;
@@ -105,8 +109,8 @@ async function dropElement(tx: Executor, cipher: Cipher, consent: ConsentRow, no
       .update(schema.sharedBundles)
       .set({ contentCiphertext: cipher.encrypt(JSON.stringify(content), bundleContext(ticketId)), ...(summaryRemoved ? { approvedSummaryCiphertext: null, summaryBuiltFrom: [] } : {}) })
       .where(eq(schema.sharedBundles.id, bundle.id));
-    if (summaryRemoved) await deleteSummaryLogs(tx, consent.personId, ticketId, { unclaimed: false });
   }
+  await deleteSummaryLogs(tx, consent.personId, ticketId, { unclaimed: false, holding: summaryRemoved ? undefined : consent.element });
   return { revoked, state: (await lastEvent(tx, ticketId))?.state ?? 'issued', summaryRemoved };
 }
 
