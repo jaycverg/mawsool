@@ -60,7 +60,7 @@ export const GAD7_WORDING: InstrumentWording = {
     },
     "ar": {
       "locale": "ar",
-      "wordingStatus": "verified",
+      "wordingStatus": "unverified",
       "sourceId": "gad7-ar",
       "stem": "خلال الأسبوعين الماضيين، كم مرّة أقلقتك المشاكل التّالية؟",
       "options": [

@@ -43,18 +43,23 @@ describe('wording data', () => {
 describe('wordingStatus', () => {
   const status = (i: (typeof INSTRUMENTS)[number], l: (typeof LOCALES)[number]) => wordingFor(i, l).wordingStatus;
 
-  it('marks the wording that came from a machine-checkable published source as verified', () => {
+  it('marks only the English forms with a cited published validation study as verified', () => {
     expect(status('phq9', 'en')).toBe('verified');
-    expect(status('phq9', 'ar')).toBe('verified');
     expect(status('gad7', 'en')).toBe('verified');
-    expect(status('gad7', 'ar')).toBe('verified');
     expect(status('who5', 'en')).toBe('verified');
-    expect(status('cssrs', 'en')).toBe('verified');
   });
 
-  it('keeps the Arabic WHO-5 hand transcription and the missing Arabic C-SSRS unverified', () => {
-    expect(status('who5', 'ar')).toBe('unverified');
-    expect(status('cssrs', 'ar')).toBe('unverified');
+  it('keeps every other instrument and locale unverified, including copied Arabic text with no validation statement', () => {
+    expect(status('cssrs', 'en')).toBe('unverified');
+    for (const instrument of INSTRUMENTS) expect(status(instrument, 'ar'), `${instrument} ar`).toBe('unverified');
+  });
+
+  it('keeps the text of the Arabic PHQ-9, GAD-7 and WHO-5 while marking it unverified', () => {
+    for (const instrument of ['phq9', 'gad7', 'who5'] as const) {
+      const wording = wordingFor(instrument, 'ar');
+      expect(wording.sourceId).toBe(`${instrument}-ar`);
+      expect(wording.items.every((item) => item.text !== null && item.text.length > 0), instrument).toBe(true);
+    }
   });
 
   it('has no item text at all for the Arabic C-SSRS, because none was obtained', () => {
@@ -64,22 +69,39 @@ describe('wordingStatus', () => {
     expect(sourceFor('cssrs', 'ar')).toBeNull();
   });
 
-  it('asks for a visible label on unverified wording and on missing text, and not on verified wording', () => {
-    expect(needsUnverifiedLabel('who5', 'ar', wordingFor('who5', 'ar').items[0]!)).toBe(true);
-    expect(needsUnverifiedLabel('cssrs', 'ar', wordingFor('cssrs', 'ar').items[0]!)).toBe(true);
-    expect(needsUnverifiedLabel('phq9', 'en', wordingFor('phq9', 'en').items[0]!)).toBe(false);
-    expect(needsUnverifiedLabel('phq9', 'ar', wordingFor('phq9', 'ar').items[8]!)).toBe(false);
-  });
-
-  it('never marks a locale verified unless its source row says where the text came from', () => {
+  it('asks for a visible label on every item of every unverified locale, and on no item of a verified one', () => {
     for (const instrument of INSTRUMENTS) {
       for (const locale of LOCALES) {
         const wording = wordingFor(instrument, locale);
-        if (wording.wordingStatus === 'verified') {
-          const source = sourceFor(instrument, locale);
-          expect(source?.url, `${instrument} ${locale}`).toMatch(/^https:\/\//);
+        for (const item of wording.items) {
+          expect(needsUnverifiedLabel(instrument, locale, item), `${item.id} ${locale}`).toBe(wording.wordingStatus === 'unverified');
         }
       }
+    }
+  });
+
+  it('asks for a label on an item with no text even if its locale were marked verified', () => {
+    expect(needsUnverifiedLabel('cssrs', 'ar', { id: 'cssrs.1', text: null })).toBe(true);
+  });
+
+  it('never marks a locale verified unless its source has a URL and a cited published validation study', () => {
+    for (const instrument of INSTRUMENTS) {
+      for (const locale of LOCALES) {
+        const wording = wordingFor(instrument, locale);
+        if (wording.wordingStatus !== 'verified') continue;
+        const source = sourceFor(instrument, locale);
+        expect(source?.url, `${instrument} ${locale}`).toMatch(/^https:\/\//);
+        expect(source?.validationSource?.url, `${instrument} ${locale}`).toMatch(/^https:\/\/pubmed\.ncbi\.nlm\.nih\.gov\/\d+\/$/);
+        expect(source?.validationSource?.citation, `${instrument} ${locale}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('gives every unverified locale that has a source a reason and no validation study, and every source a status basis', () => {
+    for (const [id, source] of Object.entries(WORDING_SOURCES)) {
+      expect(source.statusBasis.length, id).toBeGreaterThan(20);
+      const { wordingStatus } = wordingFor(source.instrument, source.locale);
+      if (wordingStatus === 'unverified') expect(source.validationSource, id).toBeNull();
     }
   });
 });

@@ -6,7 +6,7 @@ export const CSSRS_ITEM_COUNT = 6;
 export const CSSRS_WORDING: InstrumentWording = {
     "en": {
       "locale": "en",
-      "wordingStatus": "verified",
+      "wordingStatus": "unverified",
       "sourceId": "cssrs-en",
       "stem": "In the past Month",
       "options": [
