@@ -25,6 +25,9 @@ export function evaluateRegistry(registry, reports, browserIds) {
   const ids = registry.map((entry) => entry.id);
   for (const id of new Set(ids.filter((id, index) => ids.indexOf(id) !== index))) problems.push(`${id}: listed twice`);
 
+  const claimed = new Set(registry.flatMap((entry) => (entry.browser ? [entry.browser] : [])));
+  for (const id of browserIds) if (!claimed.has(id)) problems.push(`${id}: a browser test that no sentence in this registry claims`);
+
   for (const entry of registry) {
     const refs = entry.tests ?? [];
     if (refs.length === 0 && !entry.browser) problems.push(`${entry.id}: no test is named for this sentence`);

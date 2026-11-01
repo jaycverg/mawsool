@@ -165,6 +165,50 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect(await page.getByLabel(msg(locale, 'settings.dataLabel')).inputValue()).toContain('NOTE-MARKER-4471');
   },
 
+  async 'summary-is-shared-only-when-approved'({ page, locale }) {
+    const bodies: Record<string, unknown>[] = [];
+    page.on('request', (request) => {
+      if (request.url() === `${API}/tickets` && request.method() === 'POST') bodies.push(JSON.parse(request.postData() ?? '{}'));
+    });
+    await toConsent(page, locale);
+    await page.getByRole('button', { name: msg(locale, 'consent.draft'), exact: true }).click();
+    // The flag is off here, so the draft is the fill-in template, and says so.
+    await expect(page.locator('[data-summary="template"]')).toBeVisible();
+    await expect(page.getByText(msg(locale, 'consent.sourceTemplate'))).toBeVisible();
+    await page.locator('#summary').fill('APPROVED-SUMMARY-MARKER I would like a first appointment.');
+    await expect(page.getByRole('button', { name: msg(locale, 'consent.approve'), exact: true })).toBeVisible();
+    await expect(page.locator('[data-preview]')).not.toContainText(msg(locale, 'consent.previewSummary'));
+    await page.getByRole('button', { name: msg(locale, 'consent.approve'), exact: true }).click();
+    await expect(page.getByText(msg(locale, 'consent.approved'))).toBeVisible();
+    await expect(page.locator('[data-preview]')).toContainText(msg(locale, 'consent.previewSummary'));
+    // Editing again withdraws the approval.
+    await page.locator('#summary').fill('APPROVED-SUMMARY-MARKER I would like a first appointment soon.');
+    await expect(page.getByRole('button', { name: msg(locale, 'consent.approve'), exact: true })).toBeVisible();
+    await page.getByRole('button', { name: msg(locale, 'consent.approve'), exact: true }).click();
+    await send(page, locale);
+    await expect(page).toHaveURL(ticketUrl(locale));
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]!['approvedSummary']).toBe('APPROVED-SUMMARY-MARKER I would like a first appointment soon.');
+    const row = await stored(ticketIdOf(page));
+    expect(row.bundle!.approvedSummaryCiphertext).toMatch(/^v1\./);
+    expect(row.bundle!.approvedSummaryCiphertext).not.toContain('APPROVED-SUMMARY-MARKER');
+    expect(row.summaryLogs).toBe(2); // the draft and the approved text, both linked to the ticket
+
+    // A summary that was written but never approved is not shared.
+    await page.evaluate(() => localStorage.clear());
+    await page.goto(`/${locale}/options/`);
+    await page.locator('[data-tier][data-lead] button').click();
+    await expect(page).toHaveURL(consentUrl(locale));
+    await page.getByRole('button', { name: msg(locale, 'consent.draft'), exact: true }).click();
+    await page.locator('#summary').fill('NEVER-APPROVED-MARKER text');
+    await send(page, locale);
+    await expect(page).toHaveURL(ticketUrl(locale));
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]!['approvedSummary']).toBeNull();
+    expect(JSON.stringify(bodies[1])).not.toContain('NEVER-APPROVED-MARKER');
+    expect((await stored(ticketIdOf(page))).bundle!.approvedSummaryCiphertext).toBeNull();
+  },
+
   async 'revoke-one-then-withdraw'({ page, locale }) {
     const id = await issueTicket(page, locale, ['scores', 'free_text']);
     await expect(page.locator('[data-consent]')).toHaveCount(3);

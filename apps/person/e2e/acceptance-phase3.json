@@ -16,6 +16,10 @@
     "sentence": "Stopping one element removes only it from the stored bundle; withdrawing deletes the bundle and moves the ticket to withdrawn"
   },
   {
+    "id": "summary-is-shared-only-when-approved",
+    "sentence": "A summary draft is shared only after the person edits and approves it, and the approved and draft versions are logged as ciphertext"
+  },
+  {
     "id": "day-7-yes-reaches-seen",
     "sentence": "The day-7 check appears from ticket data, and Yes on an issued ticket reaches seen"
   },
