@@ -568,6 +568,11 @@
     "browser": "stopping-removes-the-summary-and-unticking-unapproves"
   },
   {
+    "id": "browser-a-re-ticked-element-stays-in-what-the-summary-was-built-from",
+    "sentence": "An element unticked before Approve and ticked again before Send stays in the stored built-from list, so a later stop removes the summary (browser)",
+    "browser": "a-re-ticked-element-stays-in-what-the-summary-was-built-from"
+  },
+  {
     "id": "browser-stopping-an-element-keeps-a-template-summary",
     "sentence": "A fill-in template the person wrote is built from nothing: unticking does not unapprove it and stopping an element leaves it and its logs (browser)",
     "browser": "stopping-an-element-keeps-a-template-summary"

@@ -72,6 +72,7 @@ const inspect = createServer(async (request, response) => {
         bundle: bundle && {
           contentCiphertext: bundle.contentCiphertext,
           approvedSummaryCiphertext: bundle.approvedSummaryCiphertext,
+          summaryBuiltFrom: bundle.summaryBuiltFrom,
           deletedAt: bundle.deletedAt,
           content: bundle.contentCiphertext ? JSON.parse(cipher.decrypt(bundle.contentCiphertext, `bundle:${id}`)) : null,
         },

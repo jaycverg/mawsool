@@ -54,7 +54,7 @@ export function ConsentScreen() {
   const [ticked, setTicked] = useState<ReadonlySet<Row>>(new Set());
   const [conditionsText, setConditionsText] = useState('');
   const [sharing, setSharing] = useState<Sharing>(EMPTY_SHARING);
-  const [summary, setSummary] = useState<{ text: string; source: 'ai' | 'template'; approved: boolean; builtFrom: ConsentElement[] } | null>(null);
+  const [summary, setSummary] = useState<{ text: string; source: 'ai' | 'template'; approved: boolean; draftedFrom: ConsentElement[]; acceptedWithout: ConsentElement[] } | null>(null);
   const [typedFailed, setTypedFailed] = useState(false);
   const [storedOptIn, setStoredOptIn] = useState(false);
   const [drafting, setDrafting] = useState<'idle' | 'working' | 'failed'>('idle');
@@ -83,10 +83,11 @@ export function ConsentScreen() {
   }, [loaded, sharing.note, conditionsText]);
 
   const elements = useMemo<ConsentElement[]>(() => ['ticket', ...ROWS.filter((row) => ticked.has(row) && redact(content, [row])[row] !== undefined)], [ticked, content]);
+  const stale = summary !== null && isStale(summary, elements);
   // An approval holds only for what it was drafted from: when an element it used is unticked, it has to be given again.
   useEffect(() => {
-    if (summary?.approved && summary.builtFrom.some((element) => !elements.includes(element))) setSummary({ ...summary, approved: false });
-  }, [elements, summary]);
+    if (summary?.approved && stale) setSummary({ ...summary, approved: false });
+  }, [stale, summary]);
 
   const serverDeps = (d: Device): ServerDeps => ({ storage: d.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, random: window.crypto });
 
@@ -148,7 +149,7 @@ export function ConsentScreen() {
       const parsed = result.ok ? SummaryDraftSchema.safeParse(result.body) : null;
       if (!parsed?.success) return setDrafting('failed');
       // Only a draft the AI wrote is built from the ticked elements. A template (flag off, no AI box, or a provider that failed) is built from nothing: no tick stales it and no stop deletes text the person typed.
-      setSummary({ text: parsed.data.text, source: parsed.data.source, approved: false, builtFrom: parsed.data.source === 'ai' ? elements : [] });
+      setSummary({ text: parsed.data.text, source: parsed.data.source, approved: false, draftedFrom: parsed.data.source === 'ai' ? elements : [], acceptedWithout: [] });
       setDrafting('idle');
     } catch {
       setDrafting('failed');
@@ -177,7 +178,7 @@ export function ConsentScreen() {
         content,
         approvedSummary,
         summaryRequestId: summary ? pending.requestId : null,
-        summaryBuiltFrom: summary?.builtFrom ?? [],
+        summaryBuiltFrom: summary?.draftedFrom ?? [],
         language: content.preferences?.language ?? lang,
         now: deviceNow,
       });
@@ -265,11 +266,11 @@ export function ConsentScreen() {
               <p className="t-small text-muted">{summary.source === 'ai' ? t('sourceAi') : t('sourceTemplate')}</p>
               <p className={`t-small ${summaryWords > SUMMARY_WORD_LIMIT ? 'text-danger' : 'text-muted'}`}>{summaryWords > SUMMARY_WORD_LIMIT ? t('tooLong') : t('words', { count: summaryWords })}</p>
               <p className="t-small text-muted">{t('summaryHint')}</p>
-              {!summary.approved && summary.builtFrom.some((element) => !elements.includes(element)) && <p className="t-small text-danger" data-stale>{t('staleSummary')}</p>}
+              {!summary.approved && stale && <p className="t-small text-danger" data-stale>{t('staleSummary')}</p>}
               {summary.approved ? (
                 <p role="status" className="text-[14px] font-semibold text-accent-dark">{t('approved')}</p>
               ) : (
-                <button type="button" className="tap self-start rounded-pill bg-accent px-4 text-[14px] font-semibold text-surface" disabled={summaryWords === 0 || summaryWords > SUMMARY_WORD_LIMIT} onClick={() => setSummary({ ...summary, approved: true, builtFrom: summary.builtFrom.filter((element) => elements.includes(element)) })}>
+                <button type="button" className="tap self-start rounded-pill bg-accent px-4 text-[14px] font-semibold text-surface" disabled={summaryWords === 0 || summaryWords > SUMMARY_WORD_LIMIT} onClick={() => setSummary({ ...summary, approved: true, acceptedWithout: summary.draftedFrom.filter((element) => !elements.includes(element)) })}>
                   {t('approve')}
                 </button>
               )}
@@ -298,6 +299,15 @@ export function ConsentScreen() {
       </main>
     </>
   );
+}
+
+/**
+ * True when the person has unticked an element the draft was written from and has not accepted the summary without it.
+ * `draftedFrom` is what the draft used and never shrinks, so a later re-tick still sends the true list; Approve records
+ * the unticked ones in `acceptedWithout`, which is what keeps that approval from going stale.
+ */
+function isStale(summary: { draftedFrom: readonly ConsentElement[]; acceptedWithout: readonly ConsentElement[] }, elements: readonly ConsentElement[]): boolean {
+  return summary.draftedFrom.some((element) => !elements.includes(element) && !summary.acceptedWithout.includes(element));
 }
 
 function Shell({ lang, t, children }: { lang: 'ar' | 'en'; t: Translate; children: React.ReactNode }) {

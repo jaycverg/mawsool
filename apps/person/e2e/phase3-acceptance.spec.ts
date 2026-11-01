@@ -39,7 +39,7 @@ interface Stored {
   consents: { element: string; revokedAt: string | null }[];
   summaryLogs: number;
   children: string[];
-  bundle: { contentCiphertext: string | null; approvedSummaryCiphertext: string | null; deletedAt: string | null; content: Record<string, unknown> | null } | null;
+  bundle: { contentCiphertext: string | null; approvedSummaryCiphertext: string | null; summaryBuiltFrom: string[]; deletedAt: string | null; content: Record<string, unknown> | null } | null;
 }
 
 async function stored(ticketId: string): Promise<Stored> {
@@ -532,6 +532,43 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect(after.bundle!.approvedSummaryCiphertext).toMatch(/^v1\./);
     expect(after.summaryLogs).toBe(2);
     expect(Object.keys(after.bundle!.content!)).toEqual([]);
+  },
+
+  async 'a-re-ticked-element-stays-in-what-the-summary-was-built-from'({ page, locale }) {
+    const sent: { approvedSummary: string | null; summaryBuiltFrom: string[]; consents: string[] }[] = [];
+    page.on('request', (request) => {
+      if (request.url() === `${API}/tickets` && request.method() === 'POST') sent.push(JSON.parse(request.postData() ?? '{}'));
+    });
+    await answerAiDrafts(page);
+    await toConsent(page, locale);
+    await page.locator('#note').fill('NOTE-THE-DRAFT-USED');
+    await tick(page, 'free_text');
+    await page.locator('#use-ai').check();
+    await page.getByRole('button', { name: msg(locale, 'consent.draft'), exact: true }).click();
+    await expect(page.locator('[data-summary="ai"]')).toBeVisible();
+    // The person leaves the note out, approves the summary like that, then puts the note back and sends.
+    await page.locator('input[data-element="free_text"]').uncheck();
+    await expect(page.locator('[data-stale]')).toBeVisible();
+    await page.getByRole('button', { name: msg(locale, 'consent.approve'), exact: true }).click();
+    await expect(page.getByText(msg(locale, 'consent.approved'))).toBeVisible();
+    await expect(page.locator('[data-stale]')).toHaveCount(0);
+    await tick(page, 'free_text');
+    await expect(page.getByText(msg(locale, 'consent.approved'))).toBeVisible();
+    await send(page, locale);
+    await expect(page).toHaveURL(ticketUrl(locale));
+    // The list keeps the note: the words in the summary may still come from it.
+    expect(sent[0]).toMatchObject({ consents: ['ticket', 'free_text'], summaryBuiltFrom: ['ticket', 'free_text'] });
+    const id = ticketIdOf(page);
+    const before = await stored(id);
+    expect([...before.bundle!.summaryBuiltFrom].sort()).toEqual(['free_text', 'ticket']);
+    expect(before.bundle!.approvedSummaryCiphertext).toMatch(/^v1\./);
+
+    await page.locator('[data-consent="free_text"] button').click();
+    await expect(page.locator('[data-notice="summary-removed"]')).toHaveText(msg(locale, 'ticket.summaryRemoved'));
+    const after = await stored(id);
+    expect(after.bundle!.approvedSummaryCiphertext).toBeNull();
+    expect(after.bundle!.summaryBuiltFrom).toEqual([]);
+    expect(after.summaryLogs).toBe(0);
   },
 
   async 'draft-request-carries-only-what-is-allowed'({ page, locale }) {
