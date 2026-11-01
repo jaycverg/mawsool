@@ -8,7 +8,6 @@ import { CONDITION, FREE_TEXT, cipher, eventStates, issue, rawBundle, registerPe
 
 const CLINICIAN_A = 'clinician.a@demo.mawsool.test';
 const CLINICIAN_B = 'clinician.b@demo.mawsool.test';
-const DRAFT_MARKER = 'DRAFT-TEXT-MARKER-5512';
 const SUMMARY_MARKER = 'APPROVED-SUMMARY-MARKER-8830';
 
 describe('consent, revoke and the bundle', () => {
