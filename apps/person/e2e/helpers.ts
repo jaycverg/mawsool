@@ -160,3 +160,16 @@ export async function rawStoreKeys(page: Page): Promise<string[]> {
       }),
   );
 }
+
+/**
+ * Records every navigation the page asks the browser for, straight from the browser's own protocol events. A tap on
+ * a `tel:` link ends in one, and the browser cannot place a call in a test, so this is where the real dial attempt
+ * is seen: no hook in the app is involved.
+ */
+export async function watchNavigationRequests(page: Page): Promise<{ urls: () => string[] }> {
+  const session = await page.context().newCDPSession(page);
+  const requested: string[] = [];
+  session.on('Page.frameRequestedNavigation', (event: { url: string }) => requested.push(event.url));
+  await session.send('Page.enable');
+  return { urls: () => [...requested] };
+}

@@ -13,6 +13,7 @@ import {
   rawStoreKeys,
   setIdbMode,
   type IdbMode,
+  watchNavigationRequests,
   msg,
   pick,
   staticHits,
@@ -134,6 +135,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await goOffline(context);
     await triggerCrisis(page, locale);
     const screen = page.locator('[data-screen="crisis"]');
+    const navigations = await watchNavigationRequests(page);
     for (const [number, text] of [
       ['800725462', '800 725462'],
       ['999', '999'],
@@ -145,8 +147,11 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
       const box = (await link.boundingBox())!;
       expect(box.height, `${number} tap height`).toBeGreaterThanOrEqual(44);
       expect(box.width, `${number} tap width`).toBeGreaterThanOrEqual(44);
+      const before = navigations.urls().length;
       await link.click();
-      // The tap was logged against that number, and the person is still on the screen.
+      // The tap starts a real dial of exactly this number...
+      await expect.poll(() => navigations.urls().slice(before)).toEqual([`tel:${number}`]);
+      // ...it is logged against that number, and the person is still on the screen.
       await expect(screen).toHaveAttribute('data-last-call', number);
       await expect(page).toHaveURL(crisisUrl(locale));
     }
@@ -156,7 +161,9 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await visitOnline(page, locale);
     await goOffline(context);
     await triggerCrisis(page, locale);
+    const navigations = await watchNavigationRequests(page);
     await page.getByRole('button', { name: msg(locale, 'crisis.callNow'), exact: true }).click();
+    await expect.poll(() => navigations.urls()).toEqual(['tel:800725462']);
     await expect(page.getByRole('heading', { name: msg(locale, 'crisis.reachedTitle') })).toBeVisible();
     await expect(page.locator('[data-screen="crisis"]')).toHaveAttribute('data-last-call', '800725462');
     await page.getByRole('button', { name: msg(locale, 'crisis.reachedYes') }).click();
