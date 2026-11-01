@@ -10,7 +10,7 @@ const config: NextConfig = {
   trailingSlash: true,
   // A gate run builds into its own folder so it never overwrites the one `pnpm dev` is serving.
   ...(process.env.OPS_DIST_DIR ? { distDir: process.env.OPS_DIST_DIR } : {}),
-  transpilePackages: ['@mawsool/ui', '@mawsool/types'],
+  transpilePackages: ['@mawsool/ui', '@mawsool/types', '@mawsool/rules'],
   // Schemas are interpreted, not compiled with eval, which the page policy forbids (see zod-mode.ts in the types package).
   env: { NEXT_PUBLIC_API_URL: apiUrl, NEXT_PUBLIC_ZOD_JITLESS: 'true' },
   // The page policy, with the API as the only other place a page may talk to (see staffContentSecurityPolicy).
