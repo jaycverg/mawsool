@@ -5,16 +5,16 @@ import { defineConfig, devices } from '@playwright/test';
  * worker and the real API on an in-process database. `pnpm gate:phase2` builds the export, starts both servers and
  * runs this; running `playwright test` by hand needs the E2E_* variables it sets.
  *
- * Hard limits: 60 s per test, 9 minutes for the whole run. One worker, no retries, so a red is a red.
+ * Hard limits: 60 s per test, 10 minutes for the whole run. One worker, no retries, so a red is a red.
  */
 export default defineConfig({
   testDir: './e2e',
   // An explicit registry of spec files: a spec that is not listed here does not run, and the gate fails if the
   // report does not hold exactly the tests in the gate's registry (acceptance.json for gate:phase2,
   // acceptance-phase3.json for gate:phase3). Each gate names its own spec on the command line.
-  testMatch: ['exit-acceptance.spec.ts', 'phase3-acceptance.spec.ts'],
+  testMatch: ['exit-acceptance.spec.ts', 'phase3-acceptance.spec.ts', 'phase4-acceptance.spec.ts'],
   timeout: 60_000,
-  globalTimeout: 540_000,
+  globalTimeout: 600_000,
   expect: { timeout: 10_000, toHaveScreenshot: { maxDiffPixelRatio: 0.005, animations: 'disabled', caret: 'hide' } },
   fullyParallel: false,
   workers: 1,

@@ -166,7 +166,7 @@ function Row({ item, lang, selected, onOpen }: { item: StaffTicketView; lang: 'a
   return (
     <tr className={`${late ? 'bg-warning' : selected ? 'bg-accent-tint' : ''} ${selected ? 'shadow-[inset_4px_0_0_#0E6B63] rtl:shadow-[inset_-4px_0_0_#0E6B63]' : ''}`} data-ticket={item.shortCode} data-state={item.state} data-selected={selected || undefined}>
       <td className={cell}>
-        <button type="button" className="tap t-code text-start" dir="ltr" aria-label={`${t('open')} ${displayCode(item.shortCode)}`} aria-current={selected ? 'true' : undefined} onClick={onOpen}>
+        <button type="button" className="tap t-code whitespace-nowrap text-start" dir="ltr" aria-label={`${t('open')} ${displayCode(item.shortCode)}`} aria-current={selected ? 'true' : undefined} onClick={onOpen}>
           {displayCode(item.shortCode)}
         </button>
       </td>
@@ -177,7 +177,7 @@ function Row({ item, lang, selected, onOpen }: { item: StaffTicketView; lang: 'a
       <td className={cell}>{root(`language.${item.language}`)}</td>
       <td className={cell}>{root(`source.${item.source}`)}</td>
       <td className={cell}>
-        <span className={`rounded-chip px-2 py-[3px] text-[12px] font-semibold ${late ? 'bg-[#F6D9A8] text-warning-ink' : 'bg-[#EEF2F1]'}`}>{root(`state.${item.state}`)}</span>
+        <span className={`whitespace-nowrap rounded-chip px-2 py-[3px] text-[12px] font-semibold ${late ? 'bg-[#F6D9A8] text-warning-ink' : 'bg-[#EEF2F1]'}`}>{root(`state.${item.state}`)}</span>
       </td>
     </tr>
   );

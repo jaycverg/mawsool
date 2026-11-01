@@ -1,0 +1,78 @@
+[
+  {
+    "id": "demo-steps-1-and-8",
+    "sentence": "Demo steps 1 and 8: a mock TAMM page leads to a claimed invite, and the clinic opens the person's ticket and sees \"Not shared by the person\" for a free-text note they kept back, with its value in no response body"
+  },
+  {
+    "id": "tamm-invite-ticket-has-source-tamm",
+    "sentence": "A ticket from a claimed TAMM invite has source TAMM"
+  },
+  {
+    "id": "revoked-ticket-shows-withdrawn-and-no-data",
+    "sentence": "A revoked ticket shows \"Withdrawn by the person\" and no data"
+  },
+  {
+    "id": "unable-to-see-prompts-person-to-reroute",
+    "sentence": "After \"Unable to see\", the person app shows the reroute prompt"
+  },
+  {
+    "id": "exported-bundle-validates-and-holds-only-consented",
+    "sentence": "The exported Bundle validates against R4 and contains no unconsented element"
+  },
+  {
+    "id": "bad-signature-and-replay-are-rejected-with-no-invite",
+    "sentence": "A bad signature and a replayed request are both rejected with no invite row"
+  },
+  {
+    "id": "clinician-at-other-facility-gets-404",
+    "sentence": "A clinician at the other facility gets 404"
+  },
+  {
+    "id": "staff-sign-in-says-not-saved",
+    "sentence": "When the browser will not keep the session the sign-in page says so and does not say the person is signed in"
+  },
+  {
+    "id": "sign-in-link-whole-path",
+    "sentence": "A sign-in link requested on the page, logged by the API, opened in the browser and used signs the person in and keeps the session"
+  },
+  {
+    "id": "staff-homes-lead-to-sign-in",
+    "sentence": "The clinician and ops home pages lead to sign-in without a valid session and request no data"
+  },
+  {
+    "id": "staff-pages-and-api-carry-a-strict-policy",
+    "sentence": "The staff pages and the API send their security policy, a page cannot reach any origin but the API, and the pages cannot be framed"
+  },
+  {
+    "id": "queue-applies-the-share-ended-rule",
+    "sentence": "A ticket whose share ended is not in the queue or its counts, and the detail answers 410 for it"
+  },
+  {
+    "id": "unable-reason-is-a-fixed-list",
+    "sentence": "\"Unable to see\" needs one reason from a fixed list, sends it as an unable request, and is offered only while the ticket can be rerouted"
+  },
+  {
+    "id": "seeded-withdrawn-ticket-is-handled",
+    "sentence": "A seeded withdrawn ticket, which has no consent rows, opens as a ticket with nothing shared, never as \"Withdrawn by the person\""
+  },
+  {
+    "id": "summary-gone-while-ticket-live",
+    "sentence": "When a stop removes the approved summary the live ticket shows no summary, and the export leaves it out"
+  },
+  {
+    "id": "claim-by-link-and-by-code",
+    "sentence": "An invite is claimed by the link or by typing the code, only when the person presses the button, and a bad, unknown or taken code is told apart"
+  },
+  {
+    "id": "tamm-mock-page-is-labelled",
+    "sentence": "The mock TAMM page is labelled as a mock and links to the claim screen with the code"
+  },
+  {
+    "id": "clinician-screen-holds-the-plan-tokens",
+    "sentence": "The clinician screens hold the plan's type, colours, radii and 44 px tap targets"
+  },
+  {
+    "id": "snapshot-clinician",
+    "sentence": "The clinician queue and ticket detail match the committed snapshots"
+  }
+]
