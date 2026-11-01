@@ -1,4 +1,4 @@
-import { CrisisResponseSchema, EquityResponseSchema, FunnelQuerySchema, FunnelResponseSchema, PeriodQuerySchema, TimelinessResponseSchema } from '@mawsool/types';
+import { CrisisResponseSchema, EquityQuerySchema, EquityResponseSchema, FunnelQuerySchema, FunnelResponseSchema, PeriodQuerySchema, TimelinessResponseSchema } from '@mawsool/types';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Clock } from '../clock';
@@ -44,7 +44,9 @@ export function registerMetricsRoutes(app: FastifyInstance, deps: MetricsRouteDe
     return buildCrisis(request.query.period, crisis, since, crisisHiddenInFunnel({ journeys: journeysOf(tickets), openInvites, crisis, since }));
   });
 
-  typed.get('/metrics/equity', { config: { access: 'ops' }, schema: { querystring: PeriodQuerySchema, response: { 200: EquityResponseSchema } } }, async (request) =>
+  // Equity is served for one period only (`EQUITY_PERIOD`): any other `period` is a 400 with no figures, and with none the
+  // answer is that period's. Two periods of one group subtract into a small count of named people, which the guardrail forbids.
+  typed.get('/metrics/equity', { config: { access: 'ops' }, schema: { querystring: EquityQuerySchema, response: { 200: EquityResponseSchema } } }, async (request) =>
     buildEquity(request.query.period, await loadTicketFacts(deps.db), periodStart(request.query.period, deps.clock.now())),
   );
 }

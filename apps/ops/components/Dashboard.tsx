@@ -235,6 +235,7 @@ function Equity({ equity, t, format }: { equity: EquityResponse; t: Translate; f
           </span>
         </p>
       ))}
+      <p className="t-small font-semibold text-muted" data-equity-period>{t('equity.period')}</p>
       <p className="t-small text-muted">{t('equity.basis')}</p>
     </section>
   );

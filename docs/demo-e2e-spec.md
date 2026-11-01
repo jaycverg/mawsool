@@ -311,16 +311,33 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await dash.locator('[data-filter="period"]').selectOption('all');
     await expectReadable(dash, 'in all time after the demo clock moved 28 days');
 
-    // Step 12: the equity view flags Urdu 18 to 22 points below the overall rate (all time), and flags it in the default view.
-    await dash.locator('[data-filter="period"]').selectOption('all');
+    // Step 12: the equity view flags Urdu 18 to 22 points below the overall rate. It is served for one period only (the last 90
+    // days), so it reads the same with the period filter on All time as on Last 90 days, and says so on the section.
+    const equity = dash.locator('[data-section="equity"]');
+    await expect(equity.locator('[data-equity-period]')).toHaveText(omsg(locale, 'dash.equity.period'));
     const urdu = dash.locator('[data-equity-rows="language"] [data-equity-row="ur"]');
     await expect(urdu).toHaveAttribute('data-flagged', 'true');
     const gap = Number(await urdu.getAttribute('data-gap'));
     expect(gap).toBeLessThanOrEqual(-18);
     expect(gap).toBeGreaterThanOrEqual(-22);
     await expect(dash.locator('[data-flag="ur"]')).toContainText(omsg(locale, 'dash.equity.value.ur'));
+    // The filter is on All time now. Switch it to Last 90 days and back: the funnel moves, the equity section does not, and
+    // the page only ever asks the API for equity over 90 days.
+    const equityCalls: string[] = [];
+    dash.on('request', (request) => {
+      if (request.url().includes('/metrics/equity')) equityCalls.push(request.url());
+    });
+    const firstStage = stageCount(dash, 'positive_screen').locator('[data-count]');
+    const allTime = await firstStage.innerText();
+    const equityAtAllTime = await equity.innerText();
     await dash.locator('[data-filter="period"]').selectOption('90d');
-    await expect(dash.locator('[data-equity-rows="language"] [data-equity-row="ur"]')).toHaveAttribute('data-flagged', 'true');
+    await expect(firstStage).not.toHaveText(allTime);
+    expect(await equity.innerText(), 'the equity section does not follow the period filter (90 days)').toBe(equityAtAllTime);
+    await dash.locator('[data-filter="period"]').selectOption('all');
+    await expect(firstStage).toHaveText(allTime);
+    expect(await equity.innerText(), 'the equity section does not follow the period filter (all time)').toBe(equityAtAllTime);
+    expect(equityCalls.length).toBeGreaterThanOrEqual(2);
+    for (const call of equityCalls) expect(call).toContain('period=90d');
     await phone.close();
   },
 
@@ -341,12 +358,14 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(note).toBeVisible();
     await expect(note).toHaveText(omsg(locale, 'dash.funnel.note'));
     // A filter by source counts rows carrying that field: crisis events drop out. The app has no invites, so its first stage is its
-    // journeys; a front door's first stage adds invites that are too few to show, and so is hidden with them.
+    // journeys. Of the three front doors only tamm shows a first stage on this seed; phc and school are hidden, because the table
+    // hides cells around the small ones in it (school has 8 journeys in the community tier).
     await dash.locator('[data-filter="source"]').selectOption('app');
     const app = await numberOf(stageCount(dash, 'positive_screen').locator('[data-count]').innerText());
     expect(app).toBe(await numberOf(stageCount(dash, 'ticket_issued').locator('[data-count]').innerText()));
     expect(app).toBeLessThan(parts.total - parts.crisisEvents);
-    // A front door has twelve or more open invites, so its first stage is shown and is its journeys plus those invites.
+    // tamm is the door whose first stage is shown here: its twelve open invites (and Noura's) are not a small number, and
+    // nothing small beside them needs hiding, so the first stage is its journeys plus those invites.
     await dash.locator('[data-filter="source"]').selectOption('tamm');
     const tammFirst = await numberOf(stageCount(dash, 'positive_screen').locator('[data-count]').innerText());
     const tammIssued = await numberOf(stageCount(dash, 'ticket_issued').locator('[data-count]').innerText());

@@ -23,6 +23,15 @@ export type TicketTier = z.infer<typeof TicketTierSchema>;
 
 export const PeriodQuerySchema = z.object({ period: MetricPeriodSchema.default('all') });
 
+/**
+ * The one period the equity view is served for. Two periods of the same group subtract (all time less the last 90 days is
+ * the group's tickets from before the window, which can be a handful of named people), and the small-number guardrail
+ * forbids publishing that. So equity has a single period, a request for any other is refused, and the dashboard's period
+ * filter does not reach it.
+ */
+export const EQUITY_PERIOD = '90d' as const;
+export const EquityQuerySchema = z.object({ period: z.literal(EQUITY_PERIOD).default(EQUITY_PERIOD) });
+
 /** The funnel's filters. A filter that is not sent means every value. */
 export const FunnelQuerySchema = PeriodQuerySchema.extend({ source: TicketSourceSchema.optional(), tier: TicketTierSchema.optional() });
 export type FunnelQuery = z.infer<typeof FunnelQuerySchema>;

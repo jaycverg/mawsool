@@ -1,6 +1,6 @@
 import { TICKET_SOURCES, TICKET_TIERS, type CrisisResponse, type EquityResponse, type FunnelResponse } from '@mawsool/types';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { loadCrisisFacts, loadOpenInvites, loadTicketFacts, periodStart, type TicketFact } from '../src/metrics/facts';
+import { loadCrisisFacts, loadTicketFacts, periodStart, type TicketFact } from '../src/metrics/facts';
 import { journeysOf } from '../src/metrics/funnel';
 import { runSeed } from '../src/seed/run';
 import { SEED_ANCHOR } from '../src/seed/fixtures';
@@ -49,18 +49,6 @@ describe('what cannot be worked out from the funnel, the crisis figures and the 
       const since = () => periodStart(period, SEED_ANCHOR);
       const journeys = () => journeysOf(facts).filter((journey) => since() === null || journey.createdAt >= since()!);
 
-      it('does not give a source’s open invites as its first stage minus its second', async () => {
-        const open = (await loadOpenInvites(testDb.db, SEED_ANCHOR)).filter((invite) => since() === null || invite.createdAt >= since()!);
-        // The app has no invites (a front door hands those over), so its difference is zero by construction.
-        for (const source of TICKET_SOURCES.filter((entry) => entry !== 'app')) {
-          const funnel = await get<FunnelResponse>(`/metrics/funnel?period=${period}&source=${source}`);
-          const [first, second] = [stageCount(funnel, 'positive_screen'), stageCount(funnel, 'ticket_issued')];
-          const truth = open.filter((invite) => invite.source === source).length;
-          // A front door's open invites are a hidden cell only while they are under ten; at ten or more their count is publishable.
-          if (first !== null && second !== null && truth < 10) expect(first - second, `${source}: first stage minus second`).not.toBe(truth);
-        }
-      });
-
       it('does not give a hidden source-and-tier cell from a row or column total at either stage, and shows it at both stages or neither', async () => {
         const truth = (source: string, tier: string) => journeys().filter((journey) => journey.source === source && journey.tier === tier).length;
         const cell = async (stage: Stage, source: string | null, tier: string | null) =>
@@ -106,7 +94,7 @@ describe('what cannot be worked out from the funnel, the crisis figures and the 
   }
 
   it('does not give the equity group "another" back through the groups every dimension shares', async () => {
-    const equity = await get<EquityResponse>('/metrics/equity?period=all');
+    const equity = await get<EquityResponse>('/metrics/equity');
     const inPeriod = facts;
     const valueOf: Record<string, (ticket: TicketFact) => string | null> = {
       age_band: (ticket) => ticket.ageBand,
@@ -134,6 +122,33 @@ describe('what cannot be worked out from the funnel, the crisis figures and the 
     const borrowed = genderNotGivenHidden && !('suppressed' in ageNotGiven) ? ageNotGiven.tickets : 0;
     const attempt = total - shown - borrowed;
     expect(attempt, 'gender "another" from the total').not.toBe(inPeriod.filter((ticket) => ticket.gender === 'another').length);
+  });
+
+  it('does not give a front door’s open invites as its first stage minus its second when each door holds only a few', async () => {
+    // The seed holds twelve open invites per door, which are publishable. Here each door holds a few (3, 5 and 4), so each
+    // count is a small number that stage 1 less stage 2 would otherwise give back.
+    const db = await createTestDb();
+    try {
+      const world = await createWorld(db.db);
+      const app = await createTestApp(db.db);
+      const opsHeaders = await world.opsHeaders();
+      const issued = (hoursAgo: number) => new Date(TEST_START.getTime() - hoursAgo * HOUR);
+      for (const source of TICKET_SOURCES) for (const tier of TICKET_TIERS) await world.addMany(12, { source, tier, issuedAt: issued(100), path: ['seen'] });
+      const few = { phc: 3, tamm: 5, school: 4 } as const;
+      for (const [source, count] of Object.entries(few) as [keyof typeof few, number][]) {
+        for (let i = 0; i < count; i += 1) await world.addInvite({ source, createdAt: issued(24), expiresAt: new Date(TEST_START.getTime() + 5 * DAY) });
+      }
+      const read = async (source: string) => (await app.app.inject({ method: 'GET', url: `/metrics/funnel?source=${source}`, headers: opsHeaders })).json() as FunnelResponse;
+      for (const [source, truth] of Object.entries(few)) {
+        const funnel = await read(source);
+        const [first, second] = [stageCount(funnel, 'positive_screen'), stageCount(funnel, 'ticket_issued')];
+        expect(second, `${source}: the ticket stage stays readable`).toBe(48);
+        if (first !== null) expect(first - second!, `${source}: first stage minus second`).not.toBe(truth);
+      }
+      await app.app.close();
+    } finally {
+      await db.close();
+    }
   });
 
   it('hides the crisis count along with the funnel when six crisis screens are all there is', async () => {
