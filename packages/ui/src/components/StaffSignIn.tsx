@@ -106,7 +106,7 @@ export function StaffSignIn({ token, apiUrl, allowedRoles, labels, homeHref }: S
             autoComplete="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="tap rounded-input border border-border bg-surface px-3 t-body"
+            className="tap rounded-input border border-[#9AAAA7] bg-surface px-3 t-body"
           />
           <button type="submit" disabled={requestPhase === 'sending'} className="btn-primary">
             {labels.requestAction}

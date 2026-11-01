@@ -62,6 +62,9 @@ export function TicketDetail({ session, ticketId, onChanged, onUnauthorized }: T
   const [exported, setExported] = useState<{ text: string; copied: boolean } | 'failed' | null>(null);
   // One request pair per opening, however many times the effect runs (React runs it twice in development).
   const opening = useRef<{ key: string; done: Promise<View | 'unauthorized'> } | null>(null);
+  // The queue beside this panel must hear about a withdrawal however it was found, so its row (code, tier, deadline) goes too.
+  const changed = useRef(onChanged);
+  changed.current = onChanged;
 
   useEffect(() => {
     let active = true;
@@ -76,6 +79,7 @@ export function TicketDetail({ session, ticketId, onChanged, onUnauthorized }: T
       if (!active) return;
       if (next === 'unauthorized') return onUnauthorized();
       setView(next);
+      if (next.k === 'withdrawn') changed.current();
     });
     return () => {
       active = false;
@@ -109,7 +113,10 @@ export function TicketDetail({ session, ticketId, onChanged, onUnauthorized }: T
     setExported(null);
     const result = await call<unknown>(session, `/tickets/${ticketId}/fhir`);
     if (result.status === 'unauthorized') return onUnauthorized();
-    if (result.status === 'refused' && result.httpStatus === 410) return setView({ k: 'withdrawn' });
+    if (result.status === 'refused' && result.httpStatus === 410) {
+      setView({ k: 'withdrawn' });
+      return changed.current();
+    }
     if (result.status !== 'ok') return setExported('failed');
     const text = JSON.stringify(result.body, null, 2);
     const copied = await navigator.clipboard.writeText(text).then(() => true, () => false);
@@ -199,7 +206,7 @@ function Ready({ t, root, lang, ticket, bundle, panel, setPanel, reason, setReas
         <span className="t-code text-[22px]" dir="ltr" data-code>{displayCode(ticket.shortCode)}</span>
         <span className="rounded-chip bg-accent-tint px-2 py-[3px] text-[12px] font-semibold text-accent-dark" data-state={ticket.state}>{root(`state.${ticket.state}`)}</span>
       </div>
-      <p className="t-small text-muted">
+      <p className="-mt-2 text-[14px] text-muted">
         {t('referred', { referred: formatDate(ticket.createdAt, lang, 'long'), deadline: formatDate(ticket.deadlineAt, lang, 'long'), tier: root(`tier.${ticket.tier}`) })}
       </p>
 
@@ -217,7 +224,7 @@ function Ready({ t, root, lang, ticket, bundle, panel, setPanel, reason, setReas
       {message && <p role="alert" className="t-body text-danger" data-message={message}>{t(message)}</p>}
 
       {actionable ? (
-        <div className="flex flex-col gap-2.5">
+        <div className="mt-1 flex flex-col gap-2.5">
           <div className="flex flex-wrap gap-2.5">
             {ticket.state === 'issued' && <button type="button" className={`${OUTLINE_BUTTON}`} disabled={busy} onClick={onAcknowledge}>{t('acknowledge')}</button>}
             <button type="button" className="tap rounded-pill bg-accent px-[18px] text-[15px] font-semibold text-surface disabled:opacity-60" disabled={busy} onClick={onSeen}>{t('markSeen')}</button>
@@ -244,7 +251,7 @@ function Ready({ t, root, lang, ticket, bundle, panel, setPanel, reason, setReas
       )}
 
       {bundle !== 'none' && (
-        <div className="flex flex-col gap-2 border-t border-[#E6ECEA] pt-3">
+        <div className="flex flex-col gap-2.5 border-t border-[#E6ECEA] pt-3">
           <div className="flex flex-wrap items-center gap-2.5">
             <button type="button" className="tap rounded-input border border-[#9AAAA7] bg-surface px-3.5 text-[14px] text-ink" onClick={onExport}>{t('copyFhir')}</button>
             <span className="t-small text-muted" data-export-label>{t('exportLabel')}</span>

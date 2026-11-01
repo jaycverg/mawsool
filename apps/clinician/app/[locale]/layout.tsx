@@ -4,7 +4,6 @@ import { getMessages, getTranslations, setRequestLocale } from 'next-intl/server
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { LOCALES, htmlAttributes } from '@mawsool/ui';
-import { AppHeader } from '@mawsool/ui/components';
 import '../globals.css';
 
 type Params = Promise<{ locale: string }>;
@@ -30,14 +29,12 @@ export default async function LocaleLayout({ children, params }: { children: Rea
   const { locale } = await params;
   if (!hasLocale(LOCALES, locale)) notFound();
   setRequestLocale(locale);
-  const t = await getTranslations({ locale, namespace: 'common' });
   const messages = await getMessages();
 
   return (
     <html {...htmlAttributes(locale)}>
       <body className="min-h-dvh bg-ground font-sans text-ink">
         <NextIntlClientProvider locale={locale} messages={messages}>
-          <AppHeader locale={locale} appName={t('appName')} languageLabel={t('language')} />
           {children}
         </NextIntlClientProvider>
       </body>

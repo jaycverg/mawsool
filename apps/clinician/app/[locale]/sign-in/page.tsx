@@ -3,7 +3,7 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { Suspense } from 'react';
 import { LOCALES } from '@mawsool/ui';
-import { StaffSignInPage } from '@mawsool/ui/components';
+import { AppHeader, StaffSignInPage } from '@mawsool/ui/components';
 
 /** The page a staff sign-in link opens. The one-time token is read in the browser and used only on a button press. */
 export default async function SignInPage({ params }: { params: Promise<{ locale: string }> }) {
@@ -11,8 +11,11 @@ export default async function SignInPage({ params }: { params: Promise<{ locale:
   if (!hasLocale(LOCALES, locale)) notFound();
   setRequestLocale(locale);
   const t = await getTranslations('signIn');
+  const common = await getTranslations('common');
 
   return (
+    <>
+    <AppHeader locale={locale} appName={common('appName')} languageLabel={common('language')} />
     <Suspense>
       <StaffSignInPage
         apiUrl={process.env.NEXT_PUBLIC_API_URL ?? ''}
@@ -35,5 +38,6 @@ export default async function SignInPage({ params }: { params: Promise<{ locale:
         }}
       />
     </Suspense>
+    </>
   );
 }
