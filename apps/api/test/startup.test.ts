@@ -44,7 +44,7 @@ describe('the column cipher', () => {
     const token = cipher.encrypt('hello', 'ctx');
     expect(() => cipher.decrypt(token, 'other')).toThrow();
     const [version, iv, tag, body] = token.split('.');
-    const flipped = `${version}.${iv}.${tag}.${Buffer.from(body!, 'base64url').map((byte) => byte ^ 1).toString('base64url')}`;
+    const flipped = `${version}.${iv}.${tag}.${Buffer.from(Buffer.from(body!, 'base64url').map((byte) => byte ^ 1)).toString('base64url')}`;
     expect(() => cipher.decrypt(flipped, 'ctx')).toThrow();
     expect(() => createCipher(Buffer.alloc(32, 1).toString('base64')).decrypt(token, 'ctx')).toThrow();
     expect(() => cipher.decrypt('plain text', 'ctx')).toThrow(/not encrypted/);
