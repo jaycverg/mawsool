@@ -94,6 +94,7 @@ export function registerPersonDataRoutes(app: FastifyInstance, deps: PersonDataD
         requestId,
         kind: 'draft',
         ciphertext: deps.cipher.encrypt(draft.text, summaryLogContext(personIdOf(request), requestId, 'draft')),
+        builtFrom: [...new Set(consented)],
         createdAt: deps.clock.now(),
       });
       return { source: draft.source, text: draft.text };

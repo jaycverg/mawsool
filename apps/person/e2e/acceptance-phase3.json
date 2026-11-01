@@ -73,7 +73,7 @@
   },
   {
     "id": "stopping-an-element-keeps-a-template-summary",
-    "sentence": "A summary that is the fill-in template, written by the person, is built from nothing: unticking an element does not unapprove it and stopping an element leaves it, its logs and the notice alone"
+    "sentence": "A summary that is the fill-in template, written by the person, is built from nothing: unticking an element does not unapprove it and stopping an element leaves it, its own record and the notice alone"
   },
   {
     "id": "draft-request-carries-only-what-is-allowed",

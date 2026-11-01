@@ -1,0 +1,1 @@
+ALTER TABLE "summary_logs" ADD COLUMN "built_from" "consent_element"[] DEFAULT '{}' NOT NULL;

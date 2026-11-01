@@ -530,7 +530,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page.locator('[data-notice="summary-removed"]')).toHaveCount(0);
     const after = await stored(id);
     expect(after.bundle!.approvedSummaryCiphertext).toMatch(/^v1\./);
-    expect(after.summaryLogs).toBe(2);
+    expect(after.summaryLogs).toBe(1); // the draft was logged as made from the ticked scores, so it goes with them; the typed text's own record stays
     expect(Object.keys(after.bundle!.content!)).toEqual([]);
   },
 

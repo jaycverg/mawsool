@@ -535,6 +535,37 @@
     ]
   },
   {
+    "id": "summary-logs-follow-the-stopped-element",
+    "sentence": "Stopping an element deletes the person's logged drafts and approved texts that were made from it, claimed by the ticket or left under its request id, whether or not an approved summary goes; rows made without it stay",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/summary-log-built-from.test.ts",
+        "name": "records the consented elements on a draft"
+      },
+      {
+        "file": "test/summary-log-built-from.test.ts",
+        "name": "deletes a draft made with the note when the note is stopped, though the ticket claimed it"
+      },
+      {
+        "file": "test/summary-log-built-from.test.ts",
+        "name": "deletes the first draft, made with the note, when the note is stopped"
+      },
+      {
+        "file": "test/summary-log-built-from.test.ts",
+        "name": "deletes a draft left unlinked under the ticket\u2019s request id"
+      },
+      {
+        "file": "test/summary-log-built-from.test.ts",
+        "name": "leaves a row made without the stopped element"
+      },
+      {
+        "file": "test/summary-log-built-from.test.ts",
+        "name": "still removes every log of the ticket when the stopped element is one the approved summary was built from"
+      }
+    ]
+  },
+  {
     "id": "drafts-do-not-outlive-the-pick",
     "sentence": "Unclaimed drafts go when any share ends and after 24 hours, are linked only by their owner, and are bound to their row",
     "project": "apps/api",
@@ -574,7 +605,7 @@
   },
   {
     "id": "browser-stopping-an-element-keeps-a-template-summary",
-    "sentence": "A fill-in template the person wrote is built from nothing: unticking does not unapprove it and stopping an element leaves it and its logs (browser)",
+    "sentence": "A fill-in template the person wrote is built from nothing: unticking does not unapprove it and stopping an element leaves it and its own record (browser)",
     "browser": "stopping-an-element-keeps-a-template-summary"
   },
   {
