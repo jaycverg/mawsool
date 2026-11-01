@@ -33,13 +33,13 @@ const deadline = Date.now() + TIMEOUT_MS;
 while (pending.size > 0 && Date.now() < deadline && !devExited) {
   for (const [name, target] of [...pending]) {
     if (await ok(target.url)) {
-      console.log(`OK    ${name.padEnd(10)} ${target.url}`);
+      console.log(`OK    ${name.padEnd(18)} ${target.url}`);
       pending.delete(name);
     }
   }
   if (pending.size > 0) await new Promise((r) => setTimeout(r, 2000));
 }
 
-for (const [name, target] of pending) console.log(`FAIL  ${name.padEnd(10)} ${target.url}`);
+for (const [name, target] of pending) console.log(`FAIL  ${name.padEnd(18)} ${target.url}`);
 if (dev.pid && !devExited) await killTree(dev.pid);
 process.exit(pending.size === 0 ? 0 : 1);

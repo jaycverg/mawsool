@@ -25,6 +25,10 @@ export default async function SignInPage({ params }: { params: Promise<{ locale:
           failed: t('failed'),
           wrongApp: t('wrongApp'),
           missingToken: t('missingToken'),
+          emailLabel: t('emailLabel'),
+          requestAction: t('requestAction'),
+          requestSent: t('requestSent'),
+          requestFailed: t('requestFailed'),
         }}
       />
     </Suspense>

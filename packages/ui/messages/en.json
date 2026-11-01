@@ -11,6 +11,10 @@
     "signedIn": "You are signed in.",
     "failed": "This sign-in link is invalid, expired or already used. Request a new one.",
     "wrongApp": "This link is for a different app. Request a new link for this one.",
-    "missingToken": "Open the sign-in link you were sent."
+    "missingToken": "Open the sign-in link you were sent.",
+    "emailLabel": "Work email address",
+    "requestAction": "Request a sign-in link",
+    "requestSent": "If that address is registered, a sign-in link has been issued.",
+    "requestFailed": "The request could not be sent. Try again."
   }
 }

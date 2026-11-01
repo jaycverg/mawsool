@@ -84,6 +84,8 @@ export function appUrls(env) {
     { name: 'person', url: `http://localhost:${env.PERSON_PORT}/en/` },
     { name: 'clinician', url: `http://localhost:${env.CLINICIAN_PORT}/en/` },
     { name: 'ops', url: `http://localhost:${env.OPS_PORT}/en/` },
+    { name: 'clinician sign-in', url: `http://localhost:${env.CLINICIAN_PORT}/en/sign-in/` },
+    { name: 'ops sign-in', url: `http://localhost:${env.OPS_PORT}/en/sign-in/` },
   ];
 }
 
