@@ -1,4 +1,4 @@
-import type { Actor, TicketState } from '@mawsool/types';
+import { UnableReasonSchema, type Actor, type TicketState, type UnableReason } from '@mawsool/types';
 import { desc, eq } from 'drizzle-orm';
 import { schema, type Db } from '../db/client';
 import { evaluate, evaluateUnable, type Verdict } from './transitions';
@@ -20,6 +20,22 @@ export async function lastEvent(executor: Executor, ticketId: string): Promise<L
     .orderBy(desc(schema.ticketEvents.seq))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * The clinic's "unable to see" report on a ticket, if it still stands: the newest event is a same-state event the clinic
+ * fired, so nothing (an acknowledgement, a sweep, the person moving on) has happened since. The reason is one of the fixed codes.
+ */
+export async function standingUnableReport(executor: Executor, ticketId: string): Promise<{ reason: UnableReason; at: Date } | null> {
+  const [row] = await executor
+    .select({ from: schema.ticketEvents.fromState, to: schema.ticketEvents.toState, actor: schema.ticketEvents.actor, reason: schema.ticketEvents.reason, at: schema.ticketEvents.at })
+    .from(schema.ticketEvents)
+    .where(eq(schema.ticketEvents.ticketId, ticketId))
+    .orderBy(desc(schema.ticketEvents.seq))
+    .limit(1);
+  if (!row || row.actor !== 'clinic' || row.from !== row.to) return null;
+  const reason = UnableReasonSchema.safeParse(row.reason);
+  return reason.success ? { reason: reason.data, at: row.at } : null;
 }
 
 export interface NewEvent {

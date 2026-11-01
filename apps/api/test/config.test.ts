@@ -11,6 +11,8 @@ describe('loadConfig', () => {
       corsOrigins: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002'],
       clinicianAppUrl: 'http://localhost:3001',
       opsAppUrl: 'http://localhost:3002',
+      personAppUrl: 'http://localhost:3000',
+      inboundKeys: {},
       encryptionKey: KEY,
       summaryLlmEnabled: false,
       summaryModel: 'claude-sonnet-5-5',
@@ -54,6 +56,26 @@ describe('loadConfig', () => {
     it('refuses to start switched on without a provider key, and reads the model name', () => {
       expect(() => loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, SUMMARY_LLM_ENABLED: 'true' })).toThrow(/ANTHROPIC_API_KEY/);
       expect(loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, SUMMARY_MODEL: 'some-model' }).summaryModel).toBe('some-model');
+    });
+  });
+
+  describe('the front doors that may hand over screens', () => {
+    const KEY_TEXT = 'k'.repeat(32);
+
+    it('accepts a source only when its signing key is set: no key, no source', () => {
+      expect(loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY }).inboundKeys).toEqual({});
+      expect(loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, INBOUND_KEY_TAMM: KEY_TEXT }).inboundKeys).toEqual({ tamm: KEY_TEXT });
+      expect(loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, INBOUND_KEY_PHC: KEY_TEXT, INBOUND_KEY_SCHOOL: `${KEY_TEXT}2`, INBOUND_KEY_TAMM: KEY_TEXT }).inboundKeys).toEqual({ phc: KEY_TEXT, tamm: KEY_TEXT, school: `${KEY_TEXT}2` });
+    });
+
+    it('refuses a key that is too short to be a key', () => {
+      for (const name of ['INBOUND_KEY_PHC', 'INBOUND_KEY_TAMM', 'INBOUND_KEY_SCHOOL']) {
+        expect(() => loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, [name]: 'short' }), name).toThrow(/at least 32 characters/);
+      }
+    });
+
+    it('reads where a person opens the claim link, without a trailing slash', () => {
+      expect(loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, PERSON_APP_URL: 'https://person.test/' }).personAppUrl).toBe('https://person.test');
     });
   });
 

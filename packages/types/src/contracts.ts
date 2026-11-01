@@ -3,12 +3,14 @@ import {
   ActorSchema,
   CareLanguageSchema,
   ConsentElementSchema,
+  InboundSourceSchema,
   LocaleSchema,
   ModalitySchema,
   RegionSchema,
   RerouteReasonSchema,
   SHAREABLE_INSTRUMENTS,
   StaffRoleSchema,
+  TICKET_STATES,
   TicketSourceSchema,
   TicketStateSchema,
   TierSchema,
@@ -57,7 +59,7 @@ export const StaffMeSchema = z.object({
 });
 export type StaffMe = z.infer<typeof StaffMeSchema>;
 
-/** Staff GET /tickets/:id. Ticket fields only; the consented bundle arrives with the clinician detail view. */
+/** One row of the clinic's queue, and the ticket fields of the detail view: the ticket's own fields and nothing the person chose to share. */
 export const StaffTicketViewSchema = TicketSchema.pick({
   id: true,
   shortCode: true,
@@ -70,6 +72,85 @@ export const StaffTicketViewSchema = TicketSchema.pick({
   createdAt: true,
 });
 export type StaffTicketView = z.infer<typeof StaffTicketViewSchema>;
+
+/**
+ * Staff GET /tickets/:id. The ticket fields, and the clinic's own latest "unable to see" report while it still stands:
+ * the newest event is that same-state report, so the person has not moved on and the clinic has not acted since.
+ */
+export const StaffTicketDetailSchema = StaffTicketViewSchema.extend({
+  unable: z.object({ reason: UnableReasonSchema, at: z.iso.datetime({ offset: true }) }).nullable(),
+});
+export type StaffTicketDetail = z.infer<typeof StaffTicketDetailSchema>;
+
+/** States the clinic's queue can be filtered to; `open` is the three states a ticket waits in before it is seen. */
+export const QUEUE_STATE_FILTERS = ['open', ...TICKET_STATES] as const;
+export const QueueStateFilterSchema = z.enum(QUEUE_STATE_FILTERS);
+export type QueueStateFilter = z.infer<typeof QueueStateFilterSchema>;
+
+/** Largest page of the queue. The queue says how many more there are. */
+export const QUEUE_MAX_PAGE = 200;
+
+/** GET /tickets: filters for the clinic's queue. */
+export const StaffQueueQuerySchema = z.object({
+  state: QueueStateFilterSchema.default('open'),
+  tier: TierSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(QUEUE_MAX_PAGE).default(100),
+});
+export type StaffQueueQuery = z.infer<typeof StaffQueueQuerySchema>;
+
+/**
+ * The clinic's queue: tickets addressed to the staff member's facility, earliest deadline first. A ticket whose share
+ * the person ended is not in it, and not in the counts. `total` is how many match the filter, whatever the page holds.
+ */
+export const StaffQueueSchema = z.object({
+  facility: z.object({ id: z.uuid(), name: z.string() }),
+  total: z.number().int().min(0),
+  counts: z.partialRecord(TicketStateSchema, z.number().int().min(0)),
+  items: z.array(StaffTicketViewSchema),
+});
+export type StaffQueue = z.infer<typeof StaffQueueSchema>;
+
+/** Largest gap between a signed request's timestamp and the API's clock, in seconds, in either direction. */
+export const INBOUND_WINDOW_SECONDS = 300;
+
+/**
+ * POST /inbound/screens: a front door hands over that someone screened positive. It names no one and carries no scores:
+ * the invite it creates holds only the source, when the screen was taken and the language the front door used.
+ */
+export const InboundScreenRequestSchema = z.object({ result: z.literal('positive'), screenedAt: z.iso.datetime({ offset: true }), locale: LocaleSchema }).strict();
+export type InboundScreenRequest = z.infer<typeof InboundScreenRequestSchema>;
+
+/** The answer to a signed inbound screen: the code the person claims the invite with, shown once, and where to claim it. */
+export const InboundScreenReceiptSchema = z.object({
+  inviteId: z.uuid(),
+  /** Grouped for reading aloud, `ABCD-EFGH`. Only its hash is stored. */
+  code: z.string(),
+  claimUrl: z.string(),
+  expiresAt: z.iso.datetime({ offset: true }),
+});
+export type InboundScreenReceipt = z.infer<typeof InboundScreenReceiptSchema>;
+
+/** The characters of an invite code (the ticket code's alphabet), and how many. */
+export const INVITE_CODE_LENGTH = 8;
+
+/** The code as typed or linked: any case, with or without the dash and spaces. */
+export const InviteCodeSchema = z
+  .string()
+  .max(24)
+  .transform((value) => value.replace(/[\s-]/g, '').toUpperCase())
+  .pipe(z.string().regex(new RegExp(`^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{${INVITE_CODE_LENGTH}}$`)));
+
+/** POST /me/invites/claim. */
+export const ClaimInviteRequestSchema = z.object({ code: InviteCodeSchema }).strict();
+export type ClaimInviteRequest = z.infer<typeof ClaimInviteRequestSchema>;
+
+/** A claimed invite, as the person's phone keeps it until the ticket is sent. */
+export const ClaimedInviteSchema = z.object({ inviteId: z.uuid(), source: InboundSourceSchema, screenedAt: z.iso.datetime({ offset: true }) });
+export type ClaimedInvite = z.infer<typeof ClaimedInviteSchema>;
+
+/** A FHIR R4 Bundle as it crosses the API. The shape is checked against the R4 schema in tests, not here. */
+export const FhirBundleSchema = z.looseObject({ resourceType: z.literal('Bundle') });
+export type FhirBundle = z.infer<typeof FhirBundleSchema>;
 
 export const ErrorResponseSchema = z.object({
   error: z.string(),
@@ -147,6 +228,8 @@ export const CreateTicketRequestSchema = z
     summaryRequestId: z.uuid().nullable().default(null),
     /** The consent elements the approved summary was written from. Stopping one of them removes the summary; stopping any other leaves it. Empty for a summary the person wrote by hand. */
     summaryBuiltFrom: z.array(ConsentElementSchema).max(6).default([]),
+    /** The front-door invite this person claimed, so the ticket carries its source. Ignored when it is not theirs or was already used, and on a reroute. */
+    inviteId: z.uuid().nullable().default(null),
   })
   .strict();
 export type CreateTicketRequest = z.infer<typeof CreateTicketRequestSchema>;

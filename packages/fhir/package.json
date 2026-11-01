@@ -4,13 +4,23 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./validate": "./src/validate.ts"
   },
   "scripts": {
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@mawsool/consent": "workspace:*",
+    "@mawsool/types": "workspace:*",
+    "ajv": "8.20.0"
   },
   "devDependencies": {
-    "typescript": "5.9.3"
+    "@types/node": "24.19.2",
+    "@vitest/coverage-v8": "4.1.12",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12"
   }
 }

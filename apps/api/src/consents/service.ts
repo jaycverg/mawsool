@@ -1,6 +1,6 @@
 import { notShared, redact, withoutElement } from '@mawsool/consent';
 import { BundleContentSchema, type BundleContent, type ConsentElement, type ConsentRecord, type GrantConsentRequest, type StaffBundleView, type TicketState } from '@mawsool/types';
-import { and, arrayContains, eq, isNull, or } from 'drizzle-orm';
+import { type AnyColumn, type SQL, and, arrayContains, eq, isNull, or, sql } from 'drizzle-orm';
 import type { Clock } from '../clock';
 import type { Cipher } from '../crypto';
 import { schema, type Db } from '../db/client';
@@ -134,12 +134,22 @@ async function endShare(tx: Executor, personId: string, ticketId: string, now: D
 }
 
 /**
- * True once the person has ended the share of a ticket: it was issued with a `ticket` consent and none is live now.
- * A ticket that never had a consent (a seeded one) is not "ended". Staff routes answer 410 for an ended share.
+ * The condition "the person has ended the share of this ticket", for a ticket id column or value: it was issued with a
+ * `ticket` consent and none is live now. A ticket that never had a consent (a seeded one) is not "ended". This is the
+ * one definition: the single-ticket check below and the queue's list both use it, so they cannot disagree.
+ */
+export function shareEndedSql(ticketId: AnyColumn | SQL): SQL {
+  const ticketConsent = (live: boolean) =>
+    sql`SELECT 1 FROM ${schema.consents} WHERE ${schema.consents.ticketId} = ${ticketId} AND ${schema.consents.element} = 'ticket'${live ? sql` AND ${schema.consents.revokedAt} IS NULL` : sql``}`;
+  return sql`(EXISTS (${ticketConsent(false)}) AND NOT EXISTS (${ticketConsent(true)}))`;
+}
+
+/**
+ * True once the person has ended the share of a ticket (see `shareEndedSql`). Staff routes answer 410 for an ended share.
  */
 export async function shareEnded(db: Db, ticketId: string): Promise<boolean> {
-  const rows = await db.select({ revokedAt: schema.consents.revokedAt }).from(schema.consents).where(and(eq(schema.consents.ticketId, ticketId), eq(schema.consents.element, 'ticket')));
-  return rows.length > 0 && rows.every((row) => row.revokedAt !== null);
+  const [row] = await db.select({ id: schema.tickets.id }).from(schema.tickets).where(and(eq(schema.tickets.id, ticketId), shareEndedSql(schema.tickets.id))).limit(1);
+  return row !== undefined;
 }
 
 export type GrantResult = { kind: 'granted'; consent: ConsentRecord } | { kind: 'not_found' } | { kind: 'gone' } | { kind: 'conflict' };
@@ -162,7 +172,8 @@ export async function grantConsent(deps: ConsentDeps, personId: string, request:
   });
 }
 
-export type BundleReadResult = { kind: 'ok'; view: StaffBundleView } | { kind: 'withdrawn' } | { kind: 'none' };
+/** `granted` is the elements consented to at the moment of the read, for a caller that builds something else from the bundle (the FHIR export). */
+export type BundleReadResult = { kind: 'ok'; view: StaffBundleView; granted: ConsentElement[] } | { kind: 'withdrawn' } | { kind: 'none' };
 
 /**
  * The clinician's read of a ticket's bundle. It checks live consent every time: with the `ticket` element revoked
@@ -184,7 +195,7 @@ export async function readBundle(deps: ConsentDeps, ticketId: string, staff: { s
   const content = redact(readContent(cipher, ticketId, row.bundle.contentCiphertext), live);
   const approvedSummary = row.bundle.approvedSummaryCiphertext ? cipher.decrypt(row.bundle.approvedSummaryCiphertext, summaryContext(ticketId)) : null;
   await db.insert(schema.bundleReads).values({ ticketId, staffUserId: staff.staffUserId, facilityId: staff.facilityId, at: clock.now() });
-  return { kind: 'ok', view: { ticketId, shortCode: row.shortCode, content, notShared: notShared(live), approvedSummary } };
+  return { kind: 'ok', view: { ticketId, shortCode: row.shortCode, content, notShared: notShared(live), approvedSummary }, granted: live };
 }
 
 export interface EraseResult {

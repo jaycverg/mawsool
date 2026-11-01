@@ -29,6 +29,13 @@
       "when": 1793555727935,
       "tag": "0003_summary_log_built_from",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793557501578,
+      "tag": "0004_inbound_invites",
+      "breakpoints": true
     }
   ]
 }

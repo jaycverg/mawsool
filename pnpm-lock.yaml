@@ -207,6 +207,9 @@ importers:
       '@mawsool/consent':
         specifier: workspace:*
         version: link:../../packages/consent
+      '@mawsool/fhir':
+        specifier: workspace:*
+        version: link:../../packages/fhir
       '@mawsool/rules':
         specifier: workspace:*
         version: link:../../packages/rules
@@ -418,10 +421,29 @@ importers:
         version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.19.2)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.3)(vite@8.3.5(@types/node@24.19.2)(jiti@2.7.0))
 
   packages/fhir:
+    dependencies:
+      '@mawsool/consent':
+        specifier: workspace:*
+        version: link:../consent
+      '@mawsool/types':
+        specifier: workspace:*
+        version: link:../types
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
     devDependencies:
+      '@types/node':
+        specifier: 24.19.2
+        version: 24.19.2
+      '@vitest/coverage-v8':
+        specifier: 4.1.12
+        version: 4.1.12(vitest@4.1.12)
       typescript:
         specifier: 5.9.3
         version: 5.9.3
+      vitest:
+        specifier: 4.1.12
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.19.2)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.3)(vite@8.3.5(@types/node@24.19.2)(jiti@2.7.0))
 
   packages/instruments:
     dependencies:

@@ -13,8 +13,10 @@ import { CONDITION, FREE_TEXT, issue, registerPerson, serviceAt, ticketRequest, 
  *  - open:             returns no wellbeing data to anyone (health, the sample directory, sign-in, the OpenAPI document)
  *  - person-own:       the caller's own data, behind a device credential and an ownership check
  *  - clinician-scoped: a ticket's data, behind a staff session, a clinician role and the facility scope
+ *  - inbound-signed:   a front door's hand-over: no bearer token works on it, only a valid per-source signature
+ *                      (`inbound.test.ts` holds the signature cases); it returns a claim code and no wellbeing data
  */
-type Kind = 'open' | 'person-own' | 'clinician-scoped';
+type Kind = 'open' | 'person-own' | 'clinician-scoped' | 'inbound-signed';
 
 const REVIEWED: Record<string, { access: RouteAccess; kind: Kind }> = {
   'GET /health': { access: 'public', kind: 'open' },
@@ -35,9 +37,13 @@ const REVIEWED: Record<string, { access: RouteAccess; kind: Kind }> = {
   'DELETE /me/data': { access: 'person', kind: 'person-own' },
   'PUT /me/equity': { access: 'person', kind: 'person-own' },
   'POST /summary/draft': { access: 'person', kind: 'person-own' },
+  'POST /me/invites/claim': { access: 'person', kind: 'person-own' },
+  'GET /tickets': { access: 'clinician', kind: 'clinician-scoped' },
   'GET /tickets/:id': { access: 'clinician', kind: 'clinician-scoped' },
   'POST /tickets/:id/events': { access: 'clinician', kind: 'clinician-scoped' },
   'GET /tickets/:id/bundle': { access: 'clinician', kind: 'clinician-scoped' },
+  'GET /tickets/:id/fhir': { access: 'clinician', kind: 'clinician-scoped' },
+  'POST /inbound/screens': { access: 'inbound', kind: 'inbound-signed' },
 };
 
 describe('no employer or insurer access (MW-505)', () => {
@@ -89,6 +95,7 @@ describe('no employer or insurer access (MW-505)', () => {
       const { kind } = REVIEWED[key(route)]!;
       if (kind === 'person-own') expect(route.access).toBe('person');
       if (kind === 'clinician-scoped') expect(route.access).toBe('clinician');
+      if (kind === 'inbound-signed') expect(route.access).toBe('inbound');
       if (kind === 'open') expect(route.access).toBe('public');
     }
   });
@@ -97,6 +104,8 @@ describe('no employer or insurer access (MW-505)', () => {
     const routes = registered().filter((route) => REVIEWED[key(route)]!.kind !== 'open');
     expect(routes.length).toBeGreaterThanOrEqual(15);
     const bodies: Record<string, unknown> = {
+      'POST /inbound/screens': { result: 'positive', screenedAt: '2026-11-01T08:00:00+04:00', locale: 'ar' },
+      'POST /me/invites/claim': { code: 'ABCD-EFGH' },
       'POST /crisis-events': {},
       'POST /tickets': ticketRequest('00000000-0000-4000-8000-000000000001'),
       'POST /me/tickets/:id/events': { to: 'declined' },
@@ -124,7 +133,13 @@ describe('no employer or insurer access (MW-505)', () => {
       public: [],
       ops: [],
       admin: [],
-      inbound: [],
+      // A bearer token of any kind is no substitute for a signature. Unsigned and mis-signed requests are in inbound.test.ts.
+      inbound: [
+        { name: 'no credential', headers: {} },
+        { name: 'a person', headers: owner.headers },
+        { name: 'a clinician', headers: { authorization: `Bearer ${tokens['clinician A']}` } },
+        { name: 'ops', headers: { authorization: `Bearer ${tokens['ops']}` } },
+      ],
     };
     const leaked: string[] = [];
     let attempts = 0;
@@ -133,6 +148,8 @@ describe('no employer or insurer access (MW-505)', () => {
       for (const outsider of outsiders[route.access]) {
         const isOtherPersonsOwn = outsider.name === 'another person';
         if (isOtherPersonsOwn && !route.url.includes(':id') && route.url !== '/consents') continue; // those routes act on the caller's own rows
+        // The queue has no ticket id to be wrong about: a clinician at another facility reads their own list, which holds none of this facility's tickets (checked in queue.test.ts).
+        if (outsider.name === 'a clinician at another facility' && route.url === '/tickets') continue;
         const res = await ctx.app.inject({ method: route.method as 'GET', url, headers: outsider.headers, payload: bodies[key(route)] as object | undefined });
         attempts += 1;
         if (![401, 403, 404].includes(res.statusCode) || res.body.includes(FREE_TEXT) || res.body.includes(CONDITION) || res.body.includes('SUMMARY-MARKER')) {
@@ -148,6 +165,11 @@ describe('no employer or insurer access (MW-505)', () => {
     const asClinician = await ctx.app.inject({ method: 'GET', url: `/tickets/${ticketId}/bundle`, headers: { authorization: `Bearer ${tokens['clinician A']}` } });
     expect(asClinician.statusCode).toBe(200);
     expect(asClinician.body).toContain(FREE_TEXT);
+    const exported = await ctx.app.inject({ method: 'GET', url: `/tickets/${ticketId}/fhir`, headers: { authorization: `Bearer ${tokens['clinician A']}` } });
+    expect(exported.statusCode).toBe(200);
+    const queue = await ctx.app.inject({ method: 'GET', url: '/tickets', headers: { authorization: `Bearer ${tokens['clinician A']}` } });
+    expect(queue.statusCode).toBe(200);
+    expect(queue.json().items.map((item: { id: string }) => item.id)).toContain(ticketId);
     const asOwner = await ctx.app.inject({ method: 'GET', url: `/me/tickets/${ticketId}`, headers: owner.headers });
     expect(asOwner.statusCode).toBe(200);
   });

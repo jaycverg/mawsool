@@ -49,6 +49,11 @@ export const TICKET_SOURCES = ['app', 'phc', 'tamm', 'school'] as const;
 export const TicketSourceSchema = z.enum(TICKET_SOURCES);
 export type TicketSource = z.infer<typeof TicketSourceSchema>;
 
+/** Front doors that can hand a positive screen to Mawsool. Every source except the app itself, each with its own signing key. */
+export const INBOUND_SOURCES = ['phc', 'tamm', 'school'] as const;
+export const InboundSourceSchema = z.enum(INBOUND_SOURCES);
+export type InboundSource = z.infer<typeof InboundSourceSchema>;
+
 /** The required `ticket` element plus the elements the person may choose to share. */
 export const CONSENT_ELEMENTS = ['ticket', 'scores', 'trajectory', 'free_text', 'conditions', 'preferences'] as const;
 export const ConsentElementSchema = z.enum(CONSENT_ELEMENTS);
