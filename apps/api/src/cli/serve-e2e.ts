@@ -15,6 +15,8 @@ import { schema, type Db } from '../db/client';
 import { MIGRATIONS_FOLDER } from '../db/migrate';
 import { runSeed } from '../seed/run';
 
+// A fixed key for the throwaway end-to-end database; it protects nothing.
+const E2E_ENCRYPTION_KEY = Buffer.alloc(32, 9).toString('base64');
 const apiPort = Number(process.env.E2E_API_PORT ?? 4450);
 const inspectPort = Number(process.env.E2E_INSPECT_PORT ?? 4451);
 const origin = process.env.E2E_ORIGIN ?? 'http://localhost:3450';
@@ -26,7 +28,7 @@ await runSeed(db);
 
 const app = await buildApp({
   db,
-  config: { corsOrigins: [origin], clinicianAppUrl: 'http://localhost:3001', opsAppUrl: 'http://localhost:3002' },
+  config: { corsOrigins: [origin], clinicianAppUrl: 'http://localhost:3001', opsAppUrl: 'http://localhost:3002', encryptionKey: E2E_ENCRYPTION_KEY, summaryLlmEnabled: false },
   logger: false,
 });
 await app.listen({ port: apiPort, host: '127.0.0.1' });

@@ -1,5 +1,5 @@
 import { and, eq, gt } from 'drizzle-orm';
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { StaffRole } from '@mawsool/types';
 import type { Clock } from '../clock';
 import { schema, type Db } from '../db/client';
@@ -22,6 +22,12 @@ function bearerToken(header: string | undefined): string | null {
 }
 
 const PERSON_CREDENTIAL = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.([A-Za-z0-9_-]{43})$/;
+
+/** The caller's person id on a route declared `person`. Throws if called on any other route, which would be a bug. */
+export function personIdOf(request: FastifyRequest): string {
+  if (request.principal?.kind !== 'person') throw new Error('this route is not a person route');
+  return request.principal.personId;
+}
 
 export function sendError(reply: FastifyReply, status: number, error: string, message: string) {
   return reply.code(status).send({ error, message });

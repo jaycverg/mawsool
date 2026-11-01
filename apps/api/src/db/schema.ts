@@ -212,20 +212,65 @@ export const consents = pgTable(
 );
 
 /**
- * Consented elements as AES-256-GCM ciphertext. The columns exist now; encryption and the read path arrive
- * with the consent ledger. Nothing writes plaintext here.
+ * Consented elements as AES-256-GCM ciphertext (a JSON object keyed by element), one row per ticket. Nothing writes
+ * plaintext here. A revoke of one element rewrites the ciphertext without it; a revoke of the required `ticket`
+ * element empties both ciphertext columns and sets `deleted_at`.
  */
-export const sharedBundles = pgTable('shared_bundles', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  ticketId: uuid('ticket_id')
-    .notNull()
-    .references(() => tickets.id),
-  recipient: text('recipient').notNull(),
-  contentCiphertext: text('content_ciphertext'),
-  approvedSummaryCiphertext: text('approved_summary_ciphertext'),
-  createdAt: at('created_at').notNull(),
-  deletedAt: at('deleted_at'),
-});
+export const sharedBundles = pgTable(
+  'shared_bundles',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ticketId: uuid('ticket_id')
+      .notNull()
+      .references(() => tickets.id),
+    recipient: text('recipient').notNull(),
+    contentCiphertext: text('content_ciphertext'),
+    approvedSummaryCiphertext: text('approved_summary_ciphertext'),
+    createdAt: at('created_at').notNull(),
+    deletedAt: at('deleted_at'),
+  },
+  (t) => [unique('shared_bundles_ticket_unique').on(t.ticketId)],
+);
+
+/** One row for every time staff opened a ticket's bundle. The person can read their own ticket's rows. */
+export const bundleReads = pgTable(
+  'bundle_reads',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ticketId: uuid('ticket_id')
+      .notNull()
+      .references(() => tickets.id),
+    staffUserId: uuid('staff_user_id')
+      .notNull()
+      .references(() => staffUsers.id),
+    facilityId: uuid('facility_id')
+      .notNull()
+      .references(() => facilities.id),
+    at: at('at').notNull(),
+  },
+  (t) => [index('bundle_reads_ticket_idx').on(t.ticketId)],
+);
+
+/**
+ * Every summary the API drafted or the person approved, encrypted like the bundle. A draft is written before the
+ * ticket exists, so `request_id` (the ticket's client request id) links it, and `ticket_id` is filled in when the
+ * ticket is issued. A revoke of the `ticket` element deletes the ticket's rows.
+ */
+export const summaryLogs = pgTable(
+  'summary_logs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    personId: uuid('person_id')
+      .notNull()
+      .references(() => persons.id),
+    ticketId: uuid('ticket_id').references(() => tickets.id),
+    requestId: uuid('request_id').notNull(),
+    kind: text('kind').notNull(),
+    ciphertext: text('ciphertext').notNull(),
+    createdAt: at('created_at').notNull(),
+  },
+  (t) => [index('summary_logs_person_idx').on(t.personId), index('summary_logs_ticket_idx').on(t.ticketId), check('summary_logs_kind', sql`${t.kind} IN ('draft', 'approved')`)],
+);
 
 /** Carries no person id and no item answers, so a crisis can never be traced to a ticket. */
 export const crisisEvents = pgTable(
@@ -263,6 +308,8 @@ export const adverseEvents = pgTable('adverse_events', {
 /** Names of every table, in an order that is safe to truncate in one statement. */
 export const ALL_TABLE_NAMES = [
   'adverse_events',
+  'bundle_reads',
+  'summary_logs',
   'crisis_events',
   'shared_bundles',
   'consents',
