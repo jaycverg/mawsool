@@ -9,7 +9,7 @@ function Probe({ apiUrl }: { apiUrl: string }) {
   return <span data-offset>{offset}</span>;
 }
 
-const reply = (offsetMs: number) => vi.fn(async () => new Response(JSON.stringify({ demoMode: true, offsetMs }), { status: 200 }));
+const reply = (offsetMs: number) => vi.fn(async (_url: string) => new Response(JSON.stringify({ demoMode: true, offsetMs }), { status: 200 }));
 
 describe('useDemoClockSync', () => {
   afterEach(() => {
