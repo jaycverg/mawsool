@@ -37,7 +37,7 @@ export async function createTestApp(db: Db): Promise<TestApp> {
     db,
     clock,
     notifier,
-    config: { corsOrigins: ['http://localhost:3001'], staffLinkBaseUrl: 'http://localhost:3001' },
+    config: { corsOrigins: ['http://localhost:3001'], clinicianAppUrl: 'http://localhost:3001', opsAppUrl: 'http://localhost:3002' },
   });
   return { app, clock, notifier };
 }

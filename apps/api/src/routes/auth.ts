@@ -13,6 +13,7 @@ import { schema, type Db } from '../db/client';
 import type { MagicLinkNotifier } from '../notifier';
 import { sendError } from '../plugins/auth';
 import { randomToken, sha256Hex } from '../security';
+import { staffSignInLink, type StaffAppUrls } from '../staff-links';
 
 /** A sign-in link works once, for 15 minutes. */
 export const MAGIC_LINK_TTL_MS = 15 * 60 * 1000;
@@ -23,7 +24,8 @@ export interface AuthRouteDeps {
   db: Db;
   clock: Clock;
   notifier: MagicLinkNotifier;
-  staffLinkBaseUrl: string;
+  /** Where each role's sign-in link points. */
+  staffApps: StaffAppUrls;
   log: { error(object: Record<string, unknown>, message: string): void };
 }
 
@@ -48,7 +50,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): v
     async (request, reply) => {
       const email = request.body.email.toLowerCase();
       const [user] = await deps.db
-        .select({ id: schema.staffUsers.id })
+        .select({ id: schema.staffUsers.id, role: schema.staffUsers.role })
         .from(schema.staffUsers)
         .where(and(eq(schema.staffUsers.email, email), eq(schema.staffUsers.active, true)))
         .limit(1);
@@ -63,7 +65,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): v
           expiresAt,
         });
         try {
-          await deps.notifier.send({ to: email, link: `${deps.staffLinkBaseUrl}/sign-in?token=${token}`, expiresAt });
+          await deps.notifier.send({ to: email, link: staffSignInLink(user.role, token, deps.staffApps), expiresAt });
         } catch (error) {
           deps.log.error({ err: error }, 'could not deliver the staff sign-in link');
         }

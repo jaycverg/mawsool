@@ -3,5 +3,14 @@
     "appName": "Mawsool",
     "language": "Language",
     "helpNow": "Help now"
+  },
+  "signIn": {
+    "heading": "Staff sign-in",
+    "action": "Sign in",
+    "signingIn": "Signing in…",
+    "signedIn": "You are signed in.",
+    "failed": "This sign-in link is invalid, expired or already used. Request a new one.",
+    "wrongApp": "This link is for a different app. Request a new link for this one.",
+    "missingToken": "Open the sign-in link you were sent."
   }
 }

@@ -25,6 +25,8 @@ test('PORT_OFFSET shifts every port, the URLs built from them and the Compose pr
   assert.equal(env.DATABASE_URL, 'postgres://mawsool:mawsool@localhost:54429/mawsool');
   assert.equal(env.CORS_ORIGINS, 'http://localhost:3100,http://localhost:3101,http://localhost:3102');
   assert.equal(env.COMPOSE_PROJECT_NAME, 'mawsool-100');
+  assert.equal(env.CLINICIAN_APP_URL, 'http://localhost:3101');
+  assert.equal(env.OPS_APP_URL, 'http://localhost:3102');
 });
 
 test('two offsets never share a port', () => {

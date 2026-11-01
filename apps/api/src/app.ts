@@ -1,5 +1,5 @@
 import cors from '@fastify/cors';
-import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyError, type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import {
   hasZodFastifySchemaValidationErrors,
   serializerCompiler,
@@ -18,11 +18,11 @@ import { registerTicketRoutes } from './routes/tickets';
 
 export interface AppDeps {
   db: Db;
-  config: Pick<AppConfig, 'corsOrigins' | 'staffLinkBaseUrl'>;
+  config: Pick<AppConfig, 'corsOrigins' | 'clinicianAppUrl' | 'opsAppUrl'>;
   clock?: Clock;
   notifier?: MagicLinkNotifier;
   /** Fastify logger options; false silences it (tests). */
-  logger?: boolean;
+  logger?: FastifyServerOptions['logger'];
   /** Extra route registrations, used by tests to prove the registry refuses an undeclared route. */
   extraRoutes?: (app: FastifyInstance) => void;
 }
@@ -59,7 +59,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     db: deps.db,
     clock,
     notifier,
-    staffLinkBaseUrl: deps.config.staffLinkBaseUrl,
+    staffApps: { clinician: deps.config.clinicianAppUrl, ops: deps.config.opsAppUrl },
     log: app.log,
   });
   registerTicketRoutes(app, { db: deps.db });
