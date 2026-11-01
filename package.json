@@ -24,6 +24,7 @@
     "verify": "pnpm test:scripts && pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm smoke:dev",
     "gate:phase2": "node scripts/gate-phase2.mjs",
     "gate:b": "node scripts/gate-b.mjs",
+    "gate:postgres": "node scripts/gate-postgres.mjs",
     "gate:phase3": "node scripts/gate-phase3.mjs"
   },
   "devDependencies": {
