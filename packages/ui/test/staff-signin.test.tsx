@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import { STAFF_SESSION_KEY, storeStaffSession, verifySignIn } from '../src';
+import { STAFF_SESSION_KEY, requestSignInLink, storeStaffSession, verifySignIn } from '../src';
 import { StaffSignIn, type StaffSignInLabels } from '../src/components';
 
 const SESSION = {
@@ -48,6 +48,28 @@ describe('verifySignIn', () => {
   });
 });
 
+describe('requestSignInLink', () => {
+  const request = (fetchFn: ReturnType<typeof reply>) => requestSignInLink({ fetch: fetchFn as never, apiUrl: 'http://api.test', email: 'a@demo.mawsool.test' });
+
+  it('posts only the address to /auth/magic-link and reports accepted for a 202', async () => {
+    const fetchFn = reply(202, { status: 'accepted' });
+    expect(await request(fetchFn)).toBe('accepted');
+    const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('http://api.test/auth/magic-link');
+    expect(JSON.parse(init.body as string)).toEqual({ email: 'a@demo.mawsool.test' });
+  });
+
+  it('reports failed for any other answer and for a network error', async () => {
+    expect(await request(reply(400, {}))).toBe('failed');
+    expect(await request(reply(500, {}))).toBe('failed');
+    expect(await request(reply(200, {}))).toBe('failed');
+    const down = vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    expect(await request(down as never)).toBe('failed');
+  });
+});
+
 describe('storeStaffSession', () => {
   it('keeps the session under one key', () => {
     const setItem = vi.fn();
@@ -79,6 +101,10 @@ describe('StaffSignIn page', () => {
     failed: 'Link failed',
     wrongApp: 'Wrong app',
     missingToken: 'Open your link',
+    emailLabel: 'Work email address',
+    requestAction: 'Request a sign-in link',
+    requestSent: 'Sent',
+    requestFailed: 'Not sent',
   };
   const html = (token: string | null) =>
     renderToStaticMarkup(<StaffSignIn token={token} apiUrl="http://api.test" allowedRoles={['clinician']} labels={labels} />);
@@ -90,10 +116,11 @@ describe('StaffSignIn page', () => {
     expect(markup).not.toContain('role="status"');
   });
 
-  it('shows the missing-link message and no button when the link has no token', () => {
+  it('shows the missing-link message and the request form, but no Sign in button, when the link has no token', () => {
     const markup = html(null);
     expect(markup).toContain('Open your link');
     expect(markup).toContain('data-phase="missing_token"');
-    expect(markup).not.toContain('<button');
+    expect(markup).not.toContain('>Sign in<');
+    expect(markup).toContain('Request a sign-in link');
   });
 });

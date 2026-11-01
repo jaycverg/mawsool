@@ -46,3 +46,25 @@ export function storeStaffSession(storage: Pick<Storage, 'setItem'> | undefined,
     return false;
   }
 }
+
+/**
+ * Asks the API to issue a sign-in link for an address. The API answers 202 whether or not the address belongs to a
+ * staff user, so `accepted` says nothing about whether the address exists and the page must not either.
+ * Anything else, including a network error, is `failed`.
+ */
+export async function requestSignInLink(options: {
+  fetch: typeof fetch;
+  apiUrl: string;
+  email: string;
+}): Promise<'accepted' | 'failed'> {
+  try {
+    const response = await options.fetch(`${options.apiUrl}/auth/magic-link`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: options.email }),
+    });
+    return response.status === 202 ? 'accepted' : 'failed';
+  } catch {
+    return 'failed';
+  }
+}
