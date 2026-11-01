@@ -357,6 +357,21 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     const note = dash.locator('[data-funnel-note]');
     await expect(note).toBeVisible();
     await expect(note).toHaveText(omsg(locale, 'dash.funnel.note'));
+    // The loop-closed tile reads the equity figures, which are always the last 90 days, so its note says so and does not move
+    // with the period filter (the board's 30-day rate is not the 90-day one the tile shows).
+    const tileNote = dash.locator('[data-tile="loop-closed"] > div').last();
+    const template = omsg(locale, 'dash.tiles.loopClosedOf', { count: '@@', of: '##' });
+    const wording = new RegExp(`^${template.split(/@@|##/).map((piece) => piece.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\d,.]+')}$`);
+    await expect(tileNote).toHaveText(wording);
+    expect(template, 'the note names its period').toMatch(locale === 'en' ? /last 90 days/ : /90/);
+    const noteAtAllTime = await tileNote.innerText();
+    const firstAtAllTime = await stageCount(dash, 'positive_screen').locator('[data-count]').innerText();
+    await dash.locator('[data-filter="period"]').selectOption('30d');
+    await expect(stageCount(dash, 'positive_screen').locator('[data-count]')).not.toHaveText(firstAtAllTime);
+    expect(await tileNote.innerText(), 'the loop-closed tile note does not follow the period filter').toBe(noteAtAllTime);
+    await expect(tileNote).toHaveText(wording);
+    await dash.locator('[data-filter="period"]').selectOption('all');
+    await expect(stageCount(dash, 'positive_screen').locator('[data-count]')).toHaveText(firstAtAllTime);
     // A filter by source counts rows carrying that field: crisis events drop out. The app has no invites, so its first stage is its
     // journeys. Of the three front doors only tamm shows a first stage on this seed; phc and school are hidden, because the table
     // hides cells around the small ones in it (school has 8 journeys in the community tier).
@@ -561,9 +576,11 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     else expect(Math.round(countColumn!.width)).toBeGreaterThanOrEqual(76);
     const countLine = parseFloat(String((await computed(dash, '[data-equity-row="ur"] > span:last-child', ['line-height']))['line-height']));
     expect(countColumn!.height, 'the count stays on one line').toBeLessThanOrEqual(countLine + 1);
-    const note = dash.locator('[data-tile="within-target"] > div').last();
-    const lineHeight = parseFloat(String((await computed(dash, '[data-tile="within-target"] > div:last-child', ['line-height']))['line-height']));
-    expect((await note.boundingBox())!.height, 'the tile note fits one line').toBeLessThanOrEqual(lineHeight + 1);
+    for (const tile of ['within-target', 'loop-closed']) {
+      const note = dash.locator(`[data-tile="${tile}"] > div`).last();
+      const lineHeight = parseFloat(String((await computed(dash, `[data-tile="${tile}"] > div:last-child`, ['line-height']))['line-height']));
+      expect((await note.boundingBox())!.height, `the ${tile} tile note fits one line`).toBeLessThanOrEqual(lineHeight + 1);
+    }
     // The flag note: the board's 18px warning triangle, and only the word "Flag:" in bold.
     const flag = dash.locator('[data-flag="ur"]');
     const icon = await flag.locator('svg').boundingBox();

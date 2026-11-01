@@ -44,7 +44,7 @@
     "tiles": {
       "label": "Headline measures",
       "loopClosed": "Loop closed (seen)",
-      "loopClosedOf": "{count} of {of} tickets",
+      "loopClosedOf": "{count} of {of} tickets, last 90 days",
       "withinTarget": "Seen within target",
       "withinTargetOf": "{count} of {of} tickets, target 7 or 14 days",
       "medianSeen": "Median time to seen",
