@@ -1,6 +1,7 @@
 import type { Locale } from '@mawsool/types';
 import { API_URL } from './api';
 import { deviceNow } from './clock';
+import { refreshDemoOffset, restoreDemoOffset } from './demo-offset';
 import { flushOutbox } from './crisis-outbox';
 import { loadDirectory } from './directory';
 import { getDevice } from './use-device';
@@ -38,5 +39,18 @@ export function refreshDirectory(): void {
     void loadDirectory({ storage, fetch: window.fetch.bind(window), apiUrl: API_URL, now: deviceNow }).catch(() => undefined);
   } catch {
     // No usable storage, so there is nowhere to save it.
+  }
+}
+
+/**
+ * Brings the demo clock's offset up to date. With `restore`, the last offset this phone kept is applied first, so an
+ * offline phone starts from it. Fire and forget, and never part of the crisis path or of matching.
+ */
+export function refreshDemoClock(options: { restore: boolean }): void {
+  try {
+    const { storage } = getDevice();
+    void (options.restore ? restoreDemoOffset(storage) : Promise.resolve()).then(() => refreshDemoOffset(storage)).catch(() => undefined);
+  } catch {
+    // No usable storage: the offset stays as it is.
   }
 }

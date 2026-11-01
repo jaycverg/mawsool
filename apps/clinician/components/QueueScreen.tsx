@@ -1,8 +1,8 @@
 'use client';
 
 import { QUEUE_STATE_FILTERS, StaffQueueSchema, type QueueStateFilter, type Session, type StaffQueue, type StaffTicketView, type Tier } from '@mawsool/types';
-import { calendarDaysUntil, formatDate, isLocale, staffCall } from '@mawsool/ui';
-import { BrandMark, LanguageToggle, RequireStaffSession } from '@mawsool/ui/components';
+import { calendarDaysUntil, demoNow, formatDate, isLocale, staffCall } from '@mawsool/ui';
+import { BrandMark, LanguageToggle, RequireStaffSession, useDemoClockSync } from '@mawsool/ui/components';
 import { useLocale, useTranslations } from 'next-intl';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
@@ -23,6 +23,8 @@ export function QueueScreen() {
 }
 
 function Queue({ session, signOut }: { session: Session; signOut: () => void }) {
+  // The deadlines and "days late" are counted on the same clock as the API's sweep, so they move with the demo clock.
+  useDemoClockSync(API_URL);
   const t = useTranslations('queue');
   const nav = useTranslations('nav');
   const root = useTranslations();
@@ -167,7 +169,7 @@ function Row({ item, lang, selected, onOpen }: { item: StaffTicketView; lang: 'a
   const t = useTranslations('queue');
   const root = useTranslations();
   const late = item.state === 'overdue';
-  const deadline = deadlineOf(calendarDaysUntil(item.deadlineAt, new Date()));
+  const deadline = deadlineOf(calendarDaysUntil(item.deadlineAt, demoNow()));
   const cell = 'border-b border-[#E6ECEA] px-3.5 py-3';
   return (
     <tr className={`${late ? 'bg-warning' : selected ? 'bg-accent-tint' : ''} ${selected ? 'shadow-[inset_4px_0_0_#0E6B63] rtl:shadow-[inset_-4px_0_0_#0E6B63]' : ''}`} data-ticket={item.shortCode} data-state={item.state} data-selected={selected || undefined}>

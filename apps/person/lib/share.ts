@@ -93,3 +93,11 @@ export async function loadEquity(storage: StorageAdapter): Promise<StoredEquity>
 export function saveEquity(storage: StorageAdapter, equity: StoredEquity): Promise<void> {
   return storage.set(KEYS.equity, equity);
 }
+
+/** Drops a ticket this phone noted. Used when the server no longer knows it (after a demo reset), so the phone is not stuck on it. */
+export function forgetTicket(storage: StorageAdapter, ticketId: string): Promise<void> {
+  return withStoreLock(storage, async () => {
+    const all = await loadTickets(storage);
+    await storage.set(KEYS.tickets, all.filter((item) => item.id !== ticketId));
+  });
+}

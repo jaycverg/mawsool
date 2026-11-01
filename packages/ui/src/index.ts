@@ -6,3 +6,4 @@ export * from './staff-signin';
 export * from './tokens';
 export * from './dates';
 export * from './csp';
+export * from './demo-clock';
