@@ -107,9 +107,9 @@ export function CrisisScreen() {
       <header className="flex items-center justify-between px-4 py-3.5">
         <div className="flex items-center gap-2 text-ink">
           <BrandMark />
-          <span className="wordmark">{common('appName')}</span>
+          <span className="wordmark tracking-normal">{common('appName')}</span>
         </div>
-        <LanguageToggle locale={lang} ariaLabel={common('language')} className="lang-toggle border-[#E3C9C5]!" />
+        <LanguageToggle locale={lang} ariaLabel={common('language')} className="lang-toggle border-[#E3C9C5]! text-[#2A1414]!" />
       </header>
 
       <main className="flex flex-1 flex-col gap-3.5 px-5 pb-5 pt-2">

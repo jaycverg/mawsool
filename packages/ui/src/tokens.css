@@ -45,8 +45,9 @@
   --spacing-cta: 52px;
 }
 
-/* Arabic uses taller line boxes: h1 24/34, body 15/24. */
+/* Arabic uses taller line boxes (h1 24/34, body 15/24) and puts the Arabic face first in the stack. */
 html[lang='ar'] {
+  --font-sans: 'IBM Plex Sans Arabic', 'IBM Plex Sans', system-ui, sans-serif;
   --text-h1--line-height: 34px;
   --text-body--line-height: 24px;
 }

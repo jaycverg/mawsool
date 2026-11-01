@@ -10,19 +10,22 @@ export interface TrendChartProps {
   /** Text for the first and last date under the line. */
   startLabel: string;
   endLabel: string;
+  /** The home screen's sparkline is 64 px tall with no point values; the full chart is 150 px. */
+  compact?: boolean;
 }
 
 const WIDTH = 320;
-const HEIGHT = 110;
-const PAD = { left: 14, right: 14, top: 10, bottom: 12 };
+const FULL = { height: 150, pad: { left: 14, right: 14, top: 14, bottom: 14 } } as const;
+const COMPACT = { height: 64, pad: { left: 8, right: 8, top: 8, bottom: 8 } } as const;
 
 /**
  * A line of totals across check-ins. Time runs from the start edge, so the chart mirrors in Arabic. One point is a
  * dot with no line. The picture has a text description for screen readers, because the same facts are in the
  * check-in list and the result callout.
  */
-export function TrendChart({ series, rtl, label, startLabel, endLabel }: TrendChartProps) {
+export function TrendChart({ series, rtl, label, startLabel, endLabel, compact = false }: TrendChartProps) {
   if (series.length === 0) return null;
+  const { height: HEIGHT, pad: PAD } = compact ? COMPACT : FULL;
   const instrument = series[0]!.instrument;
   const max = MAX_TOTAL[instrument];
   const first = Date.parse(series[0]!.takenAt);
@@ -41,15 +44,17 @@ export function TrendChart({ series, rtl, label, startLabel, endLabel }: TrendCh
 
   return (
     <figure className="m-0 flex flex-col gap-1">
-      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={label} className="h-auto w-full" data-points={points.length}>
+      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={label} className="w-full" style={{ height: HEIGHT }} data-points={points.length}>
         <line x1={PAD.left} x2={WIDTH - PAD.right} y1={HEIGHT - PAD.bottom} y2={HEIGHT - PAD.bottom} stroke="#D5DFDC" strokeWidth="1" />
         {points.length > 1 && <polyline points={points.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#0E6B63" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />}
         {points.map((p, position) => (
           <g key={position}>
             <circle cx={p.x} cy={p.y} r={position === points.length - 1 ? 5 : 3.5} fill={position === points.length - 1 ? '#0E6B63' : '#FFFFFF'} stroke="#0E6B63" strokeWidth="2" />
-            <text x={p.x} y={Math.max(9, p.y - 9)} textAnchor="middle" fontSize="11" fill="#10302D">
-              {p.total}
-            </text>
+            {!compact && (
+              <text x={p.x} y={Math.max(9, p.y - 9)} textAnchor="middle" fontSize="11" fill="#10302D">
+                {p.total}
+              </text>
+            )}
           </g>
         ))}
       </svg>

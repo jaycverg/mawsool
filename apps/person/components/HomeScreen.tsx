@@ -82,12 +82,13 @@ export function HomeScreen() {
               label={tr('chart', { instrument: ti(`${trendInstrument}Full`), summary: series.map((s) => tr('chartPoint', { date: formatDate(s.takenAt, lang), total: s.total })).join(', ') })}
               startLabel={formatDate(series[0]!.takenAt, lang)}
               endLabel={formatDate(latest.takenAt, lang)}
+              compact
             />
             {nextCheckIn && <span className="text-[14px] text-muted">{t('nextCheckIn', { date: nextCheckIn })}</span>}
           </section>
         )}
 
-        <p className="flex items-center gap-2 text-small text-muted">
+        <p className="flex items-center gap-2 text-small text-muted rtl:leading-5">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="6" y="11" width="12" height="9" rx="2" />
             <path d="M9 11V8a3 3 0 0 1 6 0v3" />

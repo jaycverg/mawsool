@@ -173,3 +173,27 @@ export async function watchNavigationRequests(page: Page): Promise<{ urls: () =>
   await session.send('Page.enable');
   return { urls: () => [...requested] };
 }
+
+/** Computed style values of the first element matching `selector`, as the browser resolved them. */
+export async function computed(page: Page, selector: string, properties: string[]): Promise<Record<string, string | number>> {
+  const element = page.locator(selector).first();
+  await expect(element, `${selector} is on the screen`).toBeVisible();
+  return element.evaluate((node, names) => {
+    const style = getComputedStyle(node);
+    const box = node.getBoundingClientRect();
+    return { ...Object.fromEntries(names.map((name) => [name, style.getPropertyValue(name)])), width: Math.round(box.width * 100) / 100, height: Math.round(box.height * 100) / 100 };
+  }, properties);
+}
+
+/**
+ * Stores a GAD-7 of 9 three weeks before one of 14, with the page clock fixed at each, so the result, the trend and
+ * the options all have the same data in every run.
+ */
+export async function seedTrend(page: Page, context: BrowserContext, locale: Locale): Promise<void> {
+  await context.clock.setFixedTime(new Date('2026-10-08T08:00:00+04:00'));
+  await takeCheckIn(page, locale, 'gad7', [2, 1, 1, 1, 2, 1, 1]);
+  await expect(page.locator('[data-score]')).toHaveText('9');
+  await context.clock.setFixedTime(new Date('2026-10-29T08:00:00+04:00'));
+  await takeCheckIn(page, locale, 'gad7', [2, 2, 2, 2, 2, 2, 2]);
+  await expect(page.locator('[data-score]')).toHaveText('14');
+}

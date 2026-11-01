@@ -94,7 +94,7 @@ export function ResultScreen() {
       <FlowHeader leading={leading} title={t('title')} />
       <main className="mx-auto flex max-w-md flex-col gap-4 px-4 py-5">
         <section className="flex flex-col gap-3 rounded-card border border-border bg-surface p-5" data-result={instrument}>
-          <span className="text-[13px] font-semibold uppercase tracking-[0.6px] text-muted">
+          <span className="text-[13px] font-semibold uppercase tracking-[0.6px] text-muted rtl:normal-case rtl:tracking-normal">
             {ti(`${instrument}Full`)} · {formatDate(screening.takenAt, lang, 'long')}
           </span>
           <div className="flex flex-wrap items-baseline gap-x-2.5">
@@ -134,12 +134,12 @@ export function ResultScreen() {
 
         <section className="flex flex-col gap-3 px-1 pt-1">
           <div>
-            <h2 className="mb-1 text-[16px] font-semibold">{t('means')}</h2>
-            <p className="text-[15px] leading-[22px] text-[#34484A]">{meaning}</p>
+            <h2 className="mb-1 text-[16px] font-bold">{t('means')}</h2>
+            <p className="t-body text-[#34484A]">{meaning}</p>
           </div>
           <div>
-            <h2 className="mb-1 text-[16px] font-semibold">{t('doesNotMean')}</h2>
-            <p className="text-[15px] leading-[22px] text-[#34484A]">{tc('doesNotMean')}</p>
+            <h2 className="mb-1 text-[16px] font-bold">{t('doesNotMean')}</h2>
+            <p className="t-body text-[#34484A]">{tc('doesNotMean')}</p>
           </div>
         </section>
 

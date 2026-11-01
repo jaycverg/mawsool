@@ -70,5 +70,9 @@
   {
     "id": "direct-unslashed-lands-on-crisis",
     "sentence": "Offline, a direct visit to each guarded screen typed without its trailing slash lands on the crisis screen"
+  },
+  {
+    "id": "board-measurements-at-390",
+    "sentence": "The screens match the plan's tokens and the boards' measured values at 390 px in both languages"
   }
 ]
