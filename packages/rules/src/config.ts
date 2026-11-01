@@ -74,6 +74,9 @@ export const STEP_ROWS: readonly StepRow[] = [
   },
 ];
 
+/** The most option cards shown before "Show other options": the spec's "1-3 cards". */
+export const MAX_FIRST_VIEW_CARDS = 3;
+
 /** Window for a ticket the person chooses outside the row's own hand-off (a more intensive tier than offered). */
 export const FALLBACK_HANDOFF_WINDOW_DAYS = 14;
 
