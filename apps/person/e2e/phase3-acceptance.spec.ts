@@ -73,6 +73,20 @@ async function toConsent(page: Page, locale: Locale): Promise<void> {
 }
 
 const tick = (page: Page, element: string) => page.locator(`input[data-element="${element}"]`).check();
+
+/**
+ * Stands in for a working AI provider (the e2e API runs with the summary flag off, so it only ever returns the template):
+ * a draft whose request asked for the AI comes back marked `source: 'ai'`. The request still reaches the real API, so the
+ * draft is logged as it would be. No key and no provider are involved.
+ */
+async function answerAiDrafts(page: Page): Promise<void> {
+  await page.route(`${API}/summary/draft`, async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { source: string; text: string };
+    const asked = JSON.parse(route.request().postData() ?? '{}') as { useAi?: boolean };
+    await route.fulfill({ response, json: asked.useAi ? { ...body, source: 'ai' } : body });
+  });
+}
 const send = (page: Page, locale: Locale) => page.getByRole('button', { name: msg(locale, 'consent.send'), exact: true }).click();
 
 /** Takes a GP referral all the way to a ticket with the given elements ticked. */
@@ -452,10 +466,12 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
   },
 
   async 'stopping-removes-the-summary-and-unticking-unapproves'({ page, locale }) {
+    await answerAiDrafts(page);
     await toConsent(page, locale);
     await tick(page, 'scores');
-    await page.locator('#use-ai').check(); // a draft made with the AI box ticked is built from what is ticked
+    await page.locator('#use-ai').check(); // a draft the AI writes is built from what is ticked
     await page.getByRole('button', { name: msg(locale, 'consent.draft'), exact: true }).click();
+    await expect(page.locator('[data-summary="ai"]')).toBeVisible();
     await page.locator('#summary').fill('SUMMARY-WORDS written with the scores in view');
     await page.getByRole('button', { name: msg(locale, 'consent.approve'), exact: true }).click();
     await expect(page.getByText(msg(locale, 'consent.approved'))).toBeVisible();
@@ -482,6 +498,39 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     const after = await stored(id);
     expect(after.bundle!.approvedSummaryCiphertext).toBeNull();
     expect(after.summaryLogs).toBe(0);
+    expect(Object.keys(after.bundle!.content!)).toEqual([]);
+  },
+
+  async 'stopping-an-element-keeps-a-template-summary'({ page, locale }) {
+    const sent: { approvedSummary: string | null; summaryBuiltFrom: string[]; consents: string[] }[] = [];
+    page.on('request', (request) => {
+      if (request.url() === `${API}/tickets` && request.method() === 'POST') sent.push(JSON.parse(request.postData() ?? '{}'));
+    });
+    await toConsent(page, locale);
+    await tick(page, 'scores');
+    await page.locator('#use-ai').check(); // the box is ticked, but the flag is off here, so the draft is the fill-in template
+    await page.getByRole('button', { name: msg(locale, 'consent.draft'), exact: true }).click();
+    await expect(page.locator('[data-summary="template"]')).toBeVisible();
+    await page.locator('#summary').fill('TYPED-BY-THE-PERSON text that no tick made');
+    await page.getByRole('button', { name: msg(locale, 'consent.approve'), exact: true }).click();
+    await expect(page.getByText(msg(locale, 'consent.approved'))).toBeVisible();
+    // A template is built from nothing: unticking what was ticked does not unapprove it.
+    await page.locator('input[data-element="scores"]').uncheck();
+    await tick(page, 'scores');
+    await expect(page.getByText(msg(locale, 'consent.approved'))).toBeVisible();
+    await expect(page.locator('[data-stale]')).toHaveCount(0);
+    await send(page, locale);
+    await expect(page).toHaveURL(ticketUrl(locale));
+    expect(sent[0]).toMatchObject({ approvedSummary: 'TYPED-BY-THE-PERSON text that no tick made', consents: ['ticket', 'scores'], summaryBuiltFrom: [] });
+    const id = ticketIdOf(page);
+    expect((await stored(id)).summaryLogs).toBe(2);
+
+    await page.locator('[data-consent="scores"] button').click();
+    await expect(page.locator('[data-consent="scores"]')).toHaveAttribute('data-revoked', 'true');
+    await expect(page.locator('[data-notice="summary-removed"]')).toHaveCount(0);
+    const after = await stored(id);
+    expect(after.bundle!.approvedSummaryCiphertext).toMatch(/^v1\./);
+    expect(after.summaryLogs).toBe(2);
     expect(Object.keys(after.bundle!.content!)).toEqual([]);
   },
 
@@ -681,11 +730,13 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     });
     const approve = (page: Page) => page.getByRole('button', { name: msg(locale, 'consent.approve'), exact: true });
 
-    // A draft made with the AI box ticked, the element then unticked: Approve works from that state, and the element stays out.
+    // A draft the AI wrote, the element then unticked: Approve works from that state, and the element stays out.
+    await answerAiDrafts(page);
     await toConsent(page, locale);
     await tick(page, 'scores');
     await page.locator('#use-ai').check();
     await page.getByRole('button', { name: msg(locale, 'consent.draft'), exact: true }).click();
+    await expect(page.locator('[data-summary="ai"]')).toBeVisible();
     await page.locator('#summary').fill('WRITTEN-WITHOUT-THE-SCORES-NOW');
     await page.locator('input[data-element="scores"]').uncheck();
     await expect(page.locator('[data-stale]')).toBeVisible();

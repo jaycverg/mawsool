@@ -568,6 +568,11 @@
     "browser": "stopping-removes-the-summary-and-unticking-unapproves"
   },
   {
+    "id": "browser-stopping-an-element-keeps-a-template-summary",
+    "sentence": "A fill-in template the person wrote is built from nothing: unticking does not unapprove it and stopping an element leaves it and its logs (browser)",
+    "browser": "stopping-an-element-keeps-a-template-summary"
+  },
+  {
     "id": "browser-draft-request-carries-only-what-is-allowed",
     "sentence": "The draft request carries no content with the AI box unticked and only ticked elements with it ticked (browser)",
     "browser": "draft-request-carries-only-what-is-allowed"
