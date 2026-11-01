@@ -3,7 +3,7 @@ import { setRequestLocale } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { Suspense } from 'react';
 import { LOCALES } from '@mawsool/ui';
-import { TicketLookup } from './TicketLookup';
+import { TicketScreen } from '../../../components/TicketScreen';
 
 /**
  * Static export has no dynamic route segments for data, so a ticket is addressed by query string:
@@ -15,7 +15,7 @@ export default async function TicketPage({ params }: { params: Promise<{ locale:
   setRequestLocale(locale);
   return (
     <Suspense>
-      <TicketLookup />
+      <TicketScreen />
     </Suspense>
   );
 }

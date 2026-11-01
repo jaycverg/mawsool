@@ -1,14 +1,15 @@
 'use client';
 
 import { indicativeCoverage, match, splitCards, type RankedOption } from '@mawsool/rules';
-import { CARE_LANGUAGES, GENDERS, INSURANCE_CLASSES, MODALITIES, REGIONS, TIERS, TIMES_OF_DAY, type InsuranceClass, type Preferences, type Screening, type Tier } from '@mawsool/types';
+import { CARE_LANGUAGES, GENDERS, INSURANCE_CLASSES, MODALITIES, REGIONS, RerouteReasonSchema, TIERS, TIMES_OF_DAY, type InsuranceClass, type Preferences, type Screening, type Tier } from '@mawsool/types';
 import { isLocale } from '@mawsool/ui';
 import { useLocale, useTranslations } from 'next-intl';
+import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { API_URL } from '../lib/api';
 import { deviceNow } from '../lib/clock';
 import { loadDirectory, type Directory } from '../lib/directory';
-import { currentTier, loadChoice, loadInsurance, loadPreferences, saveChoice, saveInsurance, savePreferences, type Choice } from '../lib/prefs';
+import { currentTier, loadChoice, loadInsurance, loadPreferences, pendingFrom, saveChoice, savePendingChoice, saveInsurance, savePreferences, type Choice, type PendingChoice } from '../lib/prefs';
 import { href } from '../lib/routes';
 import { loadScreenings } from '../lib/screening-store';
 import { useDevice, type Device } from '../lib/use-device';
@@ -42,6 +43,12 @@ export function OptionsScreen() {
   const [showOther, setShowOther] = useState(false);
   const [saved, setSaved] = useState(false);
   const [unreadable, setUnreadable] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const params = useSearchParams();
+  const rerouteReason = RerouteReasonSchema.safeParse(params.get('reason'));
+  const rerouteId = params.get('reroute');
+  /** Set when the person came here to replace a stalled referral: the ticket and the reason they gave. */
+  const reroute: PendingChoice['reroute'] = rerouteId && /^[0-9a-f-]{36}$/.test(rerouteId) && rerouteReason.success ? { ticketId: rerouteId, reason: rerouteReason.data } : null;
 
   const fetchDirectory = useCallback(
     (d: Device) => {
@@ -90,35 +97,47 @@ export function OptionsScreen() {
     );
   }
 
+  /** Applies a change to the screen and saves it; if the phone refuses, the person is told, since the change is not kept. */
   function update(change: Partial<Pick<Loaded, 'preferences' | 'insurance'>>) {
     if (!loaded || !device || device === 'unavailable') return;
     setLoaded({ ...loaded, ...change });
-    if (change.preferences) void savePreferences(device.storage, change.preferences);
-    if (change.insurance) void saveInsurance(device.storage, change.insurance);
+    setSaveFailed(false);
+    const saving = change.preferences ? savePreferences(device.storage, change.preferences) : change.insurance ? saveInsurance(device.storage, change.insurance) : Promise.resolve();
+    saving.catch(() => setSaveFailed(true));
   }
 
   async function choose(option: RankedOption) {
     if (!device || device === 'unavailable' || !option.service || option.tier === 'crisis') return;
-    const selfHelp = option.tier === 'self_help';
-    const choice: Choice = { tier: option.tier, serviceId: option.service.id, chosenAt: deviceNow().toISOString(), confirmed: selfHelp };
-    await saveChoice(device.storage, choice);
-    if (selfHelp) {
-      setLoaded((previous) => (previous ? { ...previous, choice } : previous));
-      setSaved(true);
-    } else {
-      window.location.assign(href(lang, 'consent'));
+    setSaveFailed(false);
+    try {
+      if (option.tier === 'self_help') {
+        // Guided self-help stays on the phone: it becomes the current support at once, with no consent and no request.
+        const choice: Choice = { tier: option.tier, serviceId: option.service.id, chosenAt: deviceNow().toISOString(), confirmed: true };
+        await saveChoice(device.storage, choice);
+        setLoaded((previous) => (previous ? { ...previous, choice } : previous));
+        setSaved(true);
+      } else {
+        // Any other tier waits for consent. The pick is kept apart from the current choice, so leaving the consent
+        // screen unsent costs the person nothing they already have.
+        await savePendingChoice(device.storage, pendingFrom({ tier: option.tier, serviceId: option.service.id, handoffWindowDays: option.handoffWindowDays }, { now: deviceNow, newId: () => crypto.randomUUID() }, reroute));
+        window.location.assign(href(lang, 'consent'));
+      }
+    } catch {
+      setSaveFailed(true);
     }
   }
 
-  const { cards, others } = options ? splitCards(options) : { cards: [], others: [] };
+  // A reroute replaces a clinic referral, so guided self-help is not offered there.
+  const offered = options && reroute ? options.filter((option) => option.tier !== 'self_help') : options;
+  const { cards, others } = offered ? splitCards(offered) : { cards: [], others: [] };
 
   return (
     <>
       <FlowHeader leading={leading} title={t('title')} />
       <main className="mx-auto flex max-w-md flex-col gap-3.5 px-4 py-5">
         <div className="flex flex-col gap-1">
-          <h1 className="t-h1">{t('heading')}</h1>
-          <p className="t-body text-muted">{t('intro')}</p>
+          <h1 className="t-h1">{t(reroute ? 'rerouteHeading' : 'heading')}</h1>
+          <p className="t-body text-muted">{t(reroute ? 'rerouteIntro' : 'intro')}</p>
         </div>
 
         {loaded && (
@@ -126,6 +145,12 @@ export function OptionsScreen() {
             <InsurancePanel t={t} insurance={loaded.insurance} onChange={(insurance) => update({ insurance })} />
             <PreferencesPanel t={t} preferences={loaded.preferences} onChange={(preferences) => update({ preferences })} />
           </>
+        )}
+
+        {saveFailed && (
+          <p role="alert" className="t-body text-danger">
+            {t('saveFailed')}
+          </p>
         )}
 
         {saved && (

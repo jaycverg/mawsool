@@ -52,7 +52,7 @@ describe('download and delete', () => {
     const { storage } = memoryStorage(full);
     const json = await exportDeviceData(storage, () => new Date('2026-11-02T08:00:00+04:00'));
     const parsed = JSON.parse(json);
-    expect(Object.keys(parsed).sort()).toEqual(['choice', 'crisis', 'exportedAt', 'insurance', 'preferences', 'screenings']);
+    expect(Object.keys(parsed).sort()).toEqual(['choice', 'crisis', 'exportedAt', 'insurance', 'preferences', 'screenings', 'sharing', 'tickets']);
     expect(parsed.screenings).toEqual(full.screenings);
     expect(json).not.toContain('device-secret-value');
     expect(json).not.toContain('queued');

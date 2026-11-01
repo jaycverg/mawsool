@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@mawsool/consent": "workspace:*",
     "@mawsool/instruments": "workspace:*",
     "@mawsool/rules": "workspace:*",
     "@mawsool/types": "workspace:*",
