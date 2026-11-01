@@ -1,0 +1,85 @@
+/*
+ * Design tokens, taken from the inline CSS of the Mawsool UI Design boards (canvas version 1793502701-8cbe).
+ * `tokens.ts` mirrors every value and `test/tokens.test.ts` keeps the two identical.
+ * Use these through Tailwind utilities (bg-ground, text-ink, rounded-card) rather than raw hex values.
+ */
+@theme {
+  --color-ground: #f3f6f5;
+  --color-surface: #ffffff;
+  --color-ink: #10302d;
+  --color-muted: #4a5f5c;
+  --color-border: #d5dfdc;
+  --color-accent: #0e6b63;
+  --color-accent-dark: #0a4f49;
+  --color-accent-tint: #e0f0ec;
+  --color-danger: #a61b1b;
+  --color-crisis-ground: #fbf4f2;
+  --color-warning: #fdf3e4;
+  --color-warning-ink: #5c3a0a;
+  --color-mock: #e7e4f2;
+  --color-mock-ink: #3e3470;
+
+  --radius-card: 16px;
+  --radius-ticket: 18px;
+  --radius-staff: 14px;
+  --radius-input: 10px;
+  --radius-chip: 8px;
+
+  --font-sans: 'IBM Plex Sans', 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --text-h1: 24px;
+  --text-h1--line-height: 30px;
+  --text-body: 15px;
+  --text-body--line-height: 22px;
+  --text-small: 13px;
+  --text-small--line-height: 1.4;
+  --text-label: 12px;
+  --text-label--line-height: 1.4;
+
+  --spacing-tap: 44px;
+  --spacing-cta: 52px;
+}
+
+/* Arabic uses taller line boxes: h1 24/34, body 15/24. */
+html[lang='ar'] {
+  --text-h1--line-height: 34px;
+  --text-body--line-height: 24px;
+}
+
+@layer components {
+  .t-h1 {
+    font-size: var(--text-h1);
+    line-height: var(--text-h1--line-height);
+    font-weight: 600;
+  }
+  .t-body {
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+  }
+  .t-small {
+    font-size: var(--text-small);
+    line-height: var(--text-small--line-height);
+  }
+  .t-label {
+    font-size: var(--text-label);
+    line-height: var(--text-label--line-height);
+  }
+  /* Ticket codes use IBM Plex Mono at weight 500 or 600. */
+  .t-code {
+    font-family: var(--font-mono);
+    font-weight: 600;
+  }
+  /* Tap targets are at least 44 px; primary calls to action are 52 px. */
+  .tap {
+    min-height: var(--spacing-tap);
+    min-width: var(--spacing-tap);
+  }
+  .cta {
+    min-height: var(--spacing-cta);
+  }
+  /* Icons that point a direction (back, next) mirror in right-to-left layouts. */
+  [dir='rtl'] .rtl-flip {
+    transform: scaleX(-1);
+  }
+}

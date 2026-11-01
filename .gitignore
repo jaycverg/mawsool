@@ -10,3 +10,9 @@ coverage/
 test-results/
 playwright-report/
 .claude/worktrees/
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store
+
+# The author's global gitignore ignores .nvmrc; the repo pins its Node version with one.
+!.nvmrc

@@ -1,0 +1,63 @@
+# Mawsool
+
+Closed-loop referral ticket for mental-health care in Abu Dhabi: a positive screen becomes a time-bound hand-off, and a missed hand-off is visible. A hackathon MVP. The Ticket API (`apps/api`) is the product; three web apps and connectors sit around it.
+
+## Layout
+
+```
+apps/api         Fastify + Zod + Drizzle ticket API, staff sign-in, seed
+apps/person      PWA, static export (output: 'export'): screening, results, matching, consent, ticket, crisis
+apps/clinician   incoming tickets, consented bundle
+apps/ops         funnel, timeliness, crisis, equity dashboard
+packages/types        Zod schemas and TS types for every entity and contract
+packages/instruments  WHO-5, PHQ-9, GAD-7, C-SSRS items, scoring, evaluateCrisis(); SOURCES.md for the wording
+packages/rules        match(), deadlines, config.ts (thresholds, windows, crisis numbers, sample insurance table)
+packages/ui           tokens, fonts, RTL helpers, platform adapters (storage, notifications, dialler), shared components
+packages/consent, fhir, summary   empty until their stories are built
+infra/           docker-compose.yml        docs/     checklists and the exported spec
+```
+
+Workspace packages export TypeScript source (`exports` points at `src/index.ts`); apps transpile them. The API bundles them with tsup.
+
+## Commands
+
+Node comes from `.nvmrc` (`nvm use`); pnpm is pinned by `packageManager`. Copy `.env.example` to `.env`. Docker must be running (`orb start`).
+
+| Command | What it does |
+| --- | --- |
+| `pnpm dev` | Postgres (Compose), migrations, then API :4000, person :3000, clinician :3001, ops :3002 |
+| `pnpm verify` | script tests, lint, typecheck, Vitest with coverage thresholds, builds. CI runs exactly this |
+| `pnpm smoke:dev` | starts `pnpm dev`, waits for all four apps to answer 200, stops everything |
+| `pnpm gate:a` | crisis triggers fire with every network entry point stubbed to throw |
+| `pnpm gate:facility-scope` | a clinician at one facility gets 404 on another facility's ticket |
+| `pnpm gate:seed` | seed content, determinism and the planted Urdu gap |
+| `pnpm db:up` / `db:down` / `db:migrate` / `db:seed` | Postgres lifecycle, migrations, deterministic seed |
+
+Tests that need a database use in-process PGlite with the real migrations, so `pnpm verify` needs no Docker. `smoke:dev` and `db:*` do.
+
+Second copy of the repo on one machine (for example a gate run from another worktree): set `PORT_OFFSET=100` in its `.env`. Every port moves together (api 4100, apps 3100-3102, Postgres 54429) and the Compose project becomes `mawsool-100`, so containers and volumes never collide.
+
+## Guardrails (enforce in code and tests)
+
+- No AI in scoring, triage or the crisis path. An LLM is used only in `packages/summary`, behind a flag, for the referral summary the person approves.
+- The crisis path is deterministic and works offline. `packages/instruments` imports nothing but `@mawsool/types` and its own files; a test enforces it.
+- Minimum data, granular consent, revocation deletes the shared copy. No employer or insurer data path.
+- Equity data is opt-in and coarse: age band, gender, language, region. Aggregates under n = 10 are suppressed.
+- Label every mock (directory, insurance, Malaffi export, TAMM link, messaging, crisis console).
+- Arabic and English for every user-facing string. Message files hold all text; a lint rule fails on hard-coded JSX text.
+- No phone number is collected before the reminders story. The device registers with a random id and secret; the server keeps only the secret's hash.
+- Instrument wording comes from published sources only, never machine translation. `wordingStatus: 'unverified'` text shows a visible label. Never mark wording verified without a row in `packages/instruments/SOURCES.md`.
+
+## API conventions
+
+- Every route declares `config.access` (`public | person | clinician | ops | admin | inbound`); startup throws otherwise. A clinician route under `/tickets` must also declare `facilityScoped: true` and use `facilityScopedTicket`.
+- Time comes from `apps/api/src/clock.ts` through an injected `Clock`. Lint forbids `Date.now()` and `new Date()` elsewhere in `apps/api/src`.
+- No column defaults to the database clock; the application writes every timestamp.
+- Staff sign-in links are logged, never sent; one use, 15 minutes, only the hash stored.
+
+## Code and commit conventions
+
+- A commit message is one line. No ticket numbers in code comments or product identifiers.
+- Tests: a case per recovery branch; prove a guard by deleting it and watching its test fail; no disjunctive assertions.
+- The person app stays wrappable as a native app: static export, no server components or actions, platform access only through `packages/ui` adapters.
+- `.local/` (plans, spec, design boards) is git-ignored and lives outside worktrees; read it by absolute path.

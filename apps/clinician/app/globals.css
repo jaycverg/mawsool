@@ -1,0 +1,10 @@
+@import '@mawsool/ui/fonts.css';
+@import 'tailwindcss';
+@import '@mawsool/ui/tokens.css';
+@source '../../../packages/ui/src';
+
+body {
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}

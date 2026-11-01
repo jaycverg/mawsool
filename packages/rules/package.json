@@ -1,0 +1,24 @@
+{
+  "name": "@mawsool/rules",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@mawsool/instruments": "workspace:*",
+    "@mawsool/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "4.1.12",
+    "fast-check": "4.10.2",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12"
+  }
+}

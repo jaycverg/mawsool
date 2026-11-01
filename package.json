@@ -1,0 +1,37 @@
+{
+  "name": "mawsool",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@12.6.0",
+  "engines": {
+    "node": ">=24.11.1"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "smoke:dev": "node scripts/smoke-dev.mjs",
+    "db:up": "node scripts/with-env.mjs docker compose -f infra/docker-compose.yml up -d --wait postgres",
+    "db:down": "node scripts/with-env.mjs docker compose -f infra/docker-compose.yml down",
+    "db:migrate": "node scripts/with-env.mjs pnpm --filter @mawsool/api db:migrate",
+    "db:seed": "node scripts/with-env.mjs pnpm --filter @mawsool/api db:seed",
+    "lint": "eslint scripts && turbo run lint",
+    "typecheck": "tsc -p scripts/tsconfig.json && turbo run typecheck",
+    "test": "turbo run test",
+    "test:scripts": "node --test scripts/*.test.mjs",
+    "gate:a": "pnpm --filter @mawsool/instruments test:gate-a",
+    "gate:facility-scope": "pnpm --filter @mawsool/api test:facility-scope",
+    "gate:seed": "pnpm --filter @mawsool/api test:seed",
+    "build": "turbo run build",
+    "verify": "pnpm test:scripts && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/node": "24.19.2",
+    "eslint": "9.39.5",
+    "eslint-plugin-react": "7.37.5",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.13.0",
+    "turbo": "2.11.10",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.1"
+  }
+}

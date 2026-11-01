@@ -1,0 +1,16 @@
+{
+  "meta": {
+    "title": "Mawsool",
+    "description": "A 2-minute check-in helps you notice changes early."
+  },
+  "home": {
+    "heading": "How have you been over the last two weeks?",
+    "tagline": "A 2-minute check-in helps you notice changes early.",
+    "privacy": "Your answers stay on this phone unless you choose to share them."
+  },
+  "ticket": {
+    "heading": "Your referral",
+    "idLabel": "Ticket",
+    "noId": "Open this page from your referral link."
+  }
+}
