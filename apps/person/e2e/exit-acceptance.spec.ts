@@ -592,6 +592,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
 
     // Crisis: plain wordmark and dark toggle; the hotline card's second line is one 14/19 line of number and detail.
     await page.goto(`/${locale}/crisis/`);
+    expect(await computed(page, 'h1', ['font-size', 'line-height', 'font-weight'])).toMatchObject({ 'font-size': '24px', 'line-height': lh.h1, 'font-weight': '600' });
     if (!ar) expect(await computed(page, '.wordmark', ['letter-spacing'])).toMatchObject({ 'letter-spacing': 'normal' });
     expect(await computed(page, 'a.lang-toggle', ['color'])).toMatchObject({ color: 'rgb(42, 20, 20)' });
     const detail = page.locator('a[href="tel:800725462"] > span:last-child > span:last-child');
