@@ -100,5 +100,13 @@ export const REROUTE_REASONS = ['could_not_book', 'cost', 'wait_too_long', 'chan
 export const RerouteReasonSchema = z.enum(REROUTE_REASONS);
 export type RerouteReason = z.infer<typeof RerouteReasonSchema>;
 
+/**
+ * Why a clinic could not see a person: a fixed list, never free text, so nothing a clinician types is stored in the
+ * event log and nothing in it can identify anyone. Accepted only on an "unable to see" event.
+ */
+export const UNABLE_REASONS = ['could_not_reach', 'no_capacity', 'not_eligible', 'wrong_service', 'other'] as const;
+export const UnableReasonSchema = z.enum(UNABLE_REASONS);
+export type UnableReason = z.infer<typeof UnableReasonSchema>;
+
 /** Instruments whose scores can be shared. C-SSRS answers are never shared. */
 export const SHAREABLE_INSTRUMENTS = ['who5', 'phq9', 'gad7'] as const;

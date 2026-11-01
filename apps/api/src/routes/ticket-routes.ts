@@ -36,30 +36,29 @@ function statusOf(verdict: 'forbidden' | 'illegal') {
 }
 
 /**
- * Applies an event request for an actor. The state machine decides; this only maps its verdict to a status. A change
- * to the state the ticket is already in is "unable to see": it needs a reason, and only the state machine can say
- * whether this actor and state allow it.
+ * Applies an event request for an actor. The state machine decides; this only maps its verdict to a status.
+ *
+ *  - "Unable to see" is its own request (`unable: true`, a reason from a fixed list). A move to the state the ticket is
+ *    already in without it is refused (409), so a repeated acknowledge is never recorded.
+ *  - A person withdrawing is a revoke, and a live `ticket` consent decides it before the state machine does: it ends
+ *    the share and deletes the data from any state, and from a terminal state it changes no state.
+ *  - `rerouted` is fired only by the reroute route, which also makes the child ticket and takes its consent.
  */
 async function applyEvent(deps: ConsentDeps, reply: FastifyReply, ticket: { id: string; personId: string }, actor: Actor, body: TicketEventRequest) {
   const last = await lastEvent(deps.db, ticket.id);
   if (!last) return sendError(reply, 409, 'conflict', 'This ticket has no history');
-  const unable = body.to === last.state;
-  if (unable) {
+
+  if ('unable' in body) {
     const verdict = evaluateUnable(last.state, actor);
     if (verdict !== 'ok') {
       const { status, error, message } = statusOf(verdict);
       return sendError(reply, status, error, message);
     }
-    if (!body.reason) return sendError(reply, 400, 'invalid_request', 'A reason is required');
+    return finish(deps, reply, ticket.id, await moveTicket(deps.db, { ticketId: ticket.id, to: last.state, actor, channel: 'portal', reason: body.reason, at: deps.clock.now(), unable: true }));
   }
 
-  // A person withdrawing is a revoke: the share ends and the data goes, through the one path that does both.
-  if (actor === 'person' && body.to === 'withdrawn' && !unable) {
-    const verdict = evaluate(last.state, 'withdrawn', actor);
-    if (verdict !== 'ok') {
-      const { status, error, message } = statusOf(verdict);
-      return sendError(reply, status, error, message);
-    }
+  // A move to the state the ticket is already in has no rule, so the state machine refuses it with 409.
+  if (actor === 'person' && body.to === 'withdrawn') {
     const [live] = await deps.db
       .select({ id: schema.consents.id })
       .from(schema.consents)
@@ -70,23 +69,23 @@ async function applyEvent(deps: ConsentDeps, reply: FastifyReply, ticket: { id: 
       return result(deps, ticket.id);
     }
   }
+  if (actor === 'person' && body.to === 'rerouted') return sendError(reply, 409, 'conflict', 'That change is not allowed from the current state');
 
-  const outcome = await moveTicket(deps.db, {
-    ticketId: ticket.id,
-    to: body.to,
-    actor,
-    channel: actor === 'person' ? 'app' : 'portal',
-    reason: body.reason ?? null,
-    selfConfirmed: actor === 'person' && body.to === 'seen',
-    at: deps.clock.now(),
-    unable,
-  });
+  return finish(
+    deps,
+    reply,
+    ticket.id,
+    await moveTicket(deps.db, { ticketId: ticket.id, to: body.to, actor, channel: actor === 'person' ? 'app' : 'portal', selfConfirmed: actor === 'person' && body.to === 'seen', at: deps.clock.now() }),
+  );
+}
+
+async function finish(deps: ConsentDeps, reply: FastifyReply, ticketId: string, outcome: Awaited<ReturnType<typeof moveTicket>>) {
   if (outcome.result === 'forbidden' || outcome.result === 'illegal') {
     const { status, error, message } = statusOf(outcome.result);
     return sendError(reply, status, error, message);
   }
   if (outcome.result === 'lost_race') return sendError(reply, 409, 'conflict', 'The ticket changed; try again');
-  return result(deps, ticket.id);
+  return result(deps, ticketId);
 }
 
 async function result(deps: ConsentDeps, ticketId: string): Promise<TicketEventResult> {

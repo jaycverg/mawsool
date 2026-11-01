@@ -12,6 +12,7 @@ import {
   TicketSourceSchema,
   TicketStateSchema,
   TierSchema,
+  UnableReasonSchema,
 } from './enums';
 import { CrisisEventSchema, DemographicsSchema, PreferencesSchema, ServiceSchema, TicketSchema } from './entities';
 
@@ -159,6 +160,7 @@ export const TicketEventViewSchema = z.object({
   fromState: TicketStateSchema.nullable(),
   toState: TicketStateSchema,
   actor: ActorSchema,
+  /** A code from a fixed list (reroute, unable to see, consent revoked), never free text. */
   reason: z.string().nullable(),
   selfConfirmed: z.boolean(),
   at: Instant,
@@ -191,10 +193,14 @@ export type CreatedTicket = z.infer<typeof CreatedTicketSchema>;
 
 export const PersonTicketListSchema = z.array(PersonTicketViewSchema);
 
-/** A state change asked for by a person or a clinic. A change to the state the ticket is already in is "unable to see". */
-export const TicketEventRequestSchema = z
-  .object({ to: TicketStateSchema, reason: z.string().trim().min(1).max(200).optional(), selfConfirmed: z.boolean().default(false) })
-  .strict();
+/**
+ * A state change asked for by a person or a clinic: a move to another state, or an explicit "unable to see" with one of
+ * a fixed list of reasons. A move to the state the ticket is already in is not an "unable to see": it is refused.
+ */
+export const TicketEventRequestSchema = z.union([
+  z.object({ to: TicketStateSchema, selfConfirmed: z.boolean().default(false) }).strict(),
+  z.object({ unable: z.literal(true), reason: UnableReasonSchema }).strict(),
+]);
 export type TicketEventRequest = z.infer<typeof TicketEventRequestSchema>;
 
 export const TicketEventResultSchema = z.object({ state: TicketStateSchema, event: TicketEventViewSchema });
@@ -210,6 +216,8 @@ export const RevokeConsentResultSchema = z.object({
   /** The elements removed from the bundle. Revoking the required `ticket` element removes all of them. */
   revoked: z.array(ConsentRecordSchema),
   ticketState: TicketStateSchema,
+  /** True when the revoke also removed the approved summary and the logged drafts, because they were built from what was shared. */
+  summaryRemoved: z.boolean(),
 });
 export type RevokeConsentResult = z.infer<typeof RevokeConsentResultSchema>;
 
