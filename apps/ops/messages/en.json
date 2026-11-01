@@ -1,4 +1,196 @@
 {
-  "meta": { "title": "Mawsool Outcomes", "description": "Referral outcomes and equity for programme leads." },
-  "home": { "heading": "Outcomes dashboard", "simulated": "Simulated data" }
+  "meta": {
+    "title": "Mawsool Outcomes",
+    "description": "Referral outcomes and equity for programme leads."
+  },
+  "home": {
+    "heading": "Outcomes dashboard",
+    "simulated": "Simulated data"
+  },
+  "dash": {
+    "title": "Referral loop · Abu Dhabi pilot",
+    "simulatedNote": "Every figure here comes from seeded sample data. No real person is behind it.",
+    "loading": "Loading the figures…",
+    "failed": "The figures could not be loaded.",
+    "retry": "Try again",
+    "signOut": "Sign out",
+    "suppressed": "Suppressed: fewer than 10 people",
+    "suppressedShort": "Suppressed",
+    "filters": {
+      "period": "Period",
+      "source": "Source",
+      "tier": "Tier",
+      "scope": "Source and tier narrow the referral funnel only.",
+      "periods": {
+        "90d": "Last 90 days",
+        "30d": "Last 30 days",
+        "all": "All time"
+      },
+      "allSources": "All sources",
+      "allTiers": "All tiers"
+    },
+    "source": {
+      "app": "Mawsool app",
+      "phc": "PHC screen (mock front door)",
+      "tamm": "TAMM (mock front door)",
+      "school": "School programme (mock front door)"
+    },
+    "tier": {
+      "community": "Community support",
+      "tele": "Tele-mental health",
+      "gp": "Trained GP",
+      "specialist": "Specialist"
+    },
+    "tiles": {
+      "label": "Headline measures",
+      "loopClosed": "Loop closed (seen)",
+      "loopClosedOf": "{count} of {of} tickets",
+      "withinTarget": "Seen within target",
+      "withinTargetOf": "{count} of {of} tickets that reached seen or went overdue; the target is the window each ticket promised (7 or 14 days)",
+      "medianSeen": "Median time to seen",
+      "medianSeenDays": "{days} days",
+      "medianSeenP90": "90th percentile {days} days",
+      "crisisContact": "Crisis contact confirmed",
+      "crisisContactOf": "{count} of {of} crisis screens"
+    },
+    "funnel": {
+      "label": "Referral funnel",
+      "heading": "Where people drop off",
+      "stage": {
+        "positive_screen": "Positive screens",
+        "ticket_issued": "Tickets issued",
+        "acknowledged": "Acknowledged by clinic",
+        "seen": "Seen",
+        "remeasured": "Re-measured at 6 weeks"
+      },
+      "carriedOn": "{percent}% carried on",
+      "note": "Counts screens the server knows about: invites not yet claimed or expired, plus every journey from a first ticket, plus crisis screens. Screens that stayed on a phone in the app are not counted, and a crisis screen cannot be matched to a ticket.",
+      "journeys": "A journey is a first ticket and every reroute after it; it counts at a stage when any of its tickets reached that stage or a later one."
+    },
+    "equity": {
+      "label": "Equity",
+      "heading": "Loop closed, by group",
+      "groupBy": "Group by",
+      "dimension": {
+        "language": "Language",
+        "age_band": "Age",
+        "gender": "Gender",
+        "region": "Region"
+      },
+      "value": {
+        "not_given": "No answer given",
+        "ar": "Arabic",
+        "en": "English",
+        "ur": "Urdu",
+        "hi": "Hindi",
+        "tl": "Tagalog",
+        "other": "Other",
+        "under_18": "Under 18",
+        "18_24": "18–24",
+        "25_34": "25–34",
+        "35_44": "35–44",
+        "45_54": "45–54",
+        "55_plus": "55 and over",
+        "female": "Female",
+        "male": "Male",
+        "another": "Another",
+        "abu_dhabi_city": "Abu Dhabi city",
+        "al_ain": "Al Ain",
+        "al_dhafra": "Al Dhafra"
+      },
+      "n": "n={count}",
+      "overall": "Overall",
+      "flagBelow": "Flag: {group} tickets close {points} points below the {overall}% overall rate (black line).",
+      "flagAbove": "Flag: {group} tickets close {points} points above the {overall}% overall rate (black line).",
+      "basis": "Per ticket: closed means the ticket reached seen or later. Groups come from the buckets people chose to share, and language is the ticket's language. A gap of 10 points or more from the overall rate is flagged.",
+      "medianSeen": "median {days} days to seen"
+    },
+    "timeliness": {
+      "label": "Timeliness",
+      "heading": "Timeliness by tier",
+      "tier": "Tier",
+      "tickets": "Tickets",
+      "within": "Within target",
+      "median": "Median",
+      "p90": "90th percentile",
+      "overall": "All tiers",
+      "days": "{days} days",
+      "basis": "Counts tickets that reached seen or went overdue. A ticket still waiting inside its window, or one the person declined or withdrew, is not counted.",
+      "overdueHeading": "Overdue now",
+      "overdueCount": "{count} tickets are overdue",
+      "overdueShown": "Showing the {shown} most overdue",
+      "daysOverdue": "{days} days overdue",
+      "overdueIds": "Ids are pseudonyms made for this dashboard; they are not ticket codes.",
+      "waitHeading": "Indicative wait by service",
+      "waitNote": "The listed waits of the sample directory. These are mock services, not measurements.",
+      "waitDays": "{days} days",
+      "sample": "Sample"
+    },
+    "safety": {
+      "label": "Safety",
+      "heading": "Crisis response and safety",
+      "shown": "Crisis screens shown",
+      "called": "Called a line",
+      "confirmed": "Contact confirmed",
+      "median": "Median to contact",
+      "minutes": "{minutes} min",
+      "of": "{count} of {of}",
+      "note": "Contact is what the person told the app. Adverse events are not part of this build."
+    }
+  },
+  "admin": {
+    "heading": "Demo controls",
+    "intro": "For the person running the demo. Everything here is sample data.",
+    "clock": {
+      "heading": "Demo clock",
+      "loading": "Reading the clock…",
+      "failed": "The clock could not be read.",
+      "off": "Demo controls are off on this server. The clock cannot be moved and the data cannot be reset.",
+      "on": "Demo controls are on.",
+      "now": "Demo date and time",
+      "offset": "Ahead of real time by {days} days",
+      "offsetZero": "The demo clock is at real time.",
+      "step7d": "+7 days",
+      "step3w": "+3 weeks",
+      "step6w": "+6 weeks",
+      "moved": "Moved the clock. {count} tickets turned overdue.",
+      "moveFailed": "The clock could not be moved.",
+      "scope": "Deadlines, the day-7 check, ticket dates and invite expiry follow the demo clock. Staff sign-in and the signed hand-over window stay on real time."
+    },
+    "reset": {
+      "heading": "Reset to the seed",
+      "warning": "This deletes everything, including tickets made on phones, reloads the sample data, puts the clock back to real time and makes a new invite for Noura. Phones that held a ticket start clean the next time they open the app.",
+      "action": "Reset the demo",
+      "confirm": "Press again to reset everything",
+      "working": "Resetting…",
+      "done": "The demo is reset.",
+      "failed": "The reset failed. Nothing may have changed; read the clock again.",
+      "off": "Reset is off because demo controls are off."
+    },
+    "personas": {
+      "heading": "Personas",
+      "noura": "Noura, 27, Arabic: opens the mock TAMM page with this code. WHO-5 44, then GAD-7 9 and PHQ-9 7; after +3 weeks GAD-7 14.",
+      "nouraCode": "Invite code",
+      "nouraArabic": "Open the mock TAMM page in Arabic",
+      "nouraEnglish": "Open the mock TAMM page in English",
+      "rashid": "Rashid, 19, English: answers PHQ-9 item 9 with several days, which opens the crisis screen. Nothing needs to be loaded for him.",
+      "rashidOpen": "Open the check-in",
+      "hint": "Show withdrawal on Noura's own ticket. The seeded withdrawn tickets have no consent records behind them."
+    },
+    "crisis": {
+      "heading": "Crisis numbers",
+      "number": "Number",
+      "label": "Line",
+      "lastVerified": "Last verified",
+      "never": "Not verified yet",
+      "note": "A number shows as not verified until someone has called it. It stays on the crisis screen either way.",
+      "role": {
+        "hotline": "Hotline",
+        "ambulance": "Ambulance",
+        "police": "Police"
+      },
+      "source": "Source note"
+    },
+    "signOut": "Sign out"
+  }
 }
