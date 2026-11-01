@@ -21,7 +21,7 @@
     "gate:facility-scope": "pnpm --filter @mawsool/api test:facility-scope",
     "gate:seed": "pnpm --filter @mawsool/api test:seed",
     "build": "turbo run build",
-    "verify": "pnpm test:scripts && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "verify": "pnpm test:scripts && pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm smoke:dev"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
