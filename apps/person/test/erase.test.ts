@@ -2,7 +2,10 @@ import type { CrisisEventSubmission } from '@mawsool/types';
 import { createTabMark } from '@mawsool/ui';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { eraseEverything, type EraseDeps } from '../lib/erase';
+import { claimInvite } from '../lib/invite';
 import { forgetRegistration, markServerFootprint } from '../lib/server';
+import en from '../messages/en.json';
+import ar from '../messages/ar.json';
 import { memoryStorage } from './helpers/memory';
 
 const NOW = () => new Date('2026-11-02T08:00:00+04:00');
@@ -30,6 +33,7 @@ function setup(options: { footprint?: boolean; unsent?: boolean; erase?: Reply; 
     const path = new URL(url).pathname;
     calls.push(`${init?.method ?? 'GET'} ${path}`);
     if (path === '/persons') return new Response('{}', { status: 201 });
+    if (path === '/me/invites/claim') return new Response(JSON.stringify({ inviteId: '66666666-6666-4666-8666-666666666666', source: 'tamm', screenedAt: '2026-11-01T04:00:00.000Z' }), { status: 200 });
     wipedBefore.push(store.data.size === 0);
     const reply = options.erase ?? { status: 200 };
     if (reply === 'offline') throw new TypeError('network down');
@@ -57,6 +61,39 @@ function setup(options: { footprint?: boolean; unsent?: boolean; erase?: Reply; 
 }
 
 afterEach(() => vi.useRealTimers());
+
+describe('Delete everything on a phone that only claimed a front-door invite', () => {
+  it('asks the server to remove the claim before it wipes the phone, because the wipe destroys the only secret that can', async () => {
+    const s = setup();
+    forgetRegistration(s.store.storage);
+    expect((await claimInvite(s.deps.server, 'ABCD-EFGH', NOW)).status).toBe('claimed');
+    expect(s.store.data.has('invite')).toBe(true);
+    s.calls.length = 0;
+    expect((await eraseEverything(s.deps)).status).toBe('erased');
+    expect(s.calls).toEqual(['DELETE /me/data', 'CLEAR']);
+    expect(s.wipedBefore).toEqual([false]);
+    expect(s.store.data.size).toBe(0);
+  });
+
+  it('offline, deletes nothing and stays blocked, so the claim can still be removed later', async () => {
+    const s = setup({ erase: 'offline' });
+    forgetRegistration(s.store.storage);
+    expect((await claimInvite(s.deps.server, 'ABCD-EFGH', NOW)).status).toBe('claimed');
+    s.calls.length = 0;
+    expect(await eraseEverything(s.deps)).toEqual({ status: 'blocked' });
+    expect(s.calls).toEqual(['DELETE /me/data']);
+    expect(s.store.data.has('invite')).toBe(true);
+    expect(s.store.data.has('screenings')).toBe(true);
+  });
+
+  it('is told the truth about why: the blocked message names what the server holds, not only what was shared', () => {
+    for (const messages of [en, ar]) {
+      expect(messages.settings.blocked).not.toMatch(/withdraw what you shared|لسحب ما شاركته/);
+    }
+    expect(en.settings.blocked).toMatch(/linked screen/);
+    expect(ar.settings.blocked).toMatch(/نتيجة الفحص المرتبطة/);
+  });
+});
 
 describe('Delete everything', () => {
   it('wipes at once, without any network call, when this phone never gave the server anything', async () => {
