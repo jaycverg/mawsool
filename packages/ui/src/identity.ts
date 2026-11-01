@@ -28,13 +28,13 @@ export function createDeviceIdentity(random: RandomSource): DeviceIdentity {
   return { id: random.randomUUID(), secret: base64Url(random.getRandomValues(new Uint8Array(32))) };
 }
 
-/** Returns the identity stored on this device, creating and storing one on first run. Works fully offline. */
+/**
+ * Returns the identity stored on this device, creating and storing one on first run. Works fully offline.
+ * Concurrent callers on a fresh device all get the one identity that was stored first: a loser's identity would
+ * otherwise own tickets nobody could revoke.
+ */
 export async function loadOrCreateIdentity(storage: StorageAdapter, random: RandomSource): Promise<DeviceIdentity> {
-  const existing = await storage.get<DeviceIdentity>(STORAGE_KEY);
-  if (existing) return existing;
-  const created = createDeviceIdentity(random);
-  await storage.set(STORAGE_KEY, created);
-  return created;
+  return storage.setIfAbsent(STORAGE_KEY, createDeviceIdentity(random));
 }
 
 /** The `Authorization` header value for person routes. */

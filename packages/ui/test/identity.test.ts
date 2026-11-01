@@ -42,6 +42,24 @@ describe('device identity', () => {
     }
   });
 
+  it('gives every concurrent caller on a fresh device the one stored identity', async () => {
+    const store = storage();
+    const results = await Promise.all(Array.from({ length: 8 }, () => loadOrCreateIdentity(store, random)));
+    const stored = await store.get<typeof identity>('identity');
+    expect(new Set(results.map((r) => r.id)).size).toBe(1);
+    for (const result of results) expect(result).toEqual(stored);
+  });
+
+  it('gives two tabs on the same database the one stored identity', async () => {
+    const factory = new IDBFactory();
+    const [a, b] = await Promise.all([
+      loadOrCreateIdentity(createIndexedDbStorage({ indexedDB: factory }), random),
+      loadOrCreateIdentity(createIndexedDbStorage({ indexedDB: factory }), random),
+    ]);
+    expect(a).toEqual(b);
+    expect(await createIndexedDbStorage({ indexedDB: factory }).get('identity')).toEqual(a);
+  });
+
   it('builds the bearer value the API expects', () => {
     expect(personAuthorization({ id: 'abc', secret: 'def' })).toBe('Bearer abc.def');
   });
