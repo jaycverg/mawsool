@@ -68,15 +68,30 @@ interface Revoked {
   summaryRemoved: boolean;
 }
 
-/** Deletes every logged summary of a ticket: the drafts and approved text it was issued with. */
-async function deleteSummaryLogs(tx: Executor, ticketId: string): Promise<number> {
-  return (await tx.delete(schema.summaryLogs).where(eq(schema.summaryLogs.ticketId, ticketId)).returning({ id: schema.summaryLogs.id })).length;
+/**
+ * Deletes a ticket's logged summaries: the person's rows linked to it, and any draft made under the ticket's own request
+ * id that was never linked (a draft whose page was reloaded before the ticket was sent). With `unclaimed`, also the
+ * person's drafts that no ticket ever claimed. Returns how many rows went.
+ */
+async function deleteSummaryLogs(tx: Executor, personId: string, ticketId: string, options: { unclaimed: boolean }): Promise<number> {
+  const [ticket] = await tx.select({ requestId: schema.tickets.clientRequestId }).from(schema.tickets).where(eq(schema.tickets.id, ticketId)).limit(1);
+  const gone = await tx
+    .delete(schema.summaryLogs)
+    .where(
+      and(
+        eq(schema.summaryLogs.personId, personId),
+        or(eq(schema.summaryLogs.ticketId, ticketId), ticket?.requestId ? eq(schema.summaryLogs.requestId, ticket.requestId) : undefined, options.unclaimed ? isNull(schema.summaryLogs.ticketId) : undefined),
+      ),
+    )
+    .returning({ id: schema.summaryLogs.id });
+  return gone.length;
 }
 
 /**
- * Stops one optional element. The bundle is rewritten without it. An approved summary or logged draft may have been
- * built from what is being stopped, so when one exists both go in the same transaction and the result says so: the
- * person is told the summary was removed and can write and approve a new one.
+ * Stops one optional element. The bundle is rewritten without it, and nothing else in the row changes, with one
+ * exception: if the approved summary was written from the element being stopped (the bundle records which elements it
+ * was written from), the approved summary and the ticket's logged drafts go in the same transaction and the result says
+ * so. A summary written from other things, or by hand, stays, and so do its logs.
  */
 async function dropElement(tx: Executor, cipher: Cipher, consent: ConsentRow, now: Date): Promise<Revoked> {
   const ticketId = consent.ticketId!;
@@ -85,13 +100,12 @@ async function dropElement(tx: Executor, cipher: Cipher, consent: ConsentRow, no
   let summaryRemoved = false;
   if (bundle && bundle.contentCiphertext !== null) {
     const content = withoutElement(readContent(cipher, ticketId, bundle.contentCiphertext), consent.element);
-    const hadSummary = bundle.approvedSummaryCiphertext !== null;
+    summaryRemoved = bundle.approvedSummaryCiphertext !== null && bundle.summaryBuiltFrom.includes(consent.element);
     await tx
       .update(schema.sharedBundles)
-      .set({ contentCiphertext: cipher.encrypt(JSON.stringify(content), bundleContext(ticketId)), ...(hadSummary ? { approvedSummaryCiphertext: null } : {}) })
+      .set({ contentCiphertext: cipher.encrypt(JSON.stringify(content), bundleContext(ticketId)), ...(summaryRemoved ? { approvedSummaryCiphertext: null, summaryBuiltFrom: [] } : {}) })
       .where(eq(schema.sharedBundles.id, bundle.id));
-    const logs = await deleteSummaryLogs(tx, ticketId);
-    summaryRemoved = hadSummary || logs > 0;
+    if (summaryRemoved) await deleteSummaryLogs(tx, consent.personId, ticketId, { unclaimed: false });
   }
   return { revoked, state: (await lastEvent(tx, ticketId))?.state ?? 'issued', summaryRemoved };
 }
@@ -102,22 +116,12 @@ async function endShare(tx: Executor, personId: string, ticketId: string, now: D
   const [existing] = await tx.select({ summary: schema.sharedBundles.approvedSummaryCiphertext }).from(schema.sharedBundles).where(eq(schema.sharedBundles.ticketId, ticketId));
   await tx
     .update(schema.sharedBundles)
-    .set({ contentCiphertext: null, approvedSummaryCiphertext: null, deletedAt: now })
+    .set({ contentCiphertext: null, approvedSummaryCiphertext: null, summaryBuiltFrom: [], deletedAt: now })
     .where(eq(schema.sharedBundles.ticketId, ticketId));
-  const [ticket] = await tx.select({ requestId: schema.tickets.clientRequestId }).from(schema.tickets).where(eq(schema.tickets.id, ticketId)).limit(1);
   // The ticket's own logs, any draft made under its request id, and this person's other drafts that no ticket ever claimed
   // (a pick they abandoned): none of it outlives the share.
-  const deletedLogs = await tx
-    .delete(schema.summaryLogs)
-    .where(
-      and(
-        eq(schema.summaryLogs.personId, personId),
-        or(eq(schema.summaryLogs.ticketId, ticketId), isNull(schema.summaryLogs.ticketId), ticket?.requestId ? eq(schema.summaryLogs.requestId, ticket.requestId) : undefined),
-      ),
-    )
-    .returning({ id: schema.summaryLogs.id });
-
-  const summaryRemoved = (existing?.summary ?? null) !== null || deletedLogs.length > 0;
+  const deletedLogs = await deleteSummaryLogs(tx, personId, ticketId, { unclaimed: true });
+  const summaryRemoved = (existing?.summary ?? null) !== null || deletedLogs > 0;
   const last = await lastEvent(tx, ticketId);
   if (!last || TERMINAL_STATES.includes(last.state)) return { revoked, state: last?.state ?? 'issued', summaryRemoved };
   const moved = await appendEvent(tx, { ticketId, seq: last.seq + 1, from: last.state, to: 'withdrawn', actor: 'person', channel: 'app', reason: 'consent_revoked', at: now });

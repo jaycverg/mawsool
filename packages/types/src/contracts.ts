@@ -145,6 +145,8 @@ export const CreateTicketRequestSchema = z
     content: BundleContentSchema,
     approvedSummary: z.string().max(1500).nullable().default(null),
     summaryRequestId: z.uuid().nullable().default(null),
+    /** The consent elements the approved summary was written from. Stopping one of them removes the summary; stopping any other leaves it. Empty for a summary the person wrote by hand. */
+    summaryBuiltFrom: z.array(ConsentElementSchema).max(6).default([]),
   })
   .strict();
 export type CreateTicketRequest = z.infer<typeof CreateTicketRequestSchema>;

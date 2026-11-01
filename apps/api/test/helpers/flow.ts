@@ -53,6 +53,7 @@ export function ticketRequest(serviceId: string, overrides: Partial<CreateTicket
     },
     approvedSummary: null,
     summaryRequestId: null,
+    summaryBuiltFrom: [],
     ...overrides,
   };
 }

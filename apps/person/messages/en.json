@@ -448,7 +448,7 @@
     "actionFailed": "That did not work. Check your connection and try again.",
     "stopButton": "Stop sharing",
     "readsFailed": "The list of who opened your data could not be loaded, so it is not known whether anyone has. Try again.",
-    "summaryRemoved": "The summary was removed too, because it was written with what you stopped sharing.",
+    "summaryRemoved": "The approved summary was removed too, because it was written from what you stopped sharing.",
     "yourReferrals": "Your referrals",
     "earlier": "Earlier referral",
     "savedWarning": "Your referral was sent, but this phone could not keep a note of it. Open it from the Ticket tab.",

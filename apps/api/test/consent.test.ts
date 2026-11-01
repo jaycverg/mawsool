@@ -153,11 +153,11 @@ describe('consent, revoke and the bundle', () => {
   });
 
   describe('revoking one element', () => {
-    it('removes only that element from the stored row; the read still succeeds and names it as not shared', async () => {
+    it('removes only that element from the stored row; the read still succeeds, names it as not shared and keeps a summary that was not built from it', async () => {
       const { ticket } = await fullTicket();
       const res = await revoke(consentId(ticket, 'free_text'));
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toMatchObject({ ticketState: 'issued', revoked: [{ element: 'free_text' }], summaryRemoved: true });
+      expect(res.json()).toMatchObject({ ticketState: 'issued', revoked: [{ element: 'free_text' }], summaryRemoved: false });
 
       const stored = await storedContent(testDb.db, ticket.id);
       expect(Object.keys(stored!).sort()).toEqual(['conditions', 'preferences', 'scores', 'trajectory']);
@@ -166,12 +166,11 @@ describe('consent, revoke and the bundle', () => {
       const read = await readBundle(ticket.id);
       expect(read.statusCode).toBe(200);
       expect(read.json().notShared).toEqual(['free_text']);
-      // The approved summary was written with the note in view, so it goes with it, and so do the logged drafts.
-      expect(read.json().approvedSummary).toBeNull();
-      expect((await rawBundle(testDb.db, ticket.id)).approvedSummaryCiphertext).toBeNull();
-      expect(await testDb.db.select().from(schema.summaryLogs).where(eq(schema.summaryLogs.ticketId, ticket.id))).toHaveLength(0);
+      // The summary was written from other things (here, by hand), so it and its logs stay.
+      expect(read.json().approvedSummary).toBe(SUMMARY_MARKER);
+      expect((await rawBundle(testDb.db, ticket.id)).approvedSummaryCiphertext).not.toBeNull();
+      expect((await testDb.db.select().from(schema.summaryLogs).where(eq(schema.summaryLogs.ticketId, ticket.id))).length).toBeGreaterThan(0);
       expect(read.body).not.toContain(FREE_TEXT);
-      expect(read.body).not.toContain(SUMMARY_MARKER);
       expect(await eventStates(testDb.db, ticket.id)).toHaveLength(1);
     });
   });

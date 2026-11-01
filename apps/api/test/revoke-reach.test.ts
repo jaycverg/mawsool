@@ -102,22 +102,59 @@ describe('revoke reach and completeness', () => {
     });
   });
 
-  describe('summaries that outlive what they were built from', () => {
-    it('removes the approved summary and the logs when an element is stopped, and says so', async () => {
+  describe('summaries and what they were built from', () => {
+    const stop = (ticket: { consents: { id: string; element: string }[] }, element: string) =>
+      ctx.app.inject({ method: 'DELETE', url: `/consents/${ticket.consents.find((c) => c.element === element)!.id}`, headers: person.headers });
+    const summaryLogsOf = (ticketId: string) => testDb.db.select().from(schema.summaryLogs).where(eq(schema.summaryLogs.ticketId, ticketId));
+
+    it('removes the approved summary and the logs when an element it was built from is stopped, and says so', async () => {
       const requestId = crypto.randomUUID();
       await draft(person.headers, requestId);
-      const ticket = await issue(ctx, person, ticketRequest(gpA, { clientRequestId: requestId, approvedSummary: 'APPROVED-WORDS', summaryRequestId: requestId }));
-      expect((await rawBundle(testDb.db, ticket.id)).approvedSummaryCiphertext).not.toBeNull();
-      const res = await ctx.app.inject({ method: 'DELETE', url: `/consents/${ticket.consents.find((c) => c.element === 'scores')!.id}`, headers: person.headers });
+      const ticket = await issue(ctx, person, ticketRequest(gpA, { clientRequestId: requestId, approvedSummary: 'APPROVED-WORDS', summaryRequestId: requestId, summaryBuiltFrom: ['scores'] }));
+      expect((await rawBundle(testDb.db, ticket.id)).summaryBuiltFrom).toEqual(['scores']);
+      const res = await stop(ticket, 'scores');
       expect(res.json()).toMatchObject({ summaryRemoved: true, ticketState: 'issued' });
-      expect((await rawBundle(testDb.db, ticket.id)).approvedSummaryCiphertext).toBeNull();
-      expect(await testDb.db.select().from(schema.summaryLogs).where(eq(schema.summaryLogs.ticketId, ticket.id))).toHaveLength(0);
+      const raw = await rawBundle(testDb.db, ticket.id);
+      expect([raw.approvedSummaryCiphertext, raw.summaryBuiltFrom]).toEqual([null, []]);
+      expect(await summaryLogsOf(ticket.id)).toHaveLength(0);
     });
 
-    it('says nothing was removed when the ticket never had a summary', async () => {
-      const ticket = await issue(ctx, person, ticketRequest(gpA));
-      const res = await ctx.app.inject({ method: 'DELETE', url: `/consents/${ticket.consents.find((c) => c.element === 'scores')!.id}`, headers: person.headers });
+    it('leaves the summary, its record and its logs alone when an element it was not built from is stopped', async () => {
+      const requestId = crypto.randomUUID();
+      await draft(person.headers, requestId);
+      const ticket = await issue(ctx, person, ticketRequest(gpA, { clientRequestId: requestId, consents: ['ticket', 'scores', 'free_text'], approvedSummary: 'APPROVED-WORDS', summaryRequestId: requestId, summaryBuiltFrom: ['scores'] }));
+      const before = await rawBundle(testDb.db, ticket.id);
+      const res = await stop(ticket, 'free_text');
+      expect(res.json()).toMatchObject({ summaryRemoved: false });
+      const after = await rawBundle(testDb.db, ticket.id);
+      expect(after.approvedSummaryCiphertext).toBe(before.approvedSummaryCiphertext);
+      expect(after.summaryBuiltFrom).toEqual(['scores']);
+      expect((await summaryLogsOf(ticket.id)).length).toBe(2);
+      expect(JSON.parse(cipher.decrypt(after.contentCiphertext!, `bundle:${ticket.id}`))).not.toHaveProperty('free_text');
+    });
+
+    it('leaves a hand-written summary alone whatever is stopped, since it was built from nothing', async () => {
+      const ticket = await issue(ctx, person, ticketRequest(gpA, { approvedSummary: 'WRITTEN-BY-HAND', summaryBuiltFrom: [] }));
+      const res = await stop(ticket, 'scores');
       expect(res.json().summaryRemoved).toBe(false);
+      expect((await rawBundle(testDb.db, ticket.id)).approvedSummaryCiphertext).not.toBeNull();
+      expect((await summaryLogsOf(ticket.id)).length).toBe(1);
+    });
+
+    it('removes a draft left under the ticket’s own request id, which the reloaded page never linked', async () => {
+      const requestId = crypto.randomUUID();
+      await draft(person.headers, requestId); // the page then reloaded: the send below carries no summaryRequestId
+      const ticket = await issue(ctx, person, ticketRequest(gpA, { clientRequestId: requestId, approvedSummary: 'APPROVED-WORDS', summaryRequestId: null, summaryBuiltFrom: ['scores'] }));
+      expect(await testDb.db.select().from(schema.summaryLogs).where(eq(schema.summaryLogs.requestId, requestId))).toHaveLength(2);
+      expect((await stop(ticket, 'scores')).json().summaryRemoved).toBe(true);
+      expect(await testDb.db.select().from(schema.summaryLogs).where(eq(schema.summaryLogs.requestId, requestId))).toHaveLength(0);
+    });
+
+    it('says nothing was removed when the ticket never had a summary, and refuses a summary built from something not shared', async () => {
+      const ticket = await issue(ctx, person, ticketRequest(gpA));
+      expect((await stop(ticket, 'scores')).json().summaryRemoved).toBe(false);
+      const res = await ctx.app.inject({ method: 'POST', url: '/tickets', headers: person.headers, payload: ticketRequest(gpA, { approvedSummary: 'WORDS', summaryBuiltFrom: ['conditions'] }) });
+      expect(res.statusCode).toBe(400);
     });
   });
 
