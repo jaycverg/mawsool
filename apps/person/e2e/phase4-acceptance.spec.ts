@@ -61,6 +61,11 @@ interface Context {
   consoleGuard: ConsoleGuard;
 }
 
+/** Names the failures a test makes the API answer on purpose, each by its exact URL and status. Nothing else is excused. */
+function provoke(guard: ConsoleGuard, reason: string, calls: readonly (readonly [path: string, status: number])[]): void {
+  for (const [path, status] of calls) guard.allow({ url: `${API}${path}`, expect: status, reason });
+}
+
 /** PHQ-9 = 11: the "trained GP or tele" row, so a GP is the lead card. Item 9 is 0, so no crisis. */
 const PHQ9_ELEVEN = [2, 2, 2, 1, 1, 1, 1, 1, 0] as const;
 const UNABLE_REASONS = ['could_not_reach', 'no_capacity', 'not_eligible', 'wrong_service', 'other'];
@@ -215,9 +220,14 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect((await call('GET', `/tickets/${fromTamm.id}`, { headers: bearer(staff) })).json().source).toBe('tamm');
   },
 
-  async 'revoked-ticket-shows-withdrawn-and-no-data'({ context, locale }) {
+  async 'revoked-ticket-shows-withdrawn-and-no-data'({ context, locale, consoleGuard }) {
     const person = await newPerson();
     const ticket = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A), consents: ['ticket', 'scores', 'free_text'], approvedSummary: SUMMARY });
+    provoke(consoleGuard, 'the person ends the sharing while the clinic has the ticket open, so the clinic’s next calls find it withdrawn (409 to act, 410 to read)', [
+      [`/tickets/${ticket.id}/events`, 409],
+      [`/tickets/${ticket.id}`, 410],
+      [`/tickets/${ticket.id}/bundle`, 410],
+    ]);
     const clinic = await clinicianPage(context);
     await openTicket(clinic, locale, ticket.id);
     await expect(clinic.locator('[data-section="free_text"] [data-note]')).toHaveText(FREE_TEXT); // shared, so shown
@@ -251,6 +261,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     // A stale row: the queue is already on screen with the ticket in it when the person ends the sharing. Opening the
     // row finds out (410 at opening), and the row, with its code, tier and deadline, goes with it.
     const stale = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A) });
+    provoke(consoleGuard, 'a stale queue row is opened after the person ended the sharing, which answers 410', [[`/tickets/${stale.id}`, 410], [`/tickets/${stale.id}/bundle`, 410]]);
     await clinic.goto(clinicUrl(locale));
     await expect(row(clinic, stale.shortCode)).toBeVisible();
     expect((await revokeConsent(person, stale, 'ticket')).status).toBe(200);
@@ -261,6 +272,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
 
     // The same for the export: the ticket is open and shown when the sharing ends, and the export call finds out.
     const exporting = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A) });
+    provoke(consoleGuard, 'the export is asked for after the person ended the sharing, which answers 410', [[`/tickets/${exporting.id}/fhir`, 410]]);
     await clinic.goto(clinicUrl(locale));
     await row(clinic, exporting.shortCode).getByRole('button').click();
     await expect(clinic.locator('[data-detail] [data-code]')).toHaveText(displayCode(exporting.shortCode));
@@ -378,7 +390,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect(JSON.stringify(row0)).not.toContain(first.json().code.replace('-', ''));
   },
 
-  async 'clinician-at-other-facility-gets-404'({ context, locale }) {
+  async 'clinician-at-other-facility-gets-404'({ context, locale, consoleGuard }) {
     const person = await newPerson();
     const ticket = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A), consents: ['ticket', 'scores', 'free_text'] });
     const b = await staffSession(CLINICIAN_B);
@@ -405,6 +417,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect((await call('GET', `/tickets/${ticket.id}`, { headers: bearer(a) })).status).toBe(200);
 
     // In the clinician app the same: not in the queue, and a link to it says it was not found, with none of its data.
+    provoke(consoleGuard, 'a clinician at the other facility opens this ticket from a link, which answers 404', [[`/tickets/${ticket.id}`, 404], [`/tickets/${ticket.id}/bundle`, 404]]);
     const clinic = await clinicianPage(context, CLINICIAN_B);
     const bodies = recordApiBodies(clinic);
     await clinic.goto(clinicUrl(locale));
@@ -445,7 +458,8 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page).toHaveURL(clinicUrl(locale, 'sign-in/'));
   },
 
-  async 'sign-in-link-whole-path'({ page, browser, locale }) {
+  async 'sign-in-link-whole-path'({ page, browser, locale, consoleGuard }) {
+    consoleGuard.allow({ url: `${API}/auth/verify`, expect: 401, reason: 'the used link is tried again, which the API refuses with 401' });
     const verifies: string[] = [];
     page.on('request', (request) => {
       if (request.url() === `${API}/auth/verify`) verifies.push(request.postData() ?? '');
@@ -544,7 +558,12 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     }
   },
 
-  async 'staff-pages-and-api-carry-a-strict-policy'({ page, context, browser, locale }) {
+  async 'staff-pages-and-api-carry-a-strict-policy'({ page, context, browser, locale, consoleGuard }) {
+    // This test tries, on purpose, to send a request and an image to another origin and to frame both staff apps. The page's
+    // policy blocks each, and the browser logs each block, which is the behaviour under test. Each blocked address is named.
+    for (const blocked of [`${INSPECT}/inbound/counts?stolen=1`, `${INSPECT}/inbound/counts`, `${CLINIC}/`, `${OPS}/`]) {
+      consoleGuard.allow({ url: blocked, expect: 'csp', reason: 'the test tries to reach or frame this address on purpose; the page policy must block it' });
+    }
     const apiOrigin = new URL(API).origin;
     const person = await newPerson();
     const ticket = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A) });
@@ -637,13 +656,13 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     const toggle = page.locator('a.lang-toggle');
     await expect(toggle).toBeVisible();
     const other = locale === 'ar' ? 'en' : 'ar';
-    await expect(toggle).toHaveAttribute('href', `/${other}/`);
+    await expect(toggle).toHaveAttribute('href', `/${other}/sign-in/`);
     await expect(toggle).toHaveAttribute('lang', other);
     await expect(toggle).toHaveAttribute('aria-label', cmsg(locale, 'common.language'));
     expect((await toggle.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     await toggle.click();
-    await expect(page).toHaveURL(new RegExp(`/${other}/`));
+    await expect(page).toHaveURL(new RegExp(`/${other}/sign-in/`));
     await expect(page.locator('html')).toHaveAttribute('lang', other);
   },
 
@@ -700,9 +719,10 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect((await fetch(`${INSPECT}/e2e/reseed`, { method: 'POST' })).status).toBe(200);
     expect(await (await fetch(`${INSPECT}/persons/${personId}`)).json()).toBeNull();
 
-    // The phone's calls are answered 401 (it is not known), 404 (its ticket is not there); it deliberately provokes both, once each way.
-    for (const [path, status] of [[`/me/tickets/${ticketId}`, 401], [`/me/tickets/${ticketId}/reads`, 401], ['/me/tickets', 401], [`/me/tickets/${ticketId}`, 404], [`/me/tickets/${ticketId}/reads`, 404]] as const) {
-      consoleGuard.allow({ url: `${API}${path}`, expect: status, reason: 'the server no longer holds this phone’s person or ticket, which this test provokes on purpose' });
+    // The phone opens its ticket screen afresh: it registers again (the server has no such person) and asks for its ticket,
+    // which is not there, so the server answers 404 for it and for its reads. The test provokes exactly those two.
+    for (const path of [`/me/tickets/${ticketId}`, `/me/tickets/${ticketId}/reads`]) {
+      consoleGuard.allow({ url: `${API}${path}`, expect: 404, reason: 'the server no longer holds this phone’s ticket, which this test provokes on purpose' });
     }
     await page.goto(`/${locale}/ticket/`);
     // Not an error loop: the screen settles on "no ticket", with a way forward, and the phone is a registered person again.
@@ -717,11 +737,12 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect((await stored(ticketIdOf(page))).ticket.personId).toBe(personId);
   },
 
-  async 'queue-applies-the-share-ended-rule'({ context, locale }) {
+  async 'queue-applies-the-share-ended-rule'({ context, locale, consoleGuard }) {
     const person = await newPerson();
     const gp = await serviceAt(FACILITY_A);
     const keep = await makeTicket(person, { serviceId: gp });
     const ended = await makeTicket(person, { serviceId: gp });
+    provoke(consoleGuard, 'the clinic opens a ticket whose share has ended, which answers 410', [[`/tickets/${ended.id}`, 410], [`/tickets/${ended.id}/bundle`, 410]]);
     const staff = bearer(await staffSession(CLINICIAN_A));
     const queueOf = async (state: string) => (await call('GET', `/tickets?state=${state}&limit=200`, { headers: staff })).json() as { total: number; counts: Record<string, number>; items: { id: string }[] };
     const withdrawnBefore = (await queueOf('withdrawn')).counts['withdrawn']!;
@@ -806,7 +827,13 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(clinic.getByRole('button', { name: cmsg(locale, 'detail.acknowledge'), exact: true })).toHaveCount(0);
   },
 
-  async 'seeded-withdrawn-ticket-is-handled'({ context, locale }) {
+  async 'seeded-withdrawn-ticket-is-handled'({ context, locale, consoleGuard }) {
+    // A seeded ticket has no bundle, so opening it asks for one and gets 404, which the screen shows as "nothing shared".
+    // The first ticket of each of the two queues this test opens is named before it is opened.
+    const firstOf = async (state: string) => ((await call('GET', `/tickets?state=${state}&limit=1`, { headers: bearer(await staffSession(CLINICIAN_A)) })).json() as { items: { id: string }[] }).items[0]!.id;
+    for (const state of ['withdrawn', 'overdue']) {
+      consoleGuard.allow({ url: `${API}/tickets/${await firstOf(state)}/bundle`, expect: 404, reason: `a seeded ${state} ticket has no bundle, which the test opens on purpose` });
+    }
     const clinic = await clinicianPage(context);
     await clinic.goto(clinicUrl(locale, '?state=withdrawn'));
     const first = clinic.locator('[data-queue] tr[data-ticket]').first();
@@ -875,7 +902,8 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect(JSON.parse(text).entry.map((entry: { resource: { resourceType: string } }) => entry.resource.resourceType)).toEqual(['ServiceRequest']);
   },
 
-  async 'claim-by-link-and-by-code'({ page, context, browser, locale }) {
+  async 'claim-by-link-and-by-code'({ page, context, browser, locale, consoleGuard }) {
+    consoleGuard.allow({ url: `${API}/me/invites/claim`, expect: 404, reason: 'an unknown, expired or taken code is typed on purpose, which answers 404' });
     const byLink = await handOver('phc', locale);
     await page.goto(`/${locale}/claim/?code=${byLink.code}`);
     await expect(page.locator('#invite-code')).toHaveValue(byLink.code);
@@ -944,7 +972,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await page.goto(`/${locale}/tamm/?code=ABCD-EFGH`);
     await expect(page.locator('[data-continue-with-mawsool]')).toBeVisible();
     // Only the app shell's public read of the sample directory: nothing signed, nothing with a credential, nothing written.
-    expect(toApi.every((entry) => entry === 'GET /services')).toBe(true);
+    expect(toApi.every((entry) => entry === 'GET /services' || entry === 'GET /clock')).toBe(true);
   },
 
   async 'clinician-screen-holds-the-plan-tokens'({ context, locale }) {

@@ -139,14 +139,14 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page.locator('[data-panel="equity"] select')).toHaveCount(0);
     await expect(page.locator('[data-preview]')).toContainText(msg(locale, 'consent.previewTicket'));
     await expect(page.locator('[data-preview]')).not.toContainText('PHQ-9');
-    // Nothing has left the phone but the unfiltered directory read.
-    expect(toApi.every((entry) => entry === 'GET /services')).toBe(true);
+    // Nothing has left the phone but the unfiltered directory read and the demo clock's offset read, both plain GETs.
+    expect(toApi.every((entry) => entry === 'GET /services' || entry === 'GET /clock')).toBe(true);
 
     await tick(page, 'scores');
     await expect(page.locator('[data-preview]')).toContainText('PHQ-9 11');
     await page.locator('input[data-element="scores"]').uncheck();
     await expect(page.locator('[data-preview]')).not.toContainText('PHQ-9');
-    expect(toApi.every((entry) => entry === 'GET /services')).toBe(true);
+    expect(toApi.every((entry) => entry === 'GET /services' || entry === 'GET /clock')).toBe(true);
   },
 
   async 'ticket-sends-only-ticked-and-stores-ciphertext'({ page, locale }) {
@@ -849,7 +849,8 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     const fresh = await (await page.context().browser()!.newContext({ viewport: { width: 390, height: 844 } })).newPage();
     const asked: string[] = [];
     fresh.on('request', (request: Request) => {
-      if (request.url().startsWith(API) && !(request.method() === 'GET' && new URL(request.url()).pathname === '/services')) asked.push(`${request.method()} ${new URL(request.url()).pathname}`);
+      // The directory read and the demo clock's offset read are the two plain GETs every page load makes; neither asks for a ticket or a person.
+      if (request.url().startsWith(API) && !(request.method() === 'GET' && ['/services', '/clock'].includes(new URL(request.url()).pathname))) asked.push(`${request.method()} ${new URL(request.url()).pathname}`);
     });
     await fresh.goto(`${BASE}/${locale}/ticket/`);
     await expect(fresh.getByText(msg(locale, 'ticket.noTicket'))).toBeVisible();

@@ -138,7 +138,7 @@ const inspect = createServer(async (request, response) => {
     response.end(JSON.stringify({ bundle: bundle.statusCode, ticket: ticket.statusCode, body: bundle.body }));
   } else if (/^\/persons\/[0-9a-f-]{36}$/.test(url.pathname)) {
     const [person] = await db.select().from(schema.persons).where(eq(schema.persons.id, url.pathname.split('/')[2]!));
-    response.end(JSON.stringify(person && { equityOptIn: person.equityOptIn, ageBand: person.ageBand, gender: person.gender, language: person.language, region: person.region }));
+    response.end(JSON.stringify(person ? { equityOptIn: person.equityOptIn, ageBand: person.ageBand, gender: person.gender, language: person.language, region: person.region } : null));
   } else if (url.pathname === '/logged-sign-in-link') {
     response.end(JSON.stringify({ link: loggedSignInLink(url.searchParams.get('to') ?? '') }));
   } else if (url.pathname === '/inbound/counts') {
