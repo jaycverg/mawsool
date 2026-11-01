@@ -7,6 +7,8 @@ import { sweep } from './sweep';
 export const SWEEP_QUEUE = 'ticket-sweep';
 
 export interface Jobs {
+  /** The queue itself, for a check that needs to see its schedule or fire it. */
+  boss: PgBoss;
   stop(): Promise<void>;
 }
 
@@ -24,5 +26,5 @@ export async function startJobs(options: { databaseUrl: string; db: Db; clock: C
     const result = await sweep(options.db, options.clock);
     if (result.marked > 0) options.log.info(result, 'tickets marked overdue');
   });
-  return { stop: () => boss.stop({ graceful: true, timeout: 10_000 }) };
+  return { boss, stop: () => boss.stop({ graceful: true, timeout: 10_000 }) };
 }
