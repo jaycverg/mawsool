@@ -30,6 +30,33 @@ describe('loadConfig', () => {
     expect(config).toMatchObject({ port: 4100, corsOrigins: ['http://a.test', 'http://b.test'], clinicianAppUrl: 'http://clinic.test', opsAppUrl: 'http://ops.test', databaseUrl: 'postgres://x' });
   });
 
+  describe('the bundle encryption key', () => {
+    it('is required: without it the config does not load', () => {
+      expect(() => loadConfig({})).toThrow(/BUNDLE_ENCRYPTION_KEY/);
+      expect(() => loadConfig({ BUNDLE_ENCRYPTION_KEY: '' })).toThrow(/BUNDLE_ENCRYPTION_KEY/);
+    });
+
+    it('must be 32 bytes of base64: shorter, longer and malformed keys are refused', () => {
+      for (const bad of [Buffer.alloc(16).toString('base64'), Buffer.alloc(33).toString('base64'), 'not base64 at all!', Buffer.alloc(32).toString('hex')]) {
+        expect(() => loadConfig({ BUNDLE_ENCRYPTION_KEY: bad }), bad).toThrow(/BUNDLE_ENCRYPTION_KEY/);
+      }
+    });
+  });
+
+  describe('the summary model flag', () => {
+    it('is off by default, and on only for true or 1', () => {
+      expect(loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY }).summaryLlmEnabled).toBe(false);
+      for (const on of ['true', '1']) expect(loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, SUMMARY_LLM_ENABLED: on, ANTHROPIC_API_KEY: 'k' }).summaryLlmEnabled).toBe(true);
+      expect(loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, SUMMARY_LLM_ENABLED: '0' }).summaryLlmEnabled).toBe(false);
+      expect(() => loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, SUMMARY_LLM_ENABLED: 'yes' })).toThrow();
+    });
+
+    it('refuses to start switched on without a provider key, and reads the model name', () => {
+      expect(() => loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, SUMMARY_LLM_ENABLED: 'true' })).toThrow(/ANTHROPIC_API_KEY/);
+      expect(loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, SUMMARY_MODEL: 'some-model' }).summaryModel).toBe('some-model');
+    });
+  });
+
   it('rejects an invalid port', () => {
     expect(() => loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, API_PORT: '99999' })).toThrow();
     expect(() => loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, API_PORT: 'abc' })).toThrow();
