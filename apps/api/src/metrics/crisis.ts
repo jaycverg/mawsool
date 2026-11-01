@@ -10,10 +10,16 @@ const MINUTE_MS = 60_000;
  * the median time from the trigger to that contact. Every number is suppressed under ten: the count of screens, each share
  * (which needs its part, its whole and what is left over to clear ten) and the median (on the contacts it is taken over).
  */
-export function buildCrisis(period: MetricPeriod, facts: readonly CrisisFact[], since: Date | null): CrisisResponse {
+export function buildCrisis(period: MetricPeriod, facts: readonly CrisisFact[], since: Date | null, countHidden = false): CrisisResponse {
   const inPeriod = facts.filter((fact) => since === null || fact.shownAt >= since);
   const contacts = inPeriod.filter((fact) => fact.contactConfirmed && fact.msToContact !== null).map((fact) => Math.max(0, fact.msToContact!) / MINUTE_MS);
   const median = percentile(contacts, 0.5);
+  // When the funnel hides the crisis events of this period (to keep a small cell from being worked out), the count and every
+  // share over it go too: a share names the count it divides, and the funnel's difference would give it back.
+  if (countHidden) {
+    const hidden = { suppressed: true } as const;
+    return { period, shown: hidden, calledALine: hidden, contactConfirmed: hidden, medianMinutesToContact: suppress(contacts.length, Math.round((median ?? 0) * 10) / 10) };
+  }
   return {
     period,
     shown: suppress(inPeriod.length, inPeriod.length),

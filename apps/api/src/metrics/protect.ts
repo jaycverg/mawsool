@@ -10,14 +10,21 @@ export interface ProtectedTable {
   cells: ReadonlyMap<string, readonly number[]>;
   /** `total` is the sum of `parts`, for every count of the cell. A member that is not in `cells` is ignored. */
   relations: readonly { total: string; parts: readonly string[] }[];
+  /** Pairs of cells that hold the very same value (the same tickets counted twice). Both are shown or both are hidden. */
+  equal?: readonly (readonly [string, string])[];
+  /** Which visible cell to hide first when one more must go: the lowest rank, then the smallest. Defaults to 0 for every cell. */
+  prefer?: (key: string) => number;
 }
 
 /**
  * Which cells must be hidden. A cell is hidden when any of its counts is under the threshold (zero included). That is
- * not enough where the table also publishes a total: with exactly one cell of a row hidden, the reader subtracts the
- * visible cells from the total and has it. So whenever a relation has exactly one hidden member, the smallest visible
- * member is hidden too (a part before the total on a tie), and this repeats until no relation has exactly one hidden
- * member, because hiding a cell can leave another relation with just one.
+ * not enough where the table also publishes a total: a reader subtracts the visible cells from it. So for every relation
+ * (and every count of its cells) the hidden members must hide each other: at least two of them must hold a non-zero value,
+ * and when the total is shown they must add up to at least the threshold. An empty group is not a second hidden cell (hidden
+ * cells that are all empty are left alone: they hide no small number), and
+ * a hidden pair that sums to less than ten is still a small number. While a relation falls short, one more visible member
+ * is hidden (the lowest `prefer` rank, then the smallest, a part before the total on a tie), and this repeats across all
+ * relations, because hiding a cell can leave another relation short. `equal` cells follow each other.
  *
  * The table is expected to include every group of a dimension, "no bucket given" among them, and the overall figure as
  * the total; leaving a group out leaves a gap the reader can fill from the total.
@@ -27,17 +34,42 @@ export function hiddenCells(table: ProtectedTable, threshold: number = SUPPRESSI
   for (const [key, counts] of table.cells) if (counts.some((count) => count < threshold)) hidden.add(key);
 
   const size = (key: string): number => table.cells.get(key)![0] ?? 0;
+  const rank = (key: string): number => table.prefer?.(key) ?? 0;
+  const value = (key: string, index: number): number => table.cells.get(key)![index] ?? 0;
+  const width = Math.max(1, ...[...table.cells.values()].map((counts) => counts.length));
+  /** True when what is hidden in this relation can still be told apart, for some count. */
+  const falls = (members: string[], total: string): boolean => {
+    const covered = members.filter((key) => hidden.has(key));
+    if (covered.length === 0) return false;
+    for (let index = 0; index < width; index += 1) {
+      const present = covered.filter((key) => value(key, index) > 0).length;
+      // Hidden cells that are all empty hide no small number: there is nothing in them to work out except that they are empty.
+      if (present === 0) continue;
+      if (present < 2) return true;
+      if (!hidden.has(total) && covered.reduce((sum, key) => sum + value(key, index), 0) < threshold) return true;
+    }
+    return false;
+  };
+
   for (let changed = true; changed; ) {
     changed = false;
+    for (const [a, b] of table.equal ?? []) {
+      if (!table.cells.has(a) || !table.cells.has(b) || hidden.has(a) === hidden.has(b)) continue;
+      hidden.add(a);
+      hidden.add(b);
+      changed = true;
+    }
     for (const relation of table.relations) {
       const members = [relation.total, ...relation.parts].filter((key) => table.cells.has(key));
       if (members.length < 2) continue;
-      if (members.filter((key) => hidden.has(key)).length !== 1) continue;
-      const [pick] = members
-        .filter((key) => !hidden.has(key))
-        .sort((a, b) => size(a) - size(b) || Number(a === relation.total) - Number(b === relation.total) || a.localeCompare(b));
-      hidden.add(pick!);
-      changed = true;
+      while (falls(members, relation.total)) {
+        const [pick] = members
+          .filter((key) => !hidden.has(key))
+          .sort((a, b) => rank(a) - rank(b) || size(a) - size(b) || Number(a === relation.total) - Number(b === relation.total) || a.localeCompare(b));
+        if (pick === undefined) break;
+        hidden.add(pick);
+        changed = true;
+      }
     }
   }
   return hidden;

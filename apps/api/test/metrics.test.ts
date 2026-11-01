@@ -218,7 +218,7 @@ describe('GET /metrics/funnel', () => {
       lines.forEach((parts, index) => {
         const total = totals[index]!;
         const stillHidden = [total, ...parts].filter(hidden);
-        // On the first stage a source's row also holds invites no filter value shows, so a single hidden tier cell is lost among them; the invites themselves are checked below.
+        // A first stage row also holds the source's open invites, which no filter value shows, so the row is not a pure sum of its tier cells and is skipped here; what its invites and the crisis events could give away is checked against the second stage in `metrics-leaks.test.ts`.
         if (stage === 'ticket_issued' || index >= sources.length) expect(stillHidden.length, `${stage} ${total}`).not.toBe(1);
       });
       if (stage === 'ticket_issued') {
@@ -327,19 +327,19 @@ describe('GET /metrics/crisis', () => {
 describe('GET /metrics/timeliness', () => {
   it('reports, by tier, the share seen within the promised window and the median and 90th percentile days to seen', async () => {
     // gp: 30 settled tickets, 18 seen in time (1 to 4 days after issue; the promise is 7), 12 seen late (9 days).
-    // tele: 12 settled, 11 in time and 1 late, so its rate has fewer than ten on the late side and is hidden.
+    // tele: 22 settled, 12 in time and 10 late, which is shown in full.
     for (let i = 0; i < 18; i += 1) await world.addTicket({ tier: 'gp', issuedAt: issued(24 * 30), path: ['seen'], hours: [24 * (1 + (i % 4))] });
     for (let i = 0; i < 12; i += 1) await world.addTicket({ tier: 'gp', issuedAt: issued(24 * 30), path: ['overdue', 'seen'], hours: [24 * 8, 24 * 9] });
-    for (let i = 0; i < 11; i += 1) await world.addTicket({ tier: 'tele', issuedAt: issued(24 * 30), path: ['acknowledged', 'seen'], hours: [10, 24 * 2] });
-    await world.addTicket({ tier: 'tele', issuedAt: issued(24 * 30), path: ['overdue', 'seen'], hours: [24 * 8, 24 * 20] });
+    for (let i = 0; i < 12; i += 1) await world.addTicket({ tier: 'tele', issuedAt: issued(24 * 30), path: ['acknowledged', 'seen'], hours: [10, 24 * 2] });
+    for (let i = 0; i < 10; i += 1) await world.addTicket({ tier: 'tele', issuedAt: issued(24 * 30), path: ['overdue', 'seen'], hours: [24 * 8, 24 * 20] });
     const timeliness = await get<TimelinessResponse>('/metrics/timeliness');
     const gp = timeliness.tiers.find((entry) => entry.tier === 'gp')!.cell;
     expect(gp).toMatchObject({ tickets: 30, withinTarget: { count: 18, of: 30, percent: 60 } });
     // Days to seen: five 1s, five 2s, four 3s, four 4s and twelve 9s; the median is the 15th of 30, the 90th percentile the 27th.
     expect((gp as { medianDaysToSeen: number }).medianDaysToSeen).toBe(4);
     expect((gp as { p90DaysToSeen: number }).p90DaysToSeen).toBe(9);
-    expect(timeliness.overall).toMatchObject({ tickets: 42, withinTarget: { count: 29, of: 42, percent: 69 } });
-    expect(timeliness.tiers.find((entry) => entry.tier === 'tele')!.cell).toEqual({ suppressed: true });
+    expect(timeliness.overall).toMatchObject({ tickets: 52, withinTarget: { count: 30, of: 52, percent: 57.7 } });
+    expect(timeliness.tiers.find((entry) => entry.tier === 'tele')!.cell).toMatchObject({ tickets: 22, withinTarget: { count: 12, of: 22 } });
   });
 
   it('counts only tickets whose promise is settled: waiting, declined and withdrawn tickets are not a miss', async () => {
@@ -387,7 +387,7 @@ describe('GET /metrics/timeliness', () => {
     await settle('gp', 25, 15);
     await settle('tele', 12, 12);
     await settle('specialist', 15, 15);
-    await settle('community', 3, 0);
+    await settle('community', 2, 1);
     const timeliness = await get<TimelinessResponse>('/metrics/timeliness');
     const byTier = Object.fromEntries(timeliness.tiers.map((entry) => [entry.tier, entry.cell]));
     expect(byTier['community']).toEqual({ suppressed: true });
@@ -407,31 +407,40 @@ describe('GET /metrics/equity', () => {
     expect(equity.flagPoints).toBe(10);
   });
 
-  it('counts the people who gave no bucket as a group of every dimension that can be empty, and language as the ticket language', async () => {
-    await world.addMany(14, { issuedAt: issued(100), path: ['seen'], language: 'ar' }, { optIn: true, ageBand: '25_34', gender: 'female', region: 'al_ain' });
-    await world.addMany(30, { issuedAt: issued(100), path: [], language: 'en' });
+  it('counts the people who gave no bucket as a group of every dimension, language included: a ticket in Urdu from a person who did not opt in is in no language row', async () => {
+    // 24 people opted in with Arabic (12 closed). 40 did not opt in; their tickets were made in Urdu (20 closed).
+    await world.addMany(12, { issuedAt: issued(100), path: ['seen'], language: 'ar' }, { optIn: true, ageBand: '25_34', gender: 'female', region: 'al_ain', language: 'ar' });
+    await world.addMany(12, { issuedAt: issued(100), path: [], language: 'ar' }, { optIn: true, ageBand: '25_34', gender: 'female', region: 'al_ain', language: 'ar' });
+    await world.addMany(20, { issuedAt: issued(100), path: ['seen'], language: 'ur' });
+    await world.addMany(20, { issuedAt: issued(100), path: [], language: 'ur' });
     const equity = await get<EquityResponse>('/metrics/equity');
     const rows = (dimension: string) => Object.fromEntries(equity.dimensions.find((entry) => entry.dimension === dimension)!.rows.map((row) => [row.value, row.cell]));
-    // 0 closed of 30 and 14 closed of 14 each leave one side of the rate under ten, so neither group shows a number.
-    expect(rows('age_band')['not_given']).toEqual({ suppressed: true });
-    expect(rows('age_band')['25_34']).toEqual({ suppressed: true });
-    expect(Object.keys(rows('language')).sort()).toEqual(['ar', 'en', 'hi', 'other', 'tl', 'ur']);
-    expect(Object.keys(rows('gender'))).toContain('not_given');
-    expect(Object.keys(rows('language'))).not.toContain('not_given');
+    expect(Object.keys(rows('language')).sort()).toEqual(['ar', 'en', 'hi', 'not_given', 'other', 'tl', 'ur']);
+    expect(rows('language')['not_given']).toMatchObject({ tickets: 40, loopClosed: 20 });
+    expect(rows('language')['ar']).toMatchObject({ tickets: 24, loopClosed: 12 });
+    // The 40 Urdu-language tickets are in no language row of their own: the Urdu row is empty, so it is hidden, not 40.
+    expect(rows('language')['ur']).toEqual({ suppressed: true });
+    for (const dimension of ['age_band', 'gender', 'region']) expect(rows(dimension)['not_given'], dimension).toMatchObject({ tickets: 40, loopClosed: 20 });
   });
 
   it('flags a group 10 points or more from the overall rate, and carries no flag or gap on a suppressed one', async () => {
-    // English: 30 of 40 closed (75%); Urdu: 12 of 30 (40%); Hindi: 4 tickets (hidden). Overall 46 of 74 = 62.2%.
-    for (let i = 0; i < 40; i += 1) await world.addTicket({ language: 'en', issuedAt: issued(24 * 20), path: i < 30 ? ['seen'] : [] });
-    for (let i = 0; i < 30; i += 1) await world.addTicket({ language: 'ur', issuedAt: issued(24 * 20), path: i < 12 ? ['seen'] : [] });
-    for (let i = 0; i < 4; i += 1) await world.addTicket({ language: 'hi', issuedAt: issued(24 * 20), path: ['seen'] });
+    // Each person opted in with a language. English: 30 of 40 closed (75%); Urdu: 12 of 30 (40%); Hindi 9 (5 closed), Tagalog
+    // 9 (5) and other 5 (3) are small. Overall 55 of 93 = 59.1%.
+    const add = async (language: 'en' | 'ur' | 'hi' | 'tl' | 'other', total: number, closed: number) => {
+      for (let i = 0; i < total; i += 1) await world.addTicket({ person: await world.addPerson({ optIn: true, language }), issuedAt: issued(24 * 20), path: i < closed ? ['seen'] : [] });
+    };
+    await add('en', 40, 30);
+    await add('ur', 30, 12);
+    await add('hi', 9, 5);
+    await add('tl', 9, 5);
+    await add('other', 5, 3);
     const equity = await get<EquityResponse>('/metrics/equity');
-    expect(equity.overall).toEqual({ tickets: 74, loopClosed: 46, ratePercent: 62.2 });
+    expect(equity.overall).toEqual({ tickets: 93, loopClosed: 55, ratePercent: 59.1 });
     const language = Object.fromEntries(equity.dimensions.find((entry) => entry.dimension === 'language')!.rows.map((row) => [row.value, row.cell]));
-    expect(language['ur']).toMatchObject({ ratePercent: 40, gapPoints: -22.2, flagged: true });
-    expect(language['en']).toMatchObject({ ratePercent: 75, gapPoints: 12.8, flagged: true });
-    // hi (4) is hidden, so the smallest visible group is hidden with it: nothing is left to subtract.
-    expect(language['hi']).toEqual({ suppressed: true });
+    expect(language['ur']).toMatchObject({ ratePercent: 40, gapPoints: -19.1, flagged: true });
+    expect(language['en']).toMatchObject({ ratePercent: 75, gapPoints: 15.9, flagged: true });
+    // hi, tl and other are each under ten and together hold 23 tickets, 13 closed and 10 open: nothing is left to subtract.
+    for (const small of ['hi', 'tl', 'other']) expect(language[small]).toEqual({ suppressed: true });
     expect(Object.keys(language['hi'] as object)).toEqual(['suppressed']);
     for (const row of equity.dimensions.flatMap((dimension) => dimension.rows)) {
       if ('suppressed' in row.cell) expect(Object.keys(row.cell)).toEqual(['suppressed']);
@@ -475,7 +484,9 @@ describe('GET /metrics/equity', () => {
     expect(cell.gapPoints).toBeLessThanOrEqual(-18);
     expect(cell.gapPoints).toBeGreaterThanOrEqual(-22);
     expect(cell.flagged).toBe(true);
-    expect(cell.tickets).toBe(60);
+    // The opt-in language bucket: 48 of the 60 Urdu-language tickets belong to people who shared it (22 closed, 45.8%); the
+    // other 12 are in "no bucket given". `gate:seed` still measures the ticket language (60 tickets, 20.5 points).
+    expect(cell).toMatchObject({ tickets: 48, loopClosed: 22, ratePercent: 45.8, gapPoints: -21.4 });
     expect(equity.overall).toMatchObject({ tickets: 500, loopClosed: 336, ratePercent: 67.2 });
   });
 });

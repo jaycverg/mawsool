@@ -50,6 +50,8 @@ export interface TicketFact {
   ageBand: AgeBand | null;
   gender: Gender | null;
   region: Region | null;
+  /** The language the person chose to share as an equity bucket; null for anyone who did not opt in. Not the ticket's language. */
+  bucketLanguage: CareLanguage | null;
 }
 
 type EventRow = {
@@ -80,6 +82,7 @@ export async function loadTicketFacts(db: Db): Promise<TicketFact[]> {
       ageBand: schema.persons.ageBand,
       gender: schema.persons.gender,
       region: schema.persons.region,
+      bucketLanguage: schema.persons.language,
     })
     .from(schema.tickets)
     .innerJoin(schema.persons, eq(schema.persons.id, schema.tickets.personId));
@@ -114,6 +117,7 @@ export async function loadTicketFacts(db: Db): Promise<TicketFact[]> {
       ageBand: ticket.optedIn ? ticket.ageBand : null,
       gender: ticket.optedIn ? ticket.gender : null,
       region: ticket.optedIn ? ticket.region : null,
+      bucketLanguage: ticket.optedIn ? ticket.bucketLanguage : null,
     };
   });
 }

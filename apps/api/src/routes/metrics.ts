@@ -6,7 +6,7 @@ import type { Db } from '../db/client';
 import { loadCrisisFacts, loadOpenInvites, loadTicketFacts, periodStart } from '../metrics/facts';
 import { buildCrisis } from '../metrics/crisis';
 import { buildEquity } from '../metrics/equity';
-import { buildFunnel, journeysOf } from '../metrics/funnel';
+import { buildFunnel, crisisHiddenInFunnel, journeysOf } from '../metrics/funnel';
 import { buildTimeliness } from '../metrics/timeliness';
 
 export interface MetricsRouteDeps {
@@ -36,9 +36,13 @@ export function registerMetricsRoutes(app: FastifyInstance, deps: MetricsRouteDe
     return buildTimeliness(deps.db, request.query.period, { tickets: await loadTicketFacts(deps.db), since: periodStart(request.query.period, now), now, encryptionKey: deps.encryptionKey });
   });
 
-  typed.get('/metrics/crisis', { config: { access: 'ops' }, schema: { querystring: PeriodQuerySchema, response: { 200: CrisisResponseSchema } } }, async (request) =>
-    buildCrisis(request.query.period, await loadCrisisFacts(deps.db), periodStart(request.query.period, deps.clock.now())),
-  );
+  typed.get('/metrics/crisis', { config: { access: 'ops' }, schema: { querystring: PeriodQuerySchema, response: { 200: CrisisResponseSchema } } }, async (request) => {
+    const now = deps.clock.now();
+    const since = periodStart(request.query.period, now);
+    const [tickets, openInvites, crisis] = await Promise.all([loadTicketFacts(deps.db), loadOpenInvites(deps.db, now), loadCrisisFacts(deps.db)]);
+    // The same decision as the funnel's first stage for this period: what it hides, this hides.
+    return buildCrisis(request.query.period, crisis, since, crisisHiddenInFunnel({ journeys: journeysOf(tickets), openInvites, crisis, since }));
+  });
 
   typed.get('/metrics/equity', { config: { access: 'ops' }, schema: { querystring: PeriodQuerySchema, response: { 200: EquityResponseSchema } } }, async (request) =>
     buildEquity(request.query.period, await loadTicketFacts(deps.db), periodStart(request.query.period, deps.clock.now())),

@@ -19,13 +19,14 @@ const DAY_MS = 86_400_000;
 /**
  * The four buckets, and nothing else: age band, gender, language and region. There is no nationality dimension, by
  * decision, until the programme team picks buckets. Age band, gender and region are the person's own opt-in buckets and
- * can be missing, so each has a "no bucket given" group; language is the language the ticket was made in, which every
- * ticket has.
+ * can be missing, so each has a "no bucket given" group. Language is the same: the language the person chose to share
+ * under the equity opt-in, never the language the ticket was made in, so a person who did not opt in appears in no
+ * language row and sits in "no bucket given" like the other three.
  */
 const DIMENSIONS: { dimension: EquityDimension; values: readonly string[]; of: (ticket: TicketFact) => string | null }[] = [
   { dimension: 'age_band', values: [...AGE_BANDS, NOT_GIVEN], of: (ticket) => ticket.ageBand },
   { dimension: 'gender', values: [...GENDERS, NOT_GIVEN], of: (ticket) => ticket.gender },
-  { dimension: 'language', values: CARE_LANGUAGES, of: (ticket) => ticket.language },
+  { dimension: 'language', values: [...CARE_LANGUAGES, NOT_GIVEN], of: (ticket) => ticket.bucketLanguage },
   { dimension: 'region', values: [...REGIONS, NOT_GIVEN], of: (ticket) => ticket.region },
 ];
 
@@ -53,36 +54,59 @@ const countsOf = (group: Group): number[] => [group.tickets, group.closed, group
  * reached `seen`, `remeasured` or `closed`, and "overall" is every ticket in the period. (The funnel counts journeys; this
  * stays per ticket.)
  *
- * Each dimension is a table: its groups, "no bucket given" included, and the overall figure as their total. A group under
- * ten is hidden, and so is the next smallest when it would be the only one hidden, so no group can be taken out of the
- * overall figure. A hidden group carries nothing else: no flag and no gap, either of which would say it is large or small.
+ * Every dimension's groups, "no bucket given" included, and the overall figure as their total, are one table (see
+ * `hiddenCells`). A group under ten is hidden, and enough of its neighbours go with it that what is hidden holds at least
+ * two non-empty groups adding up to ten or more, in every dimension and across the ones that share their "no bucket given"
+ * tickets, so no group can be taken out of the overall figure. A hidden group carries nothing else: no flag and no gap,
+ * either of which would say it is large or small.
  * A group is flagged when its rate is 10 points or more from the overall rate, in either direction.
  */
 export function buildEquity(period: MetricPeriod, tickets: readonly TicketFact[], since: Date | null): EquityResponse {
   const inPeriod = tickets.filter((ticket) => since === null || ticket.createdAt >= since);
   const overall = groupOf(inPeriod);
 
+  // One table for every dimension: a group is named `${dimension}:${value}`. "No bucket given" is the same tickets in
+  // several dimensions, so those cells are tied together (when they hold the same tickets) and shown or hidden as one;
+  // protected one dimension at a time, a hidden group comes back as the total minus the other dimensions' shared cell.
+  const cells = new Map<string, number[]>([['overall', countsOf(overall)]]);
+  const relations: { total: string; parts: string[] }[] = [];
+  const groups = new Map<string, Group>();
+  const notGivenTickets = new Map<string, string>();
   const tables = DIMENSIONS.map((spec) => {
-    const groups = new Map<string, Group>();
-    for (const value of spec.values) groups.set(value, groupOf(inPeriod.filter((ticket) => (spec.of(ticket) ?? NOT_GIVEN) === value)));
-    const cells = new Map<string, number[]>([['overall', countsOf(overall)]]);
-    for (const [value, group] of groups) cells.set(value, countsOf(group));
-    return { spec, groups, cells, hidden: hiddenCells({ cells, relations: [{ total: 'overall', parts: [...groups.keys()] }] }) };
+    const rows: [string, Group][] = [];
+    for (const value of spec.values) {
+      const members = inPeriod.filter((ticket) => (spec.of(ticket) ?? NOT_GIVEN) === value);
+      const group = groupOf(members);
+      rows.push([value, group]);
+      groups.set(`${spec.dimension}:${value}`, group);
+      cells.set(`${spec.dimension}:${value}`, countsOf(group));
+      if (value === NOT_GIVEN) notGivenTickets.set(spec.dimension, members.map((ticket) => ticket.id).sort().join(','));
+    }
+    relations.push({ total: 'overall', parts: rows.map(([value]) => `${spec.dimension}:${value}`) });
+    return { spec, rows };
   });
-  // The overall figure is one number in every table; hidden in any of them, it is hidden in all.
-  const overallHidden = tables.some((table) => table.hidden.has('overall'));
+  const equal: [string, string][] = [];
+  const firstWithSet = new Map<string, string>();
+  for (const [dimension, ids] of notGivenTickets) {
+    const first = firstWithSet.get(ids);
+    if (first === undefined) firstWithSet.set(ids, dimension);
+    else equal.push([`${first}:${NOT_GIVEN}`, `${dimension}:${NOT_GIVEN}`]);
+  }
+  const hidden = hiddenCells({ cells, relations, equal });
+  const overallHidden = hidden.has('overall');
   const overallRate = percentOf(overall.closed, overall.tickets);
 
   return {
     period,
     flagPoints: EQUITY_FLAG_POINTS,
     overall: overallHidden ? { suppressed: true } : { tickets: overall.tickets, loopClosed: overall.closed, ratePercent: overallRate },
-    dimensions: tables.map(({ spec, groups, cells, hidden }) => ({
+    dimensions: tables.map(({ spec, rows: dimensionRows }) => ({
       dimension: spec.dimension,
-      rows: [...groups].map(([value, group]) => {
+      rows: dimensionRows.map(([value, group]) => {
+        const key = `${spec.dimension}:${value}`;
         const cell: EquityResponse['dimensions'][number]['rows'][number]['cell'] | Suppressed = overallHidden
           ? { suppressed: true }
-          : cellOrSuppressed(hidden, value, cells.get(value)!, () => {
+          : cellOrSuppressed(hidden, key, cells.get(key)!, () => {
               const rate = percentOf(group.closed, group.tickets);
               const gap = Math.round((rate - overallRate) * 10) / 10;
               return {

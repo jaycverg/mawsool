@@ -125,16 +125,64 @@ export function cellKeyOf(source: TicketSource | null, tier: TicketTier | null):
 }
 
 /**
+ * Stages 1 and 2 as one table, with keys `s1:` and `s2:`. Every interior cell and every column of stage 1 is the same count
+ * as in stage 2 (they hold the same journeys), a source's stage 1 row is its stage 2 row plus its open invites, and the
+ * stage 1 grand total is the stage 2 one plus all open invites plus the crisis events. When a cell has to be hidden for
+ * the others' sake, the stage 1 rows and total go first, so the ticket stages stay readable.
+ */
+export function openingTable(inputs: FunnelInputs): ProtectedTable {
+  const one = stageTable('positive_screen', inputs);
+  const two = stageTable('ticket_issued', inputs);
+  const cells = new Map<string, number[]>();
+  for (const [k, v] of one.cells) cells.set(`s1:${k}`, [...v]);
+  for (const [k, v] of two.cells) cells.set(`s2:${k}`, [...v]);
+  const relations: { total: string; parts: string[] }[] = [];
+  for (const [prefix, table] of [['s1', one], ['s2', two]] as const) {
+    for (const r of table.relations) relations.push({ total: `${prefix}:${r.total}`, parts: r.parts.map((p) => `${prefix}:${p}`) });
+  }
+  const equal: [string, string][] = [];
+  for (const k of two.cells.keys()) {
+    if (k === GRAND) continue;
+    const invitesKey = k.startsWith('row:') ? invites(k.slice(4) as TicketSource) : null;
+    if (invitesKey && one.cells.has(invitesKey)) relations.push({ total: `s1:${k}`, parts: [`s2:${k}`, `s1:${invitesKey}`] });
+    else equal.push([`s1:${k}`, `s2:${k}`]);
+  }
+  relations.push({ total: `s1:${GRAND}`, parts: [`s2:${GRAND}`, ...SOURCES_WITH_INVITES.map((source) => `s1:${invites(source)}`), `s1:${CRISIS}`] });
+  // Hide a stage 1 row or total before a stage 2 cell, and either before a cell the two stages share (an interior cell or a column).
+  // The last resorts are the crisis count, then a cell the two stages share, then any stage 2 cell, then the stage 1 total.
+  const prefer = (key: string): number =>
+    key === `s1:${CRISIS}` ? 4 : key.startsWith('s1:i:') || key.startsWith('s1:col:') ? 3 : key.startsWith('s2:') ? 2 : key === `s1:${GRAND}` ? 1 : 0;
+  return { cells, relations, equal, prefer };
+}
+
+/** Whether the crisis events are hidden from the funnel's first stage in this period, so the crisis figures must hide them too. */
+export function crisisHiddenInFunnel(inputs: FunnelInputs): boolean {
+  return hiddenCells(openingTable(inputs)).has(`s1:${CRISIS}`);
+}
+
+/**
  * The funnel for one filter choice. Each stage's count is the cell the filter asks for, after complementary suppression
  * over the whole table of filter values, so asking for every source or tier one at a time cannot rebuild a hidden cell
  * from the others and the total. A share is published only when both counts it divides are.
  *
- * Not suppressed, and said so: two stage counts that are both published give their difference, the people who stopped
- * between them, whatever its size.
+ * The first two stages are protected as ONE table (`openingTable`), because the difference between them is exactly what
+ * the first stage holds that the second does not (open invites and crisis events), and those are cells that must stay
+ * hidden when they are small.
+ *
+ * The one exception, stated precisely: the difference between two LATER adjacent stages (issued to acknowledged,
+ * acknowledged to seen, seen to re-measured) is published whatever its size, because the funnel is asked to give counts
+ * and the share between stages and a drop-off is not a cell of its own. The first stage minus the second is not covered
+ * by that exception.
  */
 export function buildFunnel(query: FunnelQuery, inputs: FunnelInputs): FunnelResponse {
   const key = cellKeyOf(query.source ?? null, query.tier ?? null);
-  const counts: (number | Suppressed)[] = FUNNEL_STAGES.map((stage) => {
+  const opening = openingTable(inputs);
+  const openingHidden = hiddenCells(opening);
+  const counts: (number | Suppressed)[] = FUNNEL_STAGES.map((stage, index) => {
+    if (index < 2) {
+      const prefixed = `${index === 0 ? 's1' : 's2'}:${key}`;
+      return cellOrSuppressed(openingHidden, prefixed, opening.cells.get(prefixed)!, () => opening.cells.get(prefixed)![0]!);
+    }
     const table = stageTable(stage, inputs);
     return cellOrSuppressed(hiddenCells(table), key, table.cells.get(key)!, () => table.cells.get(key)![0]!);
   });
