@@ -310,7 +310,7 @@ function OptionCard({ t, option, insurance, lead, onChoose }: { t: Translate; op
       <div>
         <h2 className={`font-bold leading-6 ${compact ? 'text-[16px]' : 'text-[18px]'}`}>{t(`tier.${tier}`)}</h2>
         <p className="mt-0.5 text-[14px] text-muted">
-          {service.name} · {t(`regionName.${service.region}`)}
+          <span dir="auto">{service.name}</span> · {t(`regionName.${service.region}`)}
         </p>
       </div>
       <div className="flex flex-wrap gap-1.5 text-[13px]">
