@@ -70,3 +70,11 @@ test('appUrls follows PORT_OFFSET for the sign-in pages and the favicons', () =>
   assert.equal(urls[5]?.url, 'http://localhost:3102/en/sign-in/');
   assert.equal(urls.at(-1)?.url, 'http://localhost:3102/icon.svg');
 });
+
+test('docs/demo-e2e-spec.md is the current demo spec and registry', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { resolve } = await import('node:path');
+  const { renderDemoSpec, OUTPUT_FILE } = await import('./export-demo-spec.mjs');
+  const { ROOT } = await import('./lib.mjs');
+  assert.equal(readFileSync(resolve(ROOT, OUTPUT_FILE), 'utf8'), renderDemoSpec(), 'run `node scripts/export-demo-spec.mjs` to refresh docs/demo-e2e-spec.md');
+});

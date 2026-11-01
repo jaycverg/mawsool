@@ -101,8 +101,9 @@ const stageCount = (page: Page, stage: string) => page.locator(`[data-funnel-sta
 const numberOf = async (text: Promise<string>) => Number((await text).replace(/[^0-9.]/g, ''));
 
 /** Opens the ops dashboard as the ops user and waits for the figures. */
-async function dashboard(context: BrowserContext, locale: Locale): Promise<Page> {
-  const page = await signedInPage(context, OPS, OPS_USER);
+async function dashboard(browser: Browser, locale: Locale): Promise<Page> {
+  // Its own browser context: the admin panel's tab keeps the admin session, and this one is the ops user's.
+  const page = await signedInPage(await browser.newContext(), OPS, OPS_USER);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(opsUrl(locale));
   await expect(page.locator('[data-funnel-stage="positive_screen"]')).toBeVisible();
@@ -242,7 +243,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
 
     // Step 11: the dashboard. The first stage equals the plan's formula, counted straight from the tables, and Noura's
     // claimed invite and her ticket are one screen, not two.
-    const dash = await dashboard(context, locale);
+    const dash = await dashboard(browser, locale);
     const now = Date.now() + (await offsetMs());
     for (const [period, since] of [['all', null], ['90d', since90(now)]] as const) {
       await dash.locator('[data-filter="period"]').selectOption(period);
@@ -250,6 +251,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
       await expect(stageCount(dash, 'positive_screen').locator('[data-count]')).toHaveText(new Intl.NumberFormat(locale === 'ar' ? 'ar-AE-u-nu-latn' : 'en-GB').format(parts.total));
     }
     await expect(dash.locator('[data-funnel-note]')).toHaveText(omsg(locale, 'dash.funnel.note'));
+    await dash.locator('[data-filter="period"]').selectOption('all');
     for (const stage of ['positive_screen', 'ticket_issued', 'acknowledged', 'seen', 'remeasured']) await expect(stageCount(dash, stage).locator('[data-count]')).toBeVisible();
     await expect(dash.locator('[data-tier-row="gp"]')).toBeVisible();
     await expect(dash.locator('[data-crisis-stat="shown"] [data-value]')).not.toBeEmpty();
@@ -267,10 +269,10 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await phone.close();
   },
 
-  async 'dashboard-funnel-formula-and-note'({ context, locale }) {
+  async 'dashboard-funnel-formula-and-note'({ context, browser, locale }) {
     const admin = await signedInPage(context, OPS, ADMIN);
     await resetFromPanel(admin, locale);
-    const dash = await dashboard(context, locale);
+    const dash = await dashboard(browser, locale);
     const now = Date.now() + (await offsetMs());
     await dash.locator('[data-filter="period"]').selectOption('all');
     const parts = await funnelParts(now, null);
@@ -290,14 +292,14 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(dash.locator('[data-filter-scope]')).toHaveText(omsg(locale, 'dash.filters.scope'));
   },
 
-  async 'dashboard-shows-suppressed-cells'({ context, locale }) {
+  async 'dashboard-shows-suppressed-cells'({ context, browser, locale }) {
     const admin = await signedInPage(context, OPS, ADMIN);
     await resetFromPanel(admin, locale);
-    const dash = await dashboard(context, locale);
+    const dash = await dashboard(browser, locale);
     await dash.locator('[data-filter="period"]').selectOption('all');
-    // School journeys in one tier are fewer than ten in the seed: the stage counts are hidden, and nothing else stands in their place.
+    // The seed has 8 school journeys in the community tier: fewer than ten, so every stage count is hidden, and nothing else stands in its place.
     await dash.locator('[data-filter="source"]').selectOption('school');
-    await dash.locator('[data-filter="tier"]').selectOption('specialist');
+    await dash.locator('[data-filter="tier"]').selectOption('community');
     const first = stageCount(dash, 'positive_screen');
     await expect(first.locator('[data-suppressed]')).toHaveText(omsg(locale, 'dash.suppressed'));
     await expect(first.locator('[data-count]')).toHaveCount(0);
@@ -348,10 +350,14 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await advanceFromPanel(admin, '7d', 7);
     await clinic.reload();
     await expect(deadline).toHaveAttribute('data-days-until', String(daysUntil(Date.now() + 7 * DAY)));
-    expect(daysUntil(Date.now() + 7 * DAY)).toBeLessThan(0);
+    expect(daysUntil(Date.now() + 7 * DAY)).toBe(0); // seven days on, the promise falls due today
+    await advanceFromPanel(admin, '7d', 14);
+    await clinic.reload();
+    await expect(deadline).toHaveAttribute('data-days-until', String(daysUntil(Date.now() + 14 * DAY)));
+    expect(daysUntil(Date.now() + 14 * DAY)).toBe(-7);
   },
 
-  async 'mock-label-audit'({ page, context, locale }) {
+  async 'mock-label-audit'({ page, context, browser, locale }) {
     const admin = await signedInPage(context, OPS, ADMIN);
     const code = await resetFromPanel(admin, locale);
     // The mock TAMM page.
@@ -375,7 +381,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(clinic.locator('[data-export-label]')).toHaveText(cmsg(locale, 'detail.exportLabel'));
     expect(cmsg('en', 'detail.exportLabel')).toBe('Malaffi-ready export — not sent');
     // The dashboard says its figures are simulated, and so does the admin panel.
-    const dash = await dashboard(context, locale);
+    const dash = await dashboard(browser, locale);
     await expect(dash.locator('[data-simulated]')).toHaveText(omsg(locale, 'home.simulated'));
     await expect(dash.locator('[data-simulated-note]')).toHaveText(omsg(locale, 'dash.simulatedNote'));
     await admin.goto(opsUrl(locale));
@@ -404,8 +410,8 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     }
   },
 
-  async 'dashboard-toggle-and-rtl'({ context, locale }) {
-    const dash = await dashboard(context, locale);
+  async 'dashboard-toggle-and-rtl'({ browser, locale }) {
+    const dash = await dashboard(browser, locale);
     await expect(dash.locator('html')).toHaveAttribute('lang', locale);
     await expect(dash.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
     const other = locale === 'ar' ? 'en' : 'ar';
@@ -422,8 +428,8 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(dash.locator('[data-funnel-stage="positive_screen"]')).toBeVisible();
   },
 
-  async 'dashboard-holds-the-board-and-plan-tokens'({ context, locale }) {
-    const dash = await dashboard(context, locale);
+  async 'dashboard-holds-the-board-and-plan-tokens'({ browser, locale }) {
+    const dash = await dashboard(browser, locale);
     const ar = locale === 'ar';
     const h1 = await computed(dash, 'h1', ['font-size', 'line-height', 'font-weight']);
     expect(h1).toMatchObject({ 'font-size': '24px', 'line-height': ar ? '34px' : '30px', 'font-weight': '600' });
@@ -445,8 +451,10 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(dash.locator('body')).toHaveCSS('background-color', 'rgb(243, 246, 245)');
   },
 
-  async 'snapshot-ops-dashboard'({ context, locale }) {
-    const dash = await dashboard(context, locale);
+  async 'snapshot-ops-dashboard'({ context, browser, locale }) {
+    // From a fresh reset, so the figures do not depend on which tests ran before this one.
+    await resetFromPanel(await signedInPage(context, OPS, ADMIN), locale);
+    const dash = await dashboard(browser, locale);
     await dash.locator('[data-filter="period"]').selectOption('all');
     await expect(dash.locator('[data-equity-row="ur"]')).toBeVisible();
     await snapshot(dash, `ops-dashboard-${locale}`);
