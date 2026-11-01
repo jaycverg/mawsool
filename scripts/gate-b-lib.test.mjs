@@ -36,7 +36,7 @@ test('a sentence with no test, a duplicate id and a project that was not run all
 
 test('a browser sentence needs its test in the browser gate registry', () => {
   assert.deepEqual(evaluateRegistry([{ id: 'b', sentence: 's', browser: 'redirect' }], {}, ['redirect']), []);
-  assert.match(String(evaluateRegistry([{ id: 'b', sentence: 's', browser: 'redirect' }], {}, ['other'])[0]), /not in the browser gate/);
+  assert.match(evaluateRegistry([{ id: 'b', sentence: 's', browser: 'redirect' }], {}, ['other']).join('\n'), /not in the browser gate/);
 });
 
 test('a browser test that no sentence claims is a problem, so a new one cannot sit unregistered', () => {
