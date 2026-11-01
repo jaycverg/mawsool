@@ -3,6 +3,8 @@
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 import { deviceNow } from '../lib/clock';
+import { numbersText } from '../lib/crisis-copy';
+import { crisisLines } from '../lib/crisis-numbers';
 import { deleteDeviceData, exportDeviceData } from '../lib/device-data';
 import { useDevice } from '../lib/use-device';
 import { BottomNav } from './BottomNav';
@@ -109,7 +111,7 @@ export function SettingsScreen() {
 
         <section className="flex flex-col gap-1 px-1">
           <h2 className="text-[14px] font-semibold">{t('numbersTitle')}</h2>
-          <p className="t-small text-muted">{t('numbersBody')}</p>
+          <p className="t-small text-muted">{numbersText(t, crisisLines())}</p>
         </section>
       </main>
       <BottomNav />

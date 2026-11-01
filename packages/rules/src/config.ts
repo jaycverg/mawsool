@@ -80,9 +80,14 @@ export const MAX_FIRST_VIEW_CARDS = 3;
 /** Window for a ticket the person chooses outside the row's own hand-off (a more intensive tier than offered). */
 export const FALLBACK_HANDOFF_WINDOW_DAYS = 14;
 
+/** What a number is for. The crisis screen shows the hotline as the large button and the other two as emergency numbers. */
+export type CrisisRole = 'hotline' | 'ambulance' | 'police';
+
 export interface CrisisNumberConfig {
   /** The digits dialled. */
   number: CrisisNumber;
+  role: CrisisRole;
+  /** The line's name as people know it. Shown in every language as written. */
   label: string;
   /** Dated as YYYY-MM-DD once a person has confirmed the number live; null until then. Shown in the admin view. */
   last_verified: string | null;
@@ -96,12 +101,13 @@ export interface CrisisNumberConfig {
 export const CRISIS_NUMBERS_CONFIG: readonly CrisisNumberConfig[] = [
   {
     number: '800725462',
+    role: 'hotline',
     label: '800-SAKINA',
     last_verified: null,
     note: 'Claimed 24/7 and bilingual by the DoH announcement cited in the spec; not independently confirmed.',
   },
-  { number: '999', label: 'Police', last_verified: null, note: 'Emergency number taken from the spec; not independently confirmed.' },
-  { number: '998', label: 'Ambulance', last_verified: null, note: 'Emergency number taken from the spec; not independently confirmed.' },
+  { number: '999', role: 'police', label: 'Police', last_verified: null, note: 'Emergency number taken from the spec; not independently confirmed.' },
+  { number: '998', role: 'ambulance', label: 'Ambulance', last_verified: null, note: 'Emergency number taken from the spec; not independently confirmed.' },
 ];
 
 /**
