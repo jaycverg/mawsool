@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { answerFiresCrisis, createCrisisStore, isBlocking } from '../lib/crisis';
 import { pendingEvents } from '../lib/crisis-outbox';
 import { loadScreenings, saveAnswer } from '../lib/screening-store';
+import { createTabFlag } from '@mawsool/ui';
 import { fixtureClock, memoryStorage } from './helpers/memory';
 
 function setup(initial: Record<string, unknown> = {}) {
@@ -270,5 +271,62 @@ describe('Help now after a resolved crisis', () => {
     expect(JSON.stringify(await pendingEvents(storage))).toBe(queued);
     const fresh = setup();
     expect((await fresh.crisis.resolve())!.record).toMatchObject({ blocked: false, event: null });
+  });
+});
+
+describe('the tab flag, when storage cannot be trusted', () => {
+  function hung() {
+    const memory = memoryStorage();
+    const clock = fixtureClock();
+    const fallback = createTabFlag(undefined, 'crisis');
+    const crisis = createCrisisStore(memory.storage, { now: clock.now, newId: clock.newId, fallback, readPatienceMs: 20 });
+    const never = new Promise<never>(() => undefined);
+    return { ...memory, clock, fallback, crisis, hang: () => { memory.storage.get = () => never; memory.storage.set = () => never; } };
+  }
+
+  it('is set synchronously by raise, before the store lock and before any storage call', () => {
+    const { crisis, fallback, hang } = hung();
+    hang();
+    void crisis.raise(RAISE);
+    expect(fallback.get()).toBe(true);
+  });
+
+  it('is set by markBlocked with nothing else', () => {
+    const { crisis, fallback } = hung();
+    crisis.markBlocked();
+    expect(fallback.get()).toBe(true);
+  });
+
+  it('reads as blocked, in time, when storage hangs', async () => {
+    const { crisis, hang } = hung();
+    hang();
+    void crisis.raise(RAISE);
+    const started = performance.now();
+    expect((await crisis.read()).status).toBe('blocked');
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  it('reads as blocked when storage says clear, and as blocked when it refuses, while the flag is on', async () => {
+    const { crisis, failures, fallback } = hung();
+    fallback.set(true);
+    expect((await crisis.read()).status).toBe('blocked');
+    failures.read = true;
+    expect((await crisis.read()).status).toBe('blocked');
+  });
+
+  it('keeps the open event when storage can still be read', async () => {
+    const { crisis } = hung();
+    await crisis.raise(RAISE);
+    const state = await crisis.read();
+    expect(state.status).toBe('blocked');
+    expect(state.record!.event).not.toBeNull();
+  });
+
+  it('is cleared by resolve at once, without waiting for storage, so a hung store cannot keep the person here', async () => {
+    const { crisis, fallback, hang } = hung();
+    await crisis.raise(RAISE);
+    hang();
+    void crisis.resolve();
+    expect(fallback.get()).toBe(false);
   });
 });

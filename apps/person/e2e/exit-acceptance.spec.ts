@@ -9,6 +9,10 @@ import {
   crisisUrl,
   finishButton,
   goOffline,
+  installFailingIndexedDb,
+  rawStoreKeys,
+  setIdbMode,
+  type IdbMode,
   msg,
   pick,
   staticHits,
@@ -28,7 +32,56 @@ interface Context {
   locale: Locale;
 }
 
+/**
+ * The trigger answer arrives while the browser's storage is failing. The crisis screen must still show, and the
+ * block must hold for the rest of the tab: Back, a direct visit to each guarded screen, and a reload.
+ */
+async function blockSurvivesFailingStorage({ page, locale }: Context, mode: IdbMode): Promise<void> {
+  await installFailingIndexedDb(page);
+  await visitOnline(page, locale);
+  await page.goto(`/${locale}/check-in/?i=phq9`);
+  await answerAll(page, locale, [0, 0, 0, 0, 0, 0, 0, 0]);
+  await page.getByRole('button', { name: msg(locale, 'flow.next'), exact: true }).click();
+  await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '9');
+
+  await setIdbMode(page, mode);
+  await page.locator('input[type="radio"][value="1"]').click();
+  await expect(page).toHaveURL(crisisUrl(locale), { timeout: 15_000 });
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(msg(locale, 'crisis.heading'));
+
+  await page.goBack();
+  await expect(page).toHaveURL(crisisUrl(locale), { timeout: 15_000 });
+  for (const screen of ['options', 'consent', 'ticket', 'check-in', 'result']) {
+    await page.goto(`/${locale}/${screen}/`);
+    await expect(page).toHaveURL(crisisUrl(locale), { timeout: 15_000 });
+    await expect(page.locator('[data-tier]')).toHaveCount(0);
+  }
+  await page.reload();
+  await expect(page).toHaveURL(crisisUrl(locale));
+
+  // The failure was real: with storage working again, nothing about the trigger had been saved, so it was the
+  // tab's own flag that held the block.
+  await setIdbMode(page, null);
+  const keys = await rawStoreKeys(page);
+  expect(keys).not.toContain('crisis:block');
+  await page.goto(`/${locale}/options/`);
+  await expect(page).toHaveURL(crisisUrl(locale), { timeout: 15_000 });
+
+  // And the person is never trapped: "I'm safe right now" gets them out, however storage behaves.
+  await setIdbMode(page, mode);
+  await page.getByRole('button', { name: msg(locale, 'crisis.safeNow'), exact: true }).click();
+  await expect(page).not.toHaveURL(crisisUrl(locale), { timeout: 15_000 });
+}
+
 const CASES: Record<string, (ctx: Context) => Promise<void>> = {
+  async 'block-survives-refused-storage'(ctx) {
+    await blockSurvivesFailingStorage(ctx, 'refuse');
+  },
+
+  async 'block-survives-hung-storage'(ctx) {
+    await blockSurvivesFailingStorage(ctx, 'hang');
+  },
+
   // --- crisis, with the network off after one online visit --------------------------------------------------------
 
   async 'halts-at-crisis'({ page, context, locale }) {

@@ -1,10 +1,11 @@
 import { evaluateCrisis } from '@mawsool/instruments';
 import { CrisisEventSubmissionSchema, type CrisisEventSubmission, type CrisisNumber, type CrisisTrigger, type Instrument, type Locale } from '@mawsool/types';
-import type { StorageAdapter } from '@mawsool/ui';
+import type { StorageAdapter, TabFlagAdapter } from '@mawsool/ui';
 import type { NewId, Now } from './clock';
 import { enqueueEventLocked } from './crisis-outbox';
 import { KEYS } from './keys';
 import { withStoreLock } from './lock';
+import { within } from './within';
 
 /**
  * What the device remembers about a crisis trigger. `blocked` is the persisted crisis-block flag: while it is true
@@ -43,6 +44,13 @@ export type WriteStatus = 'saved' | 'failed';
 export interface CrisisDeps {
   now: Now;
   newId: NewId;
+  /**
+   * The tab's synchronous copy of "blocked". It is set before any storage call and cleared at the start of a
+   * resolution, so a store that refuses or hangs cannot lose the block, and it survives a page navigation in the tab.
+   */
+  fallback?: TabFlagAdapter;
+  /** How long a read waits on storage when only the tab flag knows about the block. */
+  readPatienceMs?: number;
 }
 
 function isRecord(value: unknown): value is CrisisRecord {
@@ -67,6 +75,17 @@ export function createCrisisStore(storage: StorageAdapter, deps: CrisisDeps) {
 
   async function read(): Promise<BlockState> {
     if (unsaved) return { status: unsaved.blocked ? 'blocked' : 'clear', record: unsaved };
+    // The tab flag says blocked: it is blocked, whatever storage says or fails to say. Storage is asked only for
+    // the detail (the open event), and only briefly.
+    if (deps.fallback?.get()) {
+      const stored = await within(readStored(), deps.readPatienceMs ?? 300, null);
+      const record = stored && stored.status === 'blocked' && stored.record ? stored.record : { ...CLEAR_RECORD, blocked: true };
+      return { status: 'blocked', record };
+    }
+    return readStored();
+  }
+
+  async function readStored(): Promise<BlockState> {
     try {
       const stored = await storage.get<unknown>(KEYS.crisisBlock);
       if (stored === undefined) return { status: 'clear', record: CLEAR_RECORD };
@@ -114,11 +133,17 @@ export function createCrisisStore(storage: StorageAdapter, deps: CrisisDeps) {
   return {
     read,
 
+    /** Sets the tab flag at once, with no storage involved. Called the moment a trigger answer is decided. */
+    markBlocked(): void {
+      deps.fallback?.set(true);
+    },
+
     /**
      * A trigger answer was given: set the block and open the event. A second trigger while already blocked keeps the
      * event that is open. Never throws, so the caller can go to the crisis screen whatever happens.
      */
     raise(input: { trigger: CrisisTrigger; screeningId: string | null; locale: Locale }): Promise<WriteStatus> {
+      deps.fallback?.set(true); // synchronously, before the store lock
       return update((current) => {
         if (current.blocked && current.event) return null;
         const event = CrisisEventSubmissionSchema.parse({
@@ -157,6 +182,7 @@ export function createCrisisStore(storage: StorageAdapter, deps: CrisisDeps) {
 
     /** "I'm with someone safe" or "I'm safe right now": releases the block and records when. */
     resolve(): Promise<{ record: CrisisRecord; status: WriteStatus } | null> {
+      deps.fallback?.set(false); // synchronously: releasing never waits on storage
       return update((current) => {
         const resolvedAt = deps.now().toISOString();
         return {

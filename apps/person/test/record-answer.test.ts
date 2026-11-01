@@ -1,3 +1,4 @@
+import { createTabFlag } from '@mawsool/ui';
 import { describe, expect, it, vi } from 'vitest';
 import { createCrisisStore } from '../lib/crisis';
 import { recordAnswer, type RecordAnswerDeps } from '../lib/record-answer';
@@ -8,9 +9,10 @@ function setup() {
   const memory = memoryStorage();
   const clock = fixtureClock();
   const deps = { now: clock.now, newId: clock.newId };
-  const crisis = createCrisisStore(memory.storage, deps);
+  const fallback = createTabFlag(undefined, 'crisis');
+  const crisis = createCrisisStore(memory.storage, { ...deps, fallback, readPatienceMs: 20 });
   const base: RecordAnswerDeps = { storage: memory.storage, crisis, ...deps, locale: 'en', patienceMs: 20 };
-  return { ...memory, crisis, base };
+  return { ...memory, crisis, base, fallback };
 }
 
 const ITEM9 = { instrument: 'phq9', index: 8, value: 1 } as const;
@@ -68,8 +70,23 @@ describe('recordAnswer', () => {
     expect((await crisis.read()).status).toBe('blocked');
   });
 
+  it('sets the tab flag before it touches storage at all', async () => {
+    const { base, storage, fallback } = setup();
+    await firstEight(base);
+    let seenWhenStorageFirstRead: boolean | null = null;
+    const realGet = storage.get.bind(storage);
+    storage.get = (async (key: string) => {
+      seenWhenStorageFirstRead ??= fallback.get();
+      return realGet(key);
+    }) as typeof storage.get;
+    const pending = recordAnswer(ITEM9, base);
+    expect(fallback.get()).toBe(true); // synchronously, before the first await settles
+    await pending;
+    expect(seenWhenStorageFirstRead).toBe(true);
+  });
+
   it('still takes the crisis path when storage hangs, after its patience runs out', async () => {
-    const { base, storage, crisis } = setup();
+    const { base, storage, crisis, fallback } = setup();
     await firstEight(base);
     const never = new Promise<never>(() => undefined);
     storage.get = () => never;
@@ -78,7 +95,9 @@ describe('recordAnswer', () => {
     const outcome = await recordAnswer(ITEM9, base);
     expect(outcome).toEqual({ kind: 'crisis', screening: null, blockSaved: false });
     expect(performance.now() - started).toBeLessThan(1000);
-    void crisis;
+    // The block reads as blocked even though storage never answers, because the tab flag holds it.
+    expect(fallback.get()).toBe(true);
+    expect((await crisis.read()).status).toBe('blocked');
   });
 
   it('decides the trigger before it touches storage', async () => {

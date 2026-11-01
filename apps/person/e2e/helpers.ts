@@ -114,3 +114,49 @@ export async function triggerCrisis(page: Page, locale: Locale): Promise<void> {
 }
 
 export const PHQ9_ITEM9_ANSWERS = [0, 0, 0, 0, 0, 0, 0, 0, 1] as const;
+
+export type IdbMode = 'refuse' | 'hang';
+
+/**
+ * Makes the page's IndexedDB misbehave on demand, in a way that outlives navigation: while the tab's
+ * `e2e.idb` session value is `refuse`, every transaction throws; while it is `hang`, every request is left pending
+ * for ever. Install before the first navigation, then switch it with `setIdbMode`.
+ */
+export async function installFailingIndexedDb(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const original = IDBDatabase.prototype.transaction;
+    const pending = () => ({});
+    const hungStore = { get: pending, put: pending, add: pending, delete: pending, clear: pending, getAllKeys: pending };
+    IDBDatabase.prototype.transaction = function (this: IDBDatabase, ...args: Parameters<typeof original>) {
+      const mode = sessionStorage.getItem('e2e.idb');
+      if (mode === 'refuse') throw new DOMException('refused by the test', 'InvalidStateError');
+      if (mode === 'hang') return { objectStore: () => hungStore } as unknown as IDBTransaction;
+      return original.apply(this, args);
+    };
+  });
+}
+
+export async function setIdbMode(page: Page, mode: IdbMode | null): Promise<void> {
+  await page.evaluate((value) => (value ? sessionStorage.setItem('e2e.idb', value) : sessionStorage.removeItem('e2e.idb')), mode);
+}
+
+/** The raw rows of the person app's IndexedDB store, as the browser holds them. */
+export async function rawStoreKeys(page: Page): Promise<string[]> {
+  return page.evaluate(
+    () =>
+      new Promise<string[]>((resolve, reject) => {
+        const opening = indexedDB.open('mawsool');
+        opening.onerror = () => reject(opening.error);
+        opening.onsuccess = () => {
+          const db = opening.result;
+          if (!db.objectStoreNames.contains('kv')) return resolve([]);
+          const read = db.transaction('kv').objectStore('kv').getAllKeys();
+          read.onsuccess = () => {
+            db.close();
+            resolve(read.result.map(String));
+          };
+          read.onerror = () => reject(read.error);
+        };
+      }),
+  );
+}

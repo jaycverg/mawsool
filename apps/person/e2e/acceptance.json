@@ -58,5 +58,13 @@
   {
     "id": "help-now-after-resolved-crisis-logs-nothing",
     "sentence": "\"Help now\" after a resolved crisis logs nothing: no extra event reaches the API and the stored row is unchanged"
+  },
+  {
+    "id": "block-survives-refused-storage",
+    "sentence": "If IndexedDB refuses the trigger answer, the crisis screen shows and Back or a direct guarded route in that tab still lands on the crisis screen"
+  },
+  {
+    "id": "block-survives-hung-storage",
+    "sentence": "If IndexedDB hangs on the trigger answer, the crisis screen shows and Back or a direct guarded route in that tab still lands on the crisis screen"
   }
 ]
