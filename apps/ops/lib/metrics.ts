@@ -1,4 +1,5 @@
 import {
+  EQUITY_PERIOD,
   CrisisResponseSchema,
   EquityResponseSchema,
   FunnelResponseSchema,
@@ -51,8 +52,10 @@ function query(filters: Filters, withFunnelFilters: boolean): string {
 
 /** Loads the four metric routes together. Any 401 is `unauthorized`; an answer that is missing or the wrong shape is `failed`. */
 export async function loadDashboard(session: Pick<Session, 'sessionToken'>, filters: Filters): Promise<DashboardResult> {
-  const call = (path: string, withFunnelFilters = false) => staffCall<unknown>({ fetch: window.fetch.bind(window), apiUrl: API_URL, session, path: `${path}${query(filters, withFunnelFilters)}` });
-  const [funnel, timeliness, crisis, equity] = await Promise.all([call('/metrics/funnel', true), call('/metrics/timeliness'), call('/metrics/crisis'), call('/metrics/equity')]);
+  // The equity section ignores the period filter: it is always the one period the API serves it for (see `EQUITY_PERIOD`).
+  const call = (path: string, withFunnelFilters = false, period?: MetricPeriod) =>
+    staffCall<unknown>({ fetch: window.fetch.bind(window), apiUrl: API_URL, session, path: `${path}${query(period ? { ...filters, period } : filters, withFunnelFilters)}` });
+  const [funnel, timeliness, crisis, equity] = await Promise.all([call('/metrics/funnel', true), call('/metrics/timeliness'), call('/metrics/crisis'), call('/metrics/equity', false, EQUITY_PERIOD)]);
   const all = [funnel, timeliness, crisis, equity];
   if (all.some((result) => result.status === 'unauthorized')) return { status: 'unauthorized' };
   if (all.some((result) => result.status !== 'ok')) return { status: 'failed' };

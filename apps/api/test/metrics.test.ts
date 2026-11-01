@@ -407,6 +407,31 @@ describe('GET /metrics/equity', () => {
     expect(equity.flagPoints).toBe(10);
   });
 
+  it('serves one period only: any other is refused with no figures, so a group cannot be worked out by comparing two periods', async () => {
+    // Five older tickets of a group that has forty inside the last 90 days: all time less 90 days would be those five.
+    const shared = { optIn: true as const, ageBand: '25_34' as const, gender: 'female' as const, region: 'al_ain' as const, language: 'ur' as const };
+    await world.addMany(40, { issuedAt: issued(24 * 20), path: ['seen'] }, shared);
+    await world.addMany(5, { issuedAt: issued(24 * 120), path: ['seen'] }, shared);
+    const asked = (query: string) => ctx.app.inject({ method: 'GET', url: `/metrics/equity${query}`, headers });
+    for (const period of ['all', '30d', '7d', '365d', '']) {
+      const res = await asked(`?period=${period}`);
+      expect(res.statusCode, `period=${period}`).toBe(400);
+      expect(Object.keys(res.json()).sort(), `period=${period} carries no figures`).toEqual(['error', 'message']);
+    }
+    const defaulted = await asked('');
+    const named = await asked('?period=90d');
+    expect(defaulted.statusCode).toBe(200);
+    expect(named.json()).toEqual(defaulted.json());
+    expect(defaulted.json().period).toBe('90d');
+    // Nothing else in the response set gives a second window of an equity group.
+    for (const path of ['funnel', 'timeliness', 'crisis']) {
+      for (const period of ['all', '90d', '30d']) {
+        const body = JSON.stringify((await ctx.app.inject({ method: 'GET', url: `/metrics/${path}?period=${period}`, headers })).json());
+        expect(body, `${path} ${period}`).not.toMatch(/age_band|"gender"|"language"|not_given|"region"/);
+      }
+    }
+  });
+
   it('counts the people who gave no bucket as a group of every dimension, language included: a ticket in Urdu from a person who did not opt in is in no language row', async () => {
     // 24 people opted in with Arabic (12 closed). 40 did not opt in; their tickets were made in Urdu (20 closed).
     await world.addMany(12, { issuedAt: issued(100), path: ['seen'], language: 'ar' }, { optIn: true, ageBand: '25_34', gender: 'female', region: 'al_ain', language: 'ar' });
@@ -581,7 +606,9 @@ describe('the seeded data against the metric definitions', () => {
         for (const tier of timeliness.tiers) expect(tier.cell, `${tier.tier} ${label}`).not.toHaveProperty('suppressed');
         const crisis = await get<CrisisResponse>(`/metrics/crisis?period=${period}`);
         for (const figure of ['shown', 'calledALine', 'contactConfirmed', 'medianMinutesToContact'] as const) expect(crisis[figure], `${figure} ${label}`).not.toHaveProperty('suppressed');
-        const equity = await get<EquityResponse>(`/metrics/equity?period=${period}`);
+        // Equity stays on its one period (the last 90 days) whatever period the rest of the dashboard is asked for.
+        const equity = await get<EquityResponse>('/metrics/equity');
+        expect(equity.period).toBe('90d');
         const urdu = equity.dimensions.find((entry) => entry.dimension === 'language')!.rows.find((row) => row.value === 'ur')!.cell;
         expect(urdu, `Urdu ${label}`).not.toHaveProperty('suppressed');
         const cell = urdu as { gapPoints: number; flagged: boolean };

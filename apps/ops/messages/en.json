@@ -102,6 +102,7 @@
       "overall": "Overall",
       "flagBelow": "{group} tickets close {points} points below the {overall}% overall rate (black line).",
       "flagAbove": "{group} tickets close {points} points above the {overall}% overall rate (black line).",
+      "period": "Always the last 90 days, whatever the period filter says, so a group cannot be worked out by comparing periods.",
       "basis": "Per ticket: closed means the ticket reached seen or later. Groups come from the buckets people chose to share, language included; a ticket whose person shared none is in \"No answer given\". A gap of 10 points or more from the overall rate is flagged.",
       "medianSeen": "median {days} days to seen",
       "flagLabel": "Flag:"

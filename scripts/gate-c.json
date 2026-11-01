@@ -131,6 +131,14 @@
       },
       {
         "file": "test/metrics-protect.test.ts",
+        "name": "falls back to a visible cell of any relation that touches a hidden one"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "serves one period only: any other is refused with no figures"
+      },
+      {
+        "file": "test/metrics-protect.test.ts",
         "name": "does not leave a small group’s 0% or 100% exact"
       },
       {

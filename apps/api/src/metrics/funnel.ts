@@ -170,8 +170,8 @@ export function crisisHiddenInFunnel(inputs: FunnelInputs): boolean {
  * hidden when they are small.
  *
  * Not covered, stated precisely: any two published counts of the later stages (issued, acknowledged, seen, re-measured)
- * subtract, and so do the same cell in two periods, because the funnel is asked for counts and the share between stages and
- * a drop-off is not a cell of its own. The first stage minus the second is not in that group: it is protected.
+ * subtract, and so do the same cell in two periods (the funnel and timeliness keep their periods; equity does not), because
+ * the funnel is asked for counts and the share between stages and a drop-off is not a cell of its own. The first stage minus the second is not in that group: it is protected.
  */
 export function buildFunnel(query: FunnelQuery, inputs: FunnelInputs): FunnelResponse {
   const key = cellKeyOf(query.source ?? null, query.tier ?? null);

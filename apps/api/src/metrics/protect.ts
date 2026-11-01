@@ -31,11 +31,13 @@ export interface ProtectedTable {
  * 2. All relations together. Every relation and every `equal` pair is an equation in the hidden cells, the visible ones
  *    being known. Row-reduced exactly (integer arithmetic), an equation left with a single hidden cell pins that cell to a
  *    number the reader can compute, even though no one relation shows it. While a pinned cell is non-empty on some count,
- *    one more visible cell of a relation holding it is hidden (same order as above) and step 1 runs again.
+ *    one more visible cell of a relation holding it is hidden (same order as above) and step 1 runs again. When no relation
+ *    holding it has a visible cell, the cheapest visible cell of any relation that touches a hidden cell goes instead.
  *
  * The table is expected to include every group of a dimension, "no bucket given" among them, and the overall figure as
  * the total; leaving a group out leaves a gap the reader can fill from the total. What is NOT covered, by decision: bounds
- * a reader can infer from counts never being negative, and the difference between two periods.
+ * a reader can infer from counts never being negative, and, for the funnel and timeliness only, the difference between two
+ * periods (equity is served for one period, so it has none).
  */
 export function hiddenCells(table: ProtectedTable, threshold: number = SUPPRESSION_THRESHOLD): Set<string> {
   const hidden = new Set<string>();
@@ -96,6 +98,17 @@ export function hiddenCells(table: ProtectedTable, threshold: number = SUPPRESSI
         if (!members.includes(key)) continue;
         const pick = cheapest(relation, members.filter((member) => !hidden.has(member)));
         if (pick !== undefined && (best === undefined || cheapest(best.relation, [best.pick, pick]) === pick)) best = { relation, pick };
+      }
+      if (best === undefined) {
+        // None of the relations holding this cell has a cell left to hide, yet other relations still pin it (a cell can be
+        // fixed through a chain of relations that do not hold it). Hide the cheapest visible cell of any relation that
+        // touches a hidden cell, and look again.
+        for (const relation of table.relations) {
+          const members = membersOf(relation);
+          if (!members.some((member) => hidden.has(member))) continue;
+          const pick = cheapest(relation, members.filter((member) => !hidden.has(member)));
+          if (pick !== undefined && (best === undefined || cheapest(best.relation, [best.pick, pick]) === pick)) best = { relation, pick };
+        }
       }
       if (best !== undefined) {
         hidden.add(best.pick);

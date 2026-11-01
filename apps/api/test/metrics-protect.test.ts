@@ -65,7 +65,11 @@ function exposedBy(t: ProtectedTable, hidden: ReadonlySet<string>, threshold = 1
   for (const [at, key] of unknowns.entries()) {
     if (rankModPrime(rows, width, at) !== full - 1) continue;
     const nonEmpty = t.cells.get(key)!.some((count) => count > 0);
-    const stuck = t.relations.filter((relation) => [relation.total, ...relation.parts].includes(key)).every((relation) => [relation.total, ...relation.parts].filter((member) => t.cells.has(member)).every((member) => hidden.has(member)));
+    // Nothing left to hide anywhere: no relation that touches a hidden cell has a visible member.
+    const stuck = t.relations.every((relation) => {
+      const members = [relation.total, ...relation.parts].filter((member) => t.cells.has(member));
+      return !members.some((member) => hidden.has(member)) || members.every((member) => hidden.has(member));
+    });
     if (nonEmpty && !stuck) return `${key} can be computed`;
   }
   for (const relation of t.relations) {
@@ -241,6 +245,21 @@ describe('what the hidden cells of all the relations together give away', () => 
     const nineOnly = new Set(Object.keys(small).map((key) => `i${key}`));
     expect(pinnedCells(t, nineOnly)).toContain('i12');
     expect(exposedBy(t, nineOnly)).toContain('i12');
+  });
+
+  it('falls back to a visible cell of any relation that touches a hidden one when the pinned cell’s own relations have none: x = V - T3 + c', () => {
+    // t1 = x + a, V = t1 + b, T3 = a + b + c, with x, a, b and t1 small. x appears only in the first relation, whose members
+    // are all hidden, yet V, T3 and c (published) give x = 14 - 41 + 30 = 3.
+    const t = table(
+      { t1: [9], x: [3], a: [6], b: [5], V: [14], T3: [41], c: [30] },
+      [{ total: 't1', parts: ['x', 'a'] }, { total: 'V', parts: ['t1', 'b'] }, { total: 'T3', parts: ['a', 'b', 'c'] }],
+    );
+    const primary = new Set(['t1', 'x', 'a', 'b']);
+    expect(pinnedCells(t, primary)).toContain('x');
+    expect(exposedBy(t, primary)).toContain('x');
+    const hidden = hiddenCells(t);
+    expect(['V', 'T3', 'c'].some((key) => hidden.has(key)), 'one of the published cells goes').toBe(true);
+    expect(exposedBy(t, hidden)).toBeNull();
   });
 
   it('does not leave a small group’s 0% or 100% exact: a group of 4 with none closed beside one of 14 with none closed', () => {
