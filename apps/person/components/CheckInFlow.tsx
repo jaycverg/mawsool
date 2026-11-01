@@ -8,9 +8,9 @@ import { useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { INSTRUMENT_TAG } from '../lib/bands';
 import { deviceNow } from '../lib/clock';
-import { answerFiresCrisis } from '../lib/crisis';
+import { recordAnswer } from '../lib/record-answer';
 import { href } from '../lib/routes';
-import { findDraft, loadScreenings, saveAnswer } from '../lib/screening-store';
+import { findDraft, loadScreenings } from '../lib/screening-store';
 import { useDevice, type Device } from '../lib/use-device';
 import { FlowHeader } from './FlowHeader';
 import { UnverifiedLabel } from './UnverifiedLabel';
@@ -82,19 +82,18 @@ export function CheckInFlow() {
 
   async function choose(value: number, device: Device) {
     setFailed(false);
-    try {
-      const saved = await saveAnswer(device.storage, { instrument, index, value }, { now: deviceNow, newId: () => crypto.randomUUID() });
-      setAnswers(saved.answers);
-      setScreeningId(saved.id);
-      const trigger = answerFiresCrisis(instrument, index, value);
-      if (trigger) {
-        await device.crisis.raise({ trigger, screeningId: saved.id, locale: lang });
-        // A push, not a replace: Back from the crisis screen lands on this page, which the guard sends straight back.
-        window.location.assign(href(lang, 'crisis'));
-      }
-    } catch {
-      setFailed(true);
+    const outcome = await recordAnswer(
+      { instrument, index, value },
+      { storage: device.storage, crisis: device.crisis, now: deviceNow, newId: () => crypto.randomUUID(), locale: lang },
+    );
+    if (outcome.kind === 'failed') return setFailed(true);
+    if (outcome.kind === 'crisis') {
+      // A push, not a replace: Back from the crisis screen lands on this page, which the guard sends straight back.
+      window.location.assign(href(lang, 'crisis'));
+      return;
     }
+    setAnswers(outcome.screening.answers);
+    setScreeningId(outcome.screening.id);
   }
 
   const selected = answers?.[index];
