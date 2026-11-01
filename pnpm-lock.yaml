@@ -342,6 +342,9 @@ importers:
 
   apps/person:
     dependencies:
+      '@mawsool/consent':
+        specifier: workspace:*
+        version: link:../../packages/consent
       '@mawsool/instruments':
         specifier: workspace:*
         version: link:../../packages/instruments

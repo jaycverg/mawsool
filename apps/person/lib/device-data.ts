@@ -7,11 +7,11 @@ import { KEYS } from './keys';
  * secret, the others are not the person's data.
  */
 export async function exportDeviceData(storage: StorageAdapter, now: () => Date): Promise<string> {
-  const [screenings, preferences, insurance, choice, crisis] = await Promise.all(
-    [KEYS.screenings, KEYS.preferences, KEYS.insurance, KEYS.choice, KEYS.crisisBlock].map((key) => storage.get<unknown>(key)),
+  const [screenings, preferences, insurance, choice, crisis, tickets, sharing] = await Promise.all(
+    [KEYS.screenings, KEYS.preferences, KEYS.insurance, KEYS.choice, KEYS.crisisBlock, KEYS.tickets, KEYS.sharing].map((key) => storage.get<unknown>(key)),
   );
   return JSON.stringify(
-    { exportedAt: now().toISOString(), screenings: screenings ?? [], preferences: preferences ?? {}, insurance: insurance ?? null, choice: choice ?? null, crisis: crisis ?? null },
+    { exportedAt: now().toISOString(), screenings: screenings ?? [], preferences: preferences ?? {}, insurance: insurance ?? null, choice: choice ?? null, crisis: crisis ?? null, tickets: tickets ?? [], sharing: sharing ?? null },
     null,
     2,
   );
@@ -19,7 +19,8 @@ export async function exportDeviceData(storage: StorageAdapter, now: () => Date)
 
 /**
  * Wipes everything on this phone: the encrypted store and its key, and the tab's crisis mark with them, so deleting
- * everything leaves nothing behind that could still hold a block. Nothing on the server is touched here.
+ * everything leaves nothing behind that could still hold a block. Nothing on the server is touched here; `eraseEverything`
+ * (erase.ts) does that first.
  */
 export async function deleteDeviceData(storage: StorageAdapter, tabMark?: TabMarkAdapter<unknown>): Promise<void> {
   await storage.clear();

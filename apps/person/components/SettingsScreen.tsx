@@ -1,24 +1,31 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { isLocale } from '@mawsool/ui';
+import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
+import { API_URL } from '../lib/api';
 import { deviceNow } from '../lib/clock';
 import { numbersText } from '../lib/crisis-copy';
 import { crisisLines } from '../lib/crisis-numbers';
-import { deleteDeviceData, exportDeviceData } from '../lib/device-data';
+import { flushOutbox } from '../lib/crisis-outbox';
+import { exportDeviceData } from '../lib/device-data';
+import { eraseEverything, type EraseOutcome } from '../lib/erase';
 import { useDevice } from '../lib/use-device';
 import { BottomNav } from './BottomNav';
 import { HomeHeader } from './HomeHeader';
 
-type Delete = 'idle' | 'confirming' | 'deleted' | 'failed';
+type Delete = 'idle' | 'confirming' | 'working' | 'blocked' | 'failed' | { done: Extract<EraseOutcome, { status: 'erased' }> };
 
 /**
- * Privacy and your data: copyable JSON of everything on this phone, and "Delete everything". Deleting wipes the
- * encrypted store and its key. Nothing on a server is touched here: nothing has been shared yet, and once tickets
- * exist, deleting will revoke every consent first.
+ * Privacy and your data: copyable JSON of everything on this phone, and "Delete everything". Deleting first asks the
+ * server to revoke every consent and remove what it holds (if this phone ever gave it anything), and only then wipes
+ * the encrypted store and its key. If the server holds data and cannot be reached, nothing is deleted and the person
+ * is told, because the wipe would destroy the only secret that can ask for the server's copy to go.
  */
 export function SettingsScreen() {
   const t = useTranslations('settings');
+  const locale = useLocale();
+  const lang = isLocale(locale) ? locale : 'en';
   const device = useDevice();
   const [json, setJson] = useState<string | null>(null);
   const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle');
@@ -47,12 +54,20 @@ export function SettingsScreen() {
 
   async function wipe() {
     if (!usable) return;
-    try {
-      await deleteDeviceData(device.storage, device.tabMark);
+    setRemoval('working');
+    const server = { storage: device.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, random: window.crypto };
+    const outcome = await eraseEverything({
+      storage: device.storage,
+      tabMark: device.tabMark,
+      server,
+      flushCrisis: () => flushOutbox({ storage: device.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, random: window.crypto }),
+      crisisIsOpen: async () => (await device.crisis.read()).status === 'blocked',
+    });
+    if (outcome.status === 'erased') {
       setJson(null);
-      setRemoval('deleted');
-    } catch {
-      setRemoval('failed');
+      setRemoval({ done: outcome });
+    } else {
+      setRemoval(outcome.status);
     }
   }
 
@@ -62,6 +77,7 @@ export function SettingsScreen() {
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 px-4 py-5">
         <h1 className="t-h1">{t('title')}</h1>
         <p className="t-body text-muted">{t('intro')}</p>
+        <p className="t-small text-muted" data-exception>{t('exception')}</p>
         {(device === 'unavailable' || unreadable) && <p role="alert" className="rounded-chip bg-warning px-3 py-2 text-small text-warning-ink">{t('unavailable')}</p>}
 
         <section className="flex flex-col gap-2.5 rounded-card border border-border bg-surface p-5">
@@ -87,7 +103,7 @@ export function SettingsScreen() {
         <section className="flex flex-col gap-2.5 rounded-card border border-border bg-surface p-5">
           <h2 className="text-[16px] font-semibold">{t('deleteTitle')}</h2>
           <p className="t-body text-muted">{t('deleteBody')}</p>
-          {removal !== 'confirming' && (
+          {(removal === 'idle' || removal === 'failed' || removal === 'blocked') && (
             <button type="button" className="tap rounded-pill border-[1.5px] border-danger px-4 font-semibold text-danger" disabled={!usable} onClick={() => setRemoval('confirming')}>
               {t('delete')}
             </button>
@@ -105,7 +121,16 @@ export function SettingsScreen() {
               </button>
             </div>
           )}
-          {removal === 'deleted' && <p role="status" className="text-[15px] font-semibold text-accent-dark">{t('deleted')}</p>}
+          {removal === 'working' && <p role="status" className="t-body text-muted">{t('deleting')}</p>}
+          {typeof removal === 'object' && (
+            <div role="status" className="flex flex-col gap-1.5" data-erased>
+              <p className="text-[15px] font-semibold text-accent-dark">{t('deleted')}</p>
+              {removal.done.crisisRecord === 'sent' && <p className="t-small text-muted">{t('deletedCrisisSent')}</p>}
+              {removal.done.crisisRecord === 'deleted' && <p className="t-small text-muted">{t('deletedCrisisLost')}</p>}
+              {removal.done.crisisWasOpen && <p className="t-small text-muted">{t('deletedCrisisOpen')}</p>}
+            </div>
+          )}
+          {removal === 'blocked' && <p role="alert" className="text-[15px] font-semibold text-danger">{t('blocked')}</p>}
           {removal === 'failed' && <p role="alert" className="text-[15px] font-semibold text-danger">{t('deleteFailed')}</p>}
         </section>
 
