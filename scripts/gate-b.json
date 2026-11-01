@@ -21,8 +21,8 @@
         "name": "and to one that does not exist"
       },
       {
-        "file": "test/consent.test.ts",
-        "name": "stores the four buckets only on opt-in"
+        "file": "test/revoke-reach.test.ts",
+        "name": "keeps the row on a revoke, sets revoked_at once"
       }
     ]
   },
@@ -50,7 +50,23 @@
       },
       {
         "file": "test/consent.test.ts",
-        "name": "withdraws a ticket that is acknowledged, overdue or seen"
+        "name": "withdraws a seen ticket, and revokes a closed one without changing its state"
+      },
+      {
+        "file": "test/revoke-reach.test.ts",
+        "name": "on a declined ticket revokes the share"
+      },
+      {
+        "file": "test/revoke-reach.test.ts",
+        "name": "on a closed ticket revokes the share"
+      },
+      {
+        "file": "test/revoke-reach.test.ts",
+        "name": "on a rerouted ticket revokes the share"
+      },
+      {
+        "file": "test/revoke-reach.test.ts",
+        "name": "answers 410 once the ticket consent is revoked, 404 at another facility"
       }
     ]
   },
@@ -183,6 +199,10 @@
       {
         "file": "test/tickets.test.ts",
         "name": "creates one child and answers 409 to the loser"
+      },
+      {
+        "file": "test/tickets.test.ts",
+        "name": "keeps out of the stored bundle every element that was not consented to"
       }
     ]
   },
@@ -280,11 +300,29 @@
   },
   {
     "id": "redaction-device-and-server",
-    "sentence": "redact() keeps only consented elements, on the device before send and on the server at read",
-    "project": "packages/consent",
+    "sentence": "redact() keeps only consented elements at each call site: on the phone before send, on the server when a ticket is stored, on every clinician read, and in the prompt",
+    "project": "apps/api",
     "tests": [
       {
+        "file": "test/tickets.test.ts",
+        "name": "keeps out of the stored bundle every element that was not consented to"
+      },
+      {
         "file": "test/consent.test.ts",
+        "name": "redacts again on read"
+      },
+      {
+        "file": "test/summary.test.ts",
+        "name": "sends the provider only what was consented to when both are on"
+      },
+      {
+        "file": "test/referral.test.ts",
+        "project": "apps/person",
+        "name": "keeps out of the request every element that was not ticked"
+      },
+      {
+        "file": "test/consent.test.ts",
+        "project": "packages/consent",
         "name": "keeps exactly the granted elements"
       }
     ]
@@ -437,5 +475,124 @@
     "id": "browser-consent-and-ticket-measure-at-390",
     "sentence": "The consent and ticket screens hold the plan's type, tap-target and no-overflow rules (browser)",
     "browser": "consent-and-ticket-measure-at-390"
+  },
+  {
+    "id": "state-machine-fixed-reasons",
+    "sentence": "An unable-to-see is its own request with a reason from a fixed list; a same-state move, a free-text reason on any event and a person's own rerouted event are all refused",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/tickets.test.ts",
+        "name": "accepts \"unable to see\" from a clinic with a reason from the fixed list"
+      },
+      {
+        "file": "test/tickets.test.ts",
+        "name": "refuses \"unable to see\" without a reason, with free text"
+      },
+      {
+        "file": "test/tickets.test.ts",
+        "name": "accepts no reason on an ordinary move"
+      },
+      {
+        "file": "test/tickets.test.ts",
+        "name": "answers 409, and records nothing, to a move to the state the ticket is already in"
+      },
+      {
+        "file": "test/tickets.test.ts",
+        "name": "refuses a person\u2019s own `rerouted` event"
+      }
+    ]
+  },
+  {
+    "id": "summary-removed-with-what-it-was-built-from",
+    "sentence": "Stopping an element removes the approved summary and the ticket's logged drafts in the same transaction, and says so",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/revoke-reach.test.ts",
+        "name": "removes the approved summary and the logs when an element is stopped, and says so"
+      },
+      {
+        "file": "test/revoke-reach.test.ts",
+        "name": "says nothing was removed when the ticket never had a summary"
+      },
+      {
+        "file": "test/consent.test.ts",
+        "name": "removes only that element from the stored row"
+      }
+    ]
+  },
+  {
+    "id": "drafts-do-not-outlive-the-pick",
+    "sentence": "Unclaimed drafts go when any share ends and after 24 hours, are linked only by their owner, and are bound to their row",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/revoke-reach.test.ts",
+        "name": "are deleted when the person ends any share"
+      },
+      {
+        "file": "test/revoke-reach.test.ts",
+        "name": "are deleted by the sweep after 24 hours"
+      },
+      {
+        "file": "test/revoke-reach.test.ts",
+        "name": "are linked to a ticket only by the person who made them"
+      },
+      {
+        "file": "test/revoke-reach.test.ts",
+        "name": "binds a logged summary to its row"
+      }
+    ]
+  },
+  {
+    "id": "browser-every-earlier-ticket-is-reachable-and-withdrawable",
+    "sentence": "After a reroute the earlier ticket can be opened and withdrawn, and the old clinic then reads 410 (browser)",
+    "browser": "every-earlier-ticket-is-reachable-and-withdrawable"
+  },
+  {
+    "id": "browser-stopping-removes-the-summary-and-unticking-unapproves",
+    "sentence": "Stopping an element removes the approved summary and its logs, and unticking an element a draft used clears its approval (browser)",
+    "browser": "stopping-removes-the-summary-and-unticking-unapproves"
+  },
+  {
+    "id": "browser-draft-request-carries-only-what-is-allowed",
+    "sentence": "The draft request carries no content with the AI box unticked and only ticked elements with it ticked (browser)",
+    "browser": "draft-request-carries-only-what-is-allowed"
+  },
+  {
+    "id": "browser-equity-opt-in-can-be-left",
+    "sentence": "The equity opt-in shows as on once given and can be turned off in Settings (browser)",
+    "browser": "equity-opt-in-can-be-left"
+  },
+  {
+    "id": "browser-reads-list-and-its-failure",
+    "sentence": "The ticket shows who opened it and says so when that could not be loaded (browser)",
+    "browser": "reads-list-and-its-failure"
+  },
+  {
+    "id": "browser-local-failures-are-reported",
+    "sentence": "Refused local saves around choosing and sending are shown and never leave the screen stuck (browser)",
+    "browser": "local-failures-are-reported"
+  },
+  {
+    "id": "browser-withdrawn-ticket-layout-and-day-count",
+    "sentence": "A withdrawn ticket shows no open steps and a 7-day promise reads 7 days on the day it is issued (browser)",
+    "browser": "withdrawn-ticket-layout-and-day-count"
+  },
+  {
+    "id": "browser-labels-are-translated",
+    "sentence": "Preferences and equity options read in the person's language and directory text sets its own direction (browser)",
+    "browser": "labels-are-translated"
+  },
+  {
+    "id": "browser-snapshot-consent",
+    "sentence": "The consent screen matches its baseline in both languages (browser)",
+    "browser": "snapshot-consent"
+  },
+  {
+    "id": "browser-snapshot-ticket",
+    "sentence": "The ticket screen matches its baseline in both languages (browser)",
+    "browser": "snapshot-ticket"
   }
 ]

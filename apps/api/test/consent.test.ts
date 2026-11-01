@@ -208,7 +208,7 @@ describe('consent, revoke and the bundle', () => {
       expect((await eventStates(testDb.db, ticket.id)).at(-1)).toMatchObject({ from: 'issued', to: 'withdrawn', actor: 'person' });
     });
 
-    it('withdraws a ticket that is acknowledged, overdue or seen, and only deletes the data once it is terminal', async () => {
+    it('withdraws a seen ticket, and revokes a closed one without changing its state', async () => {
       const seen = (await fullTicket()).ticket;
       await ctx.app.inject({ method: 'POST', url: `/me/tickets/${seen.id}/events`, headers: person.headers, payload: { to: 'seen' } });
       expect((await revoke(consentId(seen, 'ticket'))).json().ticketState).toBe('withdrawn');

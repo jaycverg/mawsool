@@ -28,6 +28,12 @@ test('a failed, skipped or todo test fails the gate', () => {
   }
 });
 
+test('a test can name its own project, and a project it names that did not run fails', () => {
+  const run = { ...reports, 'apps/person': [pass('/p/test/c.test.ts', 'c works')] };
+  assert.deepEqual(evaluateRegistry([entry([{ file: 'test/c.test.ts', project: 'apps/person', name: 'c works' }])], run, []), []);
+  assert.match(String(evaluateRegistry([entry([{ file: 'test/c.test.ts', project: 'apps/person' }])], reports, [])[0]), /was not run/);
+});
+
 test('a sentence with no test, a duplicate id and a project that was not run all fail', () => {
   assert.match(String(evaluateRegistry([entry([])], reports, [])[0]), /no test is named/);
   assert.match(String(evaluateRegistry([entry([{ file: 'test/b.test.ts' }]), entry([{ file: 'test/b.test.ts' }])], reports, []).join('\n')), /listed twice/);

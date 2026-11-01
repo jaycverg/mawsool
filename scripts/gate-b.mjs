@@ -21,7 +21,7 @@ const registry = JSON.parse(readFileSync(resolve(ROOT, 'scripts/gate-b.json'), '
 /** @type {{ id: string }[]} */
 const browser = JSON.parse(readFileSync(resolve(ROOT, 'apps/person/e2e/acceptance-phase3.json'), 'utf8'));
 
-const projects = [...new Set(registry.flatMap((entry) => (entry.project ? [entry.project] : [])))].sort();
+const projects = [...new Set(registry.flatMap((entry) => [...(entry.project ? [entry.project] : []), ...(entry.tests ?? []).flatMap((ref) => (ref.project ? [ref.project] : []))]))].sort();
 const scratch = mkdtempSync(join(tmpdir(), 'gate-b-'));
 const deadline = Date.now() + TIME_LIMIT_MS;
 /** @type {import('./gate-b-lib.mjs').Reports} */
@@ -54,6 +54,11 @@ for (const project of projects) {
 
 problems.push(...evaluateRegistry(registry, reports, browser.map((entry) => entry.id)));
 for (const problem of problems) log(`PROBLEM ${problem}`);
-const covered = registry.length - new Set(problems.map((problem) => problem.split(':')[0])).size;
-log(`${covered} of ${registry.length} sentences covered by passing tests${registry.some((entry) => entry.browser) ? '; browser sentences are proved by pnpm gate:phase3' : ''}`);
+// Browser sentences are checked only for having a test in the browser registry. Whether it passes is `pnpm gate:phase3`'s
+// to say, so they are counted apart and never as covered by a passing test.
+const here = registry.filter((entry) => !entry.browser);
+const delegated = registry.filter((entry) => entry.browser);
+const failing = new Set(problems.map((problem) => problem.split(':')[0]));
+log(`${here.filter((entry) => !failing.has(entry.id)).length} of ${here.length} sentences covered by tests that ran and passed here`);
+log(`${delegated.length} sentences delegated to pnpm gate:phase3 and NOT run here (${delegated.filter((entry) => !failing.has(entry.id)).length} have their test registered there)`);
 process.exit(problems.length === 0 ? 0 : 1);
