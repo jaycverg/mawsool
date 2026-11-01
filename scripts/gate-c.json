@@ -1,0 +1,340 @@
+[
+  {
+    "id": "gate-c-demo-end-to-end",
+    "sentence": "Gate C: the demo E2E passes in both locales and ends with ticket seen for Noura with no overdue event on it, a logged contact-confirmed crisis event for Rashid, and the Urdu row flagged 18 to 22 points below overall (the Urdu gap is measured on the real query here)",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/metrics.test.ts",
+        "name": "measures the Urdu gap on the real query"
+      }
+    ],
+    "browser": "demo-steps-1-to-12"
+  },
+  {
+    "id": "loop-closed-query",
+    "sentence": "A test on the loop-closed query counts tickets that reached seen, remeasured or closed, including one withdrawn after seen, and no others",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/metrics.test.ts",
+        "name": "counts the tickets that reached seen, remeasured or closed"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "reads the events, not the current state"
+      }
+    ]
+  },
+  {
+    "id": "positive-screen-formula",
+    "sentence": "The positive-screen stage equals unclaimed invites plus parentless tickets plus crisis events, a claimed invite and its ticket count once, and the tile shows its note",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/metrics.test.ts",
+        "name": "counts the positive-screen stage as unclaimed unexpired invites plus parentless tickets plus crisis events"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "counts a claimed invite and its ticket once, as the ticket"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "does not count a reroute as another screen"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "makes the stages cumulative"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "applies a source or tier filter only to rows that carry that field"
+      }
+    ],
+    "browser": "dashboard-funnel-formula-and-note"
+  },
+  {
+    "id": "invite-counts-only-while-open",
+    "sentence": "An invite counts as a screen only while it is unclaimed and unexpired at the care clock, on both sides of its expiry, and the seeded invites are open at the seed's own reference time whatever the calendar date",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/metrics.test.ts",
+        "name": "counts an invite only while it is unclaimed and unexpired at the care clock"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "does not let an expired unclaimed invite stand in for a screen"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "gives every seeded unclaimed invite a life that spans the seed"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "counts the same positive screens whatever day the seed is anchored on"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "stops counting the seeded open invites once the clock passes their expiry"
+      }
+    ]
+  },
+  {
+    "id": "metrics-suppressed-under-ten",
+    "sentence": "Every GET /metrics route returns suppressed under n = 10, zero included, and the ops role alone may read them",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/metrics.test.ts",
+        "name": "returns suppressed for the funnel, timeliness, overdue list and equity when nine tickets stand behind them"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "returns suppressed for the crisis figures when nine crisis screens stand behind them"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "suppresses zero as well"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "shows a count of ten and suppresses a count of nine"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "suppresses the median when fewer than ten contacts stand behind it"
+      },
+      {
+        "file": "test/access.test.ts"
+      }
+    ],
+    "browser": "dashboard-shows-suppressed-cells"
+  },
+  {
+    "id": "suppressed-cell-not-derivable",
+    "sentence": "A suppressed cell cannot be derived from its row total: the next smallest is hidden with it, in the funnel's filter values, timeliness by tier and every equity dimension",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/metrics-protect.test.ts",
+        "name": "hides the next smallest when exactly one cell of a row is hidden"
+      },
+      {
+        "file": "test/metrics-protect.test.ts",
+        "name": "repeats until no relation has a single hidden member"
+      },
+      {
+        "file": "test/metrics-protect.test.ts",
+        "name": "leaves no relation with a single hidden member, for tables of random sizes"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "leaves no filter value recoverable from the others"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "suppresses a filter value under ten, and the next smallest beside it"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "hides a small tier and the next smallest, so the overall cannot give the small one away"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "cannot give a suppressed group up through the overall rate"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "flags a group 10 points or more from the overall rate, and carries no flag or gap on a suppressed one"
+      }
+    ]
+  },
+  {
+    "id": "demo-routes-404-when-unset",
+    "sentence": "With DEMO_MODE unset, demo routes return 404 and the admin panel still shows last_verified",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/access.test.ts",
+        "name": "are not registered at all with DEMO_MODE unset"
+      },
+      {
+        "file": "test/config.test.ts",
+        "name": "is off when unset, empty, false or 0"
+      },
+      {
+        "file": "test/config.test.ts",
+        "name": "refuses anything else"
+      },
+      {
+        "file": "test/docs.test.ts",
+        "name": "describes the metrics routes with their filters"
+      }
+    ],
+    "delegated": {
+      "gate": "gate:phase4",
+      "id": "demo-off-routes-404-and-admin-panel-shows-last-verified"
+    }
+  },
+  {
+    "id": "care-time-and-security-windows",
+    "sentence": "Care times follow the demo clock; staff sessions, sign-in links, the signed-request window and nonce retention stay on the wall clock",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/demo-clock.test.ts",
+        "name": "runs the sweep at the new time"
+      },
+      {
+        "file": "test/demo-clock.test.ts",
+        "name": "keeps a staff session on the wall clock"
+      },
+      {
+        "file": "test/demo-clock.test.ts",
+        "name": "keeps a sign-in link on the wall clock"
+      },
+      {
+        "file": "test/demo-clock.test.ts",
+        "name": "reads the inbound timestamp window from the wall clock"
+      },
+      {
+        "file": "test/demo-clock.test.ts",
+        "name": "keeps a spent nonce for its real hour"
+      },
+      {
+        "file": "test/demo-clock.test.ts",
+        "name": "expires an invite by the care clock"
+      }
+    ],
+    "browser": "clinic-queue-follows-the-demo-clock"
+  },
+  {
+    "id": "reset-and-personas",
+    "sentence": "Reset reloads the seed deterministically, zeroes the clock, keeps staff signed in and gives Noura an invite through the invite service; a phone whose person was deleted registers again and drops tickets the server does not know",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/demo-clock.test.ts",
+        "name": "resets to the seed"
+      },
+      {
+        "file": "test/demo-clock.test.ts",
+        "name": "reloads the seed anchored on today"
+      },
+      {
+        "file": "test/demo-clock.test.ts",
+        "name": "wipes tickets a person made before the reset"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/server-recovery.test.ts"
+      }
+    ],
+    "browser": "admin-panel-controls-clock-and-reset"
+  },
+  {
+    "id": "phone-recovers-after-the-server-forgets-it",
+    "sentence": "A phone that holds a person id the server no longer has recovers to a usable state, not an error loop",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/server-recovery.test.ts",
+        "name": "registers itself again with the same id and secret on a 401"
+      }
+    ],
+    "delegated": {
+      "gate": "gate:phase4",
+      "id": "phone-recovers-when-the-server-forgets-it"
+    }
+  },
+  {
+    "id": "crisis-path-never-waits-for-the-clock",
+    "sentence": "The crisis path never awaits or depends on the clock read, and the read sends nothing from the phone",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/demo-offset.test.ts",
+        "name": "asks the API for nothing but the clock"
+      }
+    ],
+    "delegated": {
+      "gate": "gate:phase2",
+      "id": "crisis-path-does-not-wait-for-the-clock-read"
+    }
+  },
+  {
+    "id": "equity-buckets",
+    "sentence": "Equity offers age band, gender, language and region only, with no nationality, and flags a gap of 10 points or more",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/metrics.test.ts",
+        "name": "offers age band, gender, language and region, and no nationality"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "counts the people who gave no bucket as a group"
+      }
+    ]
+  },
+  {
+    "id": "overdue-list-is-pseudonymous",
+    "sentence": "The overdue list shows pseudonymous ids that are not the ticket id, short code or person id, and only when ten or more tickets are overdue",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/metrics.test.ts",
+        "name": "lists overdue tickets by a pseudonymous id"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "shows no overdue list and no count for nine overdue tickets"
+      }
+    ]
+  },
+  {
+    "id": "console-clean-and-icons",
+    "sentence": "The clinician and ops favicons load and the staff apps log no console error",
+    "browser": "staff-apps-have-icons-and-log-no-console-error"
+  },
+  {
+    "id": "mock-label-audit",
+    "sentence": "Every mock or sample surface that exists is labelled, checked in the E2E; messaging and the crisis-line console are Phase 6 and are not built",
+    "tests": [
+      {
+        "project": "packages/ui",
+        "file": "test/messages.test.ts"
+      }
+    ],
+    "browser": "mock-label-audit"
+  },
+  {
+    "id": "dashboard-follows-the-board",
+    "sentence": "The ops dashboard follows the board and the plan's tokens, with the Arabic and English toggle and right to left",
+    "project": "packages/ui",
+    "tests": [
+      {
+        "file": "test/tokens.test.ts"
+      }
+    ],
+    "browser": "dashboard-holds-the-board-and-plan-tokens"
+  },
+  {
+    "id": "dashboard-toggle",
+    "sentence": "The ops dashboard has the language toggle and runs right to left in Arabic",
+    "project": "packages/ui",
+    "tests": [
+      {
+        "file": "test/toggle.test.tsx"
+      }
+    ],
+    "browser": "dashboard-toggle-and-rtl"
+  },
+  {
+    "id": "dashboard-snapshot",
+    "sentence": "The ops dashboard matches its committed snapshot in both languages",
+    "browser": "snapshot-ops-dashboard"
+  }
+]

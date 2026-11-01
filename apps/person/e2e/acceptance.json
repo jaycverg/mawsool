@@ -114,5 +114,9 @@
   {
     "id": "snapshot-settings",
     "sentence": "The settings screen matches its committed snapshot at 390 x 844"
+  },
+  {
+    "id": "crisis-path-does-not-wait-for-the-clock-read",
+    "sentence": "With the demo clock's offset read held open for ever, the crisis screen, its release and matching all work"
   }
 ]

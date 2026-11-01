@@ -169,7 +169,8 @@ function Row({ item, lang, selected, onOpen }: { item: StaffTicketView; lang: 'a
   const t = useTranslations('queue');
   const root = useTranslations();
   const late = item.state === 'overdue';
-  const deadline = deadlineOf(calendarDaysUntil(item.deadlineAt, demoNow()));
+  const daysUntil = calendarDaysUntil(item.deadlineAt, demoNow());
+  const deadline = deadlineOf(daysUntil);
   const cell = 'border-b border-[#E6ECEA] px-3.5 py-3';
   return (
     <tr className={`${late ? 'bg-warning' : selected ? 'bg-accent-tint' : ''} ${selected ? 'shadow-[inset_4px_0_0_#0E6B63] rtl:shadow-[inset_-4px_0_0_#0E6B63]' : ''}`} data-ticket={item.shortCode} data-state={item.state} data-selected={selected || undefined}>
@@ -179,7 +180,7 @@ function Row({ item, lang, selected, onOpen }: { item: StaffTicketView; lang: 'a
         </button>
       </td>
       <td className={cell}>{root(`tier.${item.tier}`)}</td>
-      <td className={`${cell} ${late ? 'font-semibold text-[#7A3E06]' : ''}`}>
+      <td className={`${cell} ${late ? 'font-semibold text-[#7A3E06]' : ''}`} data-days-until={daysUntil}>
         {formatDate(item.deadlineAt, lang, 'long')} · {deadline.kind === 'left' ? t('daysLeft', { count: deadline.days }) : t('daysLate', { count: deadline.days })}
       </td>
       <td className={cell}>{root(`language.${item.language}`)}</td>

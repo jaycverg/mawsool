@@ -1,4 +1,5 @@
-import { expect, test, type BrowserContext, type Page, type Request } from '@playwright/test';
+import { type BrowserContext, type Page, type Request } from '@playwright/test';
+import { expect, test } from './fixtures';
 import acceptance from './acceptance.json';
 import {
   API,
@@ -471,11 +472,14 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect(control, 'the control request was intercepted').toHaveLength(1);
     expect(control[0]!.url).toContain('thiqa-al_ain');
 
-    // Everything else that went to the API is the unfiltered directory read and nothing more.
+    // Everything else that went to the API is the unfiltered directory read and the demo clock's offset read: two plain
+    // GETs of fixed addresses, with no query, no body and no credential, and nothing more.
     const toApi = seen.filter((request) => !request.url.includes('control='));
     expect(toApi.length, 'the directory was fetched, so the interception was live').toBeGreaterThanOrEqual(1);
+    expect(toApi.some((request) => request.url === `${API}/services`)).toBe(true);
     for (const request of toApi) {
-      expect(request).toMatchObject({ url: `${API}/services`, method: 'GET', body: null });
+      expect([`${API}/services`, `${API}/clock`]).toContain(request.url);
+      expect(request).toMatchObject({ method: 'GET', body: null });
       expect(request.headers['authorization']).toBeUndefined();
       expect(request.headers['cookie']).toBeUndefined();
     }
@@ -483,6 +487,30 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     for (const line of everyRequest.filter((entry) => !entry.includes('control='))) {
       expect(line.toLowerCase(), line).not.toMatch(/thiqa|daman|al_ain|cliniciangender|"ur"|=ur\b|evening|tele\b|score|answers/i);
     }
+  },
+
+  async 'crisis-path-does-not-wait-for-the-clock-read'({ page, locale }) {
+    // The demo clock's offset read is held open for ever and never answered. The crisis screen, the release and matching
+    // must all work as if it did not exist.
+    const sent: string[] = [];
+    await page.route(`${API}/clock`, () => {
+      sent.push('GET /clock (held)');
+    });
+    await page.route(`${API}/**`, async (route) => {
+      const request = route.request();
+      if (request.url() === `${API}/clock`) return route.fallback();
+      sent.push(`${request.method()} ${new URL(request.url()).pathname} ${request.postData() ?? ''}`);
+      await route.continue();
+    });
+    await visitOnline(page, locale);
+    await expect.poll(() => sent.some((entry) => entry.startsWith('GET /clock')), { timeout: 10_000 }).toBe(true);
+    await triggerCrisis(page, locale);
+    await expect(page.locator('[data-screen="crisis"]')).toBeVisible();
+    await expect(page.locator('[data-tier]')).toHaveCount(0);
+    await page.getByRole('button', { name: msg(locale, 'crisis.safeNow'), exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/${locale}/result/\\?id=`));
+    await page.getByRole('link', { name: msg(locale, 'result.options'), exact: true }).click();
+    await expect(page.locator('[data-tier]').first()).toBeVisible();
   },
 
   async 'self-help-sends-nothing'({ page, locale }) {
@@ -516,8 +544,8 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
 
     await page.evaluate((url) => fetch(`${url}/health?control=1`).catch(() => undefined), API);
     expect(seen.filter((entry) => entry.includes('/health')), 'the interception sees a request the page makes').toEqual(['GET /health']);
-    // Everything that ever went to the API on this device is the unfiltered directory read: no registration, no consent, no ticket.
-    expect(seen.filter((entry) => !entry.includes('/health')).every((entry) => entry === 'GET /services')).toBe(true);
+    // Everything that ever went to the API on this device is the unfiltered directory read and the demo clock's offset read: no registration, no consent, no ticket.
+    expect(seen.filter((entry) => !entry.includes('/health')).every((entry) => entry === 'GET /services' || entry === 'GET /clock')).toBe(true);
     expect(seen.some((entry) => /^(POST|PUT|DELETE|PATCH) /.test(entry))).toBe(false);
   },
 

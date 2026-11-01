@@ -54,3 +54,12 @@ test('a run with no tests, or any test not passed, is a problem', () => {
   assert.match(String(runProblem([pass('f', 'a'), { file: 'f', fullName: 'b', status: 'skipped' }])), /skipped/);
   assert.equal(runProblem([pass('f', 'a')]), null);
 });
+
+test('a sentence can leave its browser proof to another gate, which must list that test', () => {
+  const delegated = { gate: 'gate:phase4', id: 'demo-off' };
+  const left = { id: 'e2', sentence: 's', delegated };
+  assert.deepEqual(evaluateRegistry([left], reports, [], { 'gate:phase4': ['demo-off'] }), []);
+  assert.match(String(evaluateRegistry([left], reports, [], { 'gate:phase4': ['something-else'] })[0]), /is not in the registry of gate:phase4/);
+  assert.match(String(evaluateRegistry([left], reports, [])[0]), /is not in the registry of gate:phase4/);
+  assert.match(String(evaluateRegistry([{ ...left, delegated: { gate: 'gate:nowhere', id: 'demo-off' } }], reports, [], { 'gate:phase4': ['demo-off'] })[0]), /gate:nowhere/);
+});

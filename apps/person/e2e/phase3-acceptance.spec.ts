@@ -1,4 +1,5 @@
-import { expect, test, type BrowserContext, type Page, type Request } from '@playwright/test';
+import { type BrowserContext, type Page, type Request } from '@playwright/test';
+import { expect, test, type ConsoleGuard } from './fixtures';
 import acceptance from './acceptance-phase3.json';
 import {
   API,
@@ -27,6 +28,8 @@ interface Context {
   page: Page;
   context: BrowserContext;
   locale: Locale;
+  /** Where a test that makes a request fail on purpose names the failure; nothing else is excused. */
+  consoleGuard: ConsoleGuard;
 }
 
 const DAY_MS = 86_400_000;
@@ -348,13 +351,14 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect(toApi).toEqual([]);
   },
 
-  async 'delete-during-crisis-sends-the-record'({ page, context, locale }) {
+  async 'delete-during-crisis-sends-the-record'({ page, context, locale, consoleGuard }) {
     await visitOnline(page, locale);
     await context.setOffline(true);
     await triggerCrisis(page, locale);
     const eventId = await page.evaluate(() => JSON.parse(sessionStorage.getItem('mawsool.crisis-mark')!).eventId as string);
     await page.goto(`/${locale}/settings/`);
     // Holding the send back while the network returns, so the record is still unsent when the person confirms.
+    consoleGuard.allow({ url: `${API}/crisis-events`, expect: 'net::ERR_FAILED', reason: 'the test aborts the send on purpose to hold the record back while the person confirms' });
     await page.route(`${API}/crisis-events`, (route) => route.abort());
     await context.setOffline(false);
     await page.getByRole('button', { name: msg(locale, 'settings.delete'), exact: true }).click();
@@ -632,7 +636,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page.locator('[data-panel="equity"]')).toHaveCount(0);
   },
 
-  async 'reads-list-and-its-failure'({ page, locale }) {
+  async 'reads-list-and-its-failure'({ page, locale, consoleGuard }) {
     const id = await issueTicket(page, locale);
     expect((await clinicRead(id)).bundle).toBe(200);
     await page.reload();
@@ -640,6 +644,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page.locator('[data-reads]')).toContainText('Sample');
     await expect(page.locator('[data-reads-failed]')).toHaveCount(0);
 
+    consoleGuard.allow({ url: `${API}/me/tickets/${id}/reads`, expect: 'net::ERR_FAILED', reason: 'the test aborts the reads call on purpose to show it is reported as failed, not as nobody opening the ticket' });
     await page.route('**/me/tickets/*/reads', (route) => route.abort());
     await page.reload();
     await expect(page.locator('[data-reads-failed]')).toHaveText(msg(locale, 'ticket.readsFailed'));
@@ -812,7 +817,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect((await stored(ticketIdOf(page))).bundle!.approvedSummaryCiphertext).toMatch(/^v1\./);
   },
 
-  async 'ticket-tab-finds-a-ticket-after-a-failed-local-save'({ page, locale }) {
+  async 'ticket-tab-finds-a-ticket-after-a-failed-local-save'({ page, locale, consoleGuard }) {
     await installFailingIndexedDb(page);
     await toConsent(page, locale);
     await page.route(`${API}/tickets`, async (route) => {
@@ -834,6 +839,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page.getByText(msg(locale, 'ticket.noTicket'))).toHaveCount(0);
 
     // If that list cannot be had, the person is told so, never that they have no referral.
+    consoleGuard.allow({ url: `${API}/me/tickets`, expect: 'net::ERR_FAILED', reason: 'the test aborts the ticket list on purpose to show a failed list is not reported as no referral' });
     await page.route(`${API}/me/tickets`, (route) => route.abort());
     await page.goto(`/${locale}/ticket/`);
     await expect(page.getByRole('alert').filter({ hasText: msg(locale, 'ticket.loadFailed') })).toBeVisible();
@@ -917,8 +923,8 @@ if (JSON.stringify([...ids].sort()) !== JSON.stringify(Object.keys(CASES).sort()
 test.describe('Phase 3 exit acceptance', () => {
   for (const entry of acceptance) {
     for (const locale of LOCALES) {
-      test(`${entry.id} [${locale}]: ${entry.sentence}`, async ({ page, context }) => {
-        await CASES[entry.id]!({ page, context, locale });
+      test(`${entry.id} [${locale}]: ${entry.sentence}`, async ({ page, context, consoleGuard }) => {
+        await CASES[entry.id]!({ page, context, locale, consoleGuard });
       });
     }
   }

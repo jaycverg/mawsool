@@ -26,7 +26,8 @@
     "gate:b": "node scripts/gate-b.mjs",
     "gate:postgres": "node scripts/gate-postgres.mjs",
     "gate:phase3": "node scripts/gate-phase3.mjs",
-    "gate:phase4": "node scripts/gate-phase4.mjs"
+    "gate:phase4": "node scripts/gate-phase4.mjs",
+    "gate:c": "node scripts/gate-c.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

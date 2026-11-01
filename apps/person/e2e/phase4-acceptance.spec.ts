@@ -1,4 +1,5 @@
-import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test, type ConsoleGuard } from './fixtures';
 import acceptance from './acceptance-phase4.json';
 import {
   API,
@@ -56,6 +57,8 @@ interface Context {
   context: BrowserContext;
   browser: Browser;
   locale: Locale;
+  /** Where a test that provokes a failure on purpose names it; nothing else is excused. */
+  consoleGuard: ConsoleGuard;
 }
 
 /** PHQ-9 = 11: the "trained GP or tele" row, so a GP is the lead card. Item 9 is 0, so no crisis. */
@@ -627,6 +630,93 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     }
   },
 
+  async 'clinician-sign-in-has-language-toggle'({ page, locale }) {
+    // At 390 wide, in both languages: the toggle is on the sign-in page, names the other language and is a 44 px target.
+    await page.goto(`${CLINIC}/${locale}/sign-in/`);
+    expect(page.viewportSize()).toEqual({ width: 390, height: 844 });
+    const toggle = page.locator('a.lang-toggle');
+    await expect(toggle).toBeVisible();
+    const other = locale === 'ar' ? 'en' : 'ar';
+    await expect(toggle).toHaveAttribute('href', `/${other}/`);
+    await expect(toggle).toHaveAttribute('lang', other);
+    await expect(toggle).toHaveAttribute('aria-label', cmsg(locale, 'common.language'));
+    expect((await toggle.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await toggle.click();
+    await expect(page).toHaveURL(new RegExp(`/${other}/`));
+    await expect(page.locator('html')).toHaveAttribute('lang', other);
+  },
+
+  async 'queue-tier-select-filters'({ context, locale }) {
+    const person = await newPerson();
+    const gp = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A, 'gp') });
+    const specialist = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A, 'specialist') });
+    const clinic = await clinicianPage(context);
+    await clinic.goto(clinicUrl(locale));
+    await expect(row(clinic, gp.shortCode)).toBeVisible();
+    await expect(row(clinic, specialist.shortCode)).toBeVisible();
+    const select = clinic.locator('select[data-filter="tier"]');
+    await select.selectOption('specialist');
+    await expect(clinic).toHaveURL(/tier=specialist/);
+    await expect(row(clinic, specialist.shortCode)).toBeVisible();
+    await expect(row(clinic, gp.shortCode)).toHaveCount(0);
+    for (const tier of await clinic.locator('[data-queue] tr[data-ticket] td:nth-child(2)').allTextContents()) expect(tier).toBe(cmsg(locale, 'tier.specialist'));
+    await select.selectOption('gp');
+    await expect(row(clinic, gp.shortCode)).toBeVisible();
+    await expect(row(clinic, specialist.shortCode)).toHaveCount(0);
+    await select.selectOption('');
+    await expect(clinic).not.toHaveURL(/tier=/);
+    await expect(row(clinic, specialist.shortCode)).toBeVisible();
+    await expect(row(clinic, gp.shortCode)).toBeVisible();
+  },
+
+  async 'demo-off-routes-404-and-admin-panel-shows-last-verified'({ context, locale }) {
+    // This API runs with DEMO_MODE unset. The write controls do not exist: not for an admin, not for anyone.
+    const admin = await staffSession('admin@demo.mawsool.test');
+    for (const [path, body] of [['/demo/reset', undefined], ['/demo/clock/advance', { by: '7d' }]] as const) {
+      expect((await call('POST', path, { headers: bearer(admin), body })).status, path).toBe(404);
+      expect((await call('POST', path, { body })).status, `${path} anonymous`).toBe(404);
+    }
+    // The read the apps use is always there, answers anyone, and says the offset is zero.
+    const clock = await call('GET', '/clock');
+    expect(clock.status).toBe(200);
+    expect(clock.json()).toEqual({ demoMode: false, offsetMs: 0 });
+    // The admin panel says the controls are off, disables them, and still shows each crisis number's last_verified.
+    const panel = await context.newPage();
+    await keepSession(context, OPS, admin);
+    await panel.goto(`${OPS}/${locale}/`);
+    await expect(panel.locator('[data-clock-state="off"]')).toBeVisible();
+    for (const control of ['[data-advance="7d"]', '[data-advance="3w"]', '[data-advance="6w"]', '[data-reset]']) await expect(panel.locator(control)).toBeDisabled();
+    const section = panel.locator('[data-section="crisis-numbers"]');
+    for (const number of ['800725462', '999', '998']) await expect(section.locator(`[data-crisis-number="${number}"] [data-last-verified]`)).toBeVisible();
+    expect(await section.locator('[data-last-verified]').allTextContents()).toHaveLength(3);
+  },
+
+  async 'phone-recovers-when-the-server-forgets-it'({ page, locale, consoleGuard }) {
+    const ticketId = await issueViaPersonApp(page, locale, ['scores']);
+    const personId = (await stored(ticketId)).ticket.personId;
+    expect(await (await fetch(`${INSPECT}/persons/${personId}`)).json()).not.toBeNull();
+    // The server's database is put back to the seed behind the phone's back: the person, their ticket and their consents are gone.
+    expect((await fetch(`${INSPECT}/e2e/reseed`, { method: 'POST' })).status).toBe(200);
+    expect(await (await fetch(`${INSPECT}/persons/${personId}`)).json()).toBeNull();
+
+    // The phone's calls are answered 401 (it is not known), 404 (its ticket is not there); it deliberately provokes both, once each way.
+    for (const [path, status] of [[`/me/tickets/${ticketId}`, 401], [`/me/tickets/${ticketId}/reads`, 401], ['/me/tickets', 401], [`/me/tickets/${ticketId}`, 404], [`/me/tickets/${ticketId}/reads`, 404]] as const) {
+      consoleGuard.allow({ url: `${API}${path}`, expect: status, reason: 'the server no longer holds this phone’s person or ticket, which this test provokes on purpose' });
+    }
+    await page.goto(`/${locale}/ticket/`);
+    // Not an error loop: the screen settles on "no ticket", with a way forward, and the phone is a registered person again.
+    await expect(page.getByText(msg(locale, 'ticket.noTicket'))).toBeVisible();
+    await expect(page.getByRole('link', { name: msg(locale, 'ticket.seeOptions'), exact: true })).toBeVisible();
+    await expect(page.getByText(msg(locale, 'ticket.loadFailed'))).toHaveCount(0);
+    expect(await (await fetch(`${INSPECT}/persons/${personId}`)).json()).not.toBeNull();
+    // And it is usable: a fresh referral goes through from the same phone, to the same person.
+    await toConsent(page, locale);
+    await sendConsent(page, locale);
+    await expect(page).toHaveURL(ticketUrl(locale));
+    expect((await stored(ticketIdOf(page))).ticket.personId).toBe(personId);
+  },
+
   async 'queue-applies-the-share-ended-rule'({ context, locale }) {
     const person = await newPerson();
     const gp = await serviceAt(FACILITY_A);
@@ -996,8 +1086,8 @@ if (JSON.stringify([...ids].sort()) !== JSON.stringify(Object.keys(CASES).sort()
 test.describe('Phase 4 exit acceptance', () => {
   for (const entry of acceptance) {
     for (const locale of LOCALES) {
-      test(`${entry.id} [${locale}]: ${entry.sentence}`, async ({ page, context, browser }) => {
-        await CASES[entry.id]!({ page, context, browser, locale });
+      test(`${entry.id} [${locale}]: ${entry.sentence}`, async ({ page, context, browser, consoleGuard }) => {
+        await CASES[entry.id]!({ page, context, browser, locale, consoleGuard });
       });
     }
   }
