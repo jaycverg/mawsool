@@ -312,6 +312,48 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     }
   },
 
+  async 'tokens-at-phone-width'({ page, locale }) {
+    await visitOnline(page, locale);
+    const lineHeight = locale === 'ar' ? { h1: '34px', body: '24px' } : { h1: '30px', body: '22px' };
+    for (const screen of ['', 'check-in/', 'check-ins/', 'options/', 'settings/', 'crisis/']) {
+      await page.goto(`/${locale}/${screen}`);
+      await expect(page.locator('main').first()).toBeVisible();
+      if (screen === 'options/') await expect(page.locator('[data-tier]').first()).toBeVisible();
+
+      // Nothing runs off the 390 px screen, and the document sits in the right direction.
+      const layout = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, dir: document.documentElement.dir }));
+      expect(layout.width, `${screen} overflows 390 px`).toBeLessThanOrEqual(390);
+      expect(layout.dir).toBe(locale === 'ar' ? 'rtl' : 'ltr');
+
+      // Every control a finger can reach is at least 44 px each way; the call to action is 52 px tall.
+      const small = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>('a[href], button, select, summary')]
+          .filter((element) => element.offsetParent !== null)
+          .map((element) => ({ name: (element.textContent ?? element.getAttribute('aria-label') ?? element.tagName).trim().slice(0, 40), box: element.getBoundingClientRect() }))
+          .filter(({ box }) => box.width > 0 && (box.height < 43.5 || box.width < 43.5))
+          .map(({ name, box }) => `${name}: ${Math.round(box.width)}x${Math.round(box.height)}`),
+      );
+      expect(small, `${screen} has controls under 44 px`).toEqual([]);
+      for (const cta of await page.locator('.btn-primary:visible').all()) {
+        expect((await cta.boundingBox())!.height).toBeGreaterThanOrEqual(52);
+      }
+    }
+
+    // Type from the plan: h1 24/30 (Arabic 24/34) at weight 600, body 15/22 (Arabic 15/24), IBM Plex Sans.
+    await page.goto(`/${locale}/`);
+    const h1 = page.locator('h1');
+    await expect(h1).toHaveCSS('font-size', '24px');
+    await expect(h1).toHaveCSS('line-height', lineHeight.h1);
+    await expect(h1).toHaveCSS('font-weight', '600');
+    await expect(page.locator('p.t-body').first()).toHaveCSS('font-size', '15px');
+    await expect(page.locator('p.t-body').first()).toHaveCSS('line-height', lineHeight.body);
+    await expect(page.locator('body')).toHaveCSS('font-family', /IBM Plex Sans/);
+    await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(243, 246, 245)');
+    await expect(page.locator('body')).toHaveCSS('color', 'rgb(16, 48, 45)');
+    await expect(page.locator('.btn-primary').first()).toHaveCSS('background-color', 'rgb(14, 107, 99)');
+    await expect(page.locator('section').first()).toHaveCSS('border-radius', '16px');
+  },
+
   async 'console-clean-and-favicon'({ page, locale }) {
     const problems: string[] = [];
     const requested: string[] = [];

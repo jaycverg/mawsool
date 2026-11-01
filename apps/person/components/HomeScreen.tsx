@@ -5,6 +5,7 @@ import type { Instrument } from '@mawsool/types';
 import { isLocale } from '@mawsool/ui';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
+import { deviceNow } from '../lib/clock';
 import { addWeeks, formatDate, partOfDay, spanBetween, type Part } from '../lib/format';
 import { href } from '../lib/routes';
 import { findDraft } from '../lib/screening-store';
@@ -25,7 +26,7 @@ export function HomeScreen() {
   const screenings = useScreenings();
   const [part, setPart] = useState<Part | null>(null);
 
-  useEffect(() => setPart(partOfDay(new Date())), []);
+  useEffect(() => setPart(partOfDay(deviceNow())), []);
 
   const list = Array.isArray(screenings) ? screenings : [];
   const draft = findDraft(list, 'who5') ?? findDraft(list, 'gad7') ?? findDraft(list, 'phq9');

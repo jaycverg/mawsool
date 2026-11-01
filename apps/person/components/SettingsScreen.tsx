@@ -21,12 +21,17 @@ export function SettingsScreen() {
   const [json, setJson] = useState<string | null>(null);
   const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [removal, setRemoval] = useState<Delete>('idle');
+  const [unreadable, setUnreadable] = useState(false);
   const usable = device !== null && device !== 'unavailable';
 
   async function show() {
     if (!usable) return;
-    setJson(await exportDeviceData(device.storage, deviceNow));
-    setCopy('idle');
+    try {
+      setJson(await exportDeviceData(device.storage, deviceNow));
+      setCopy('idle');
+    } catch {
+      setUnreadable(true);
+    }
   }
 
   async function copyJson() {
@@ -55,7 +60,7 @@ export function SettingsScreen() {
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 px-4 py-5">
         <h1 className="t-h1">{t('title')}</h1>
         <p className="t-body text-muted">{t('intro')}</p>
-        {device === 'unavailable' && <p role="alert" className="rounded-chip bg-warning px-3 py-2 text-small text-warning-ink">{t('unavailable')}</p>}
+        {(device === 'unavailable' || unreadable) && <p role="alert" className="rounded-chip bg-warning px-3 py-2 text-small text-warning-ink">{t('unavailable')}</p>}
 
         <section className="flex flex-col gap-2.5 rounded-card border border-border bg-surface p-5">
           <h2 className="text-[16px] font-semibold">{t('downloadTitle')}</h2>

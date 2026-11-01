@@ -1,6 +1,6 @@
 'use client';
 
-import { needsUnverifiedLabel, wordingFor } from '@mawsool/instruments';
+import { needsUnverifiedLabel, offersFollowUp, wordingFor } from '@mawsool/instruments';
 import { completedSeries, isCompleteScreening, isTracked, reliableChange, type Change } from '@mawsool/rules';
 import type { Instrument, Screening } from '@mawsool/types';
 import { isLocale } from '@mawsool/ui';
@@ -16,8 +16,6 @@ import { BandBar } from './BandBar';
 import { FlowHeader } from './FlowHeader';
 import { TrendChart } from './TrendChart';
 import { UnverifiedLabel } from './UnverifiedLabel';
-
-const WHO5_FOLLOW_UP_MAX = 50;
 
 interface Loaded {
   screening: Screening;
@@ -47,13 +45,16 @@ export function ResultScreen() {
       setState('missing');
       return;
     }
-    void loadScreenings(device.storage).then((all) => {
-      const screening = all.find((candidate) => candidate.id === id && isCompleteScreening(candidate));
-      if (!screening) return setState('missing');
-      setState({ screening, series: completedSeries(all, screening.instrument).filter((s) => Date.parse(s.takenAt) <= Date.parse(screening.takenAt)) });
-      const taken = new Set(all.filter(isCompleteScreening).map((s) => s.instrument));
-      setOthers((['gad7', 'phq9'] as const).filter((instrument) => !taken.has(instrument)));
-    });
+    loadScreenings(device.storage).then(
+      (all) => {
+        const screening = all.find((candidate) => candidate.id === id && isCompleteScreening(candidate));
+        if (!screening) return setState('missing');
+        setState({ screening, series: completedSeries(all, screening.instrument).filter((s) => Date.parse(s.takenAt) <= Date.parse(screening.takenAt)) });
+        const taken = new Set(all.filter(isCompleteScreening).map((s) => s.instrument));
+        setOthers((['gad7', 'phq9'] as const).filter((instrument) => !taken.has(instrument)));
+      },
+      () => setState('missing'),
+    );
   }, [device, id]);
 
   const leading = { href: href(lang, ''), label: t('back') };
@@ -83,7 +84,7 @@ export function ResultScreen() {
     severe: t('bands.severe'),
   };
   const meaning =
-    instrument === 'who5' ? tc(screening.total <= WHO5_FOLLOW_UP_MAX ? 'who5.low' : 'who5.typical') : tc(`${instrument as 'phq9' | 'gad7'}.${screening.band as string}`);
+    instrument === 'who5' ? tc(offersFollowUp(screening.total) ? 'who5.low' : 'who5.typical') : tc(`${instrument as 'phq9' | 'gad7'}.${screening.band as string}`);
 
   const summary = series.map((s) => t('chartPoint', { date: formatDate(s.takenAt, lang), total: s.total })).join(', ');
   const span = previous ? spanBetween(previous.takenAt, screening.takenAt) : null;
@@ -144,7 +145,7 @@ export function ResultScreen() {
 
         {instrument === 'who5' ? (
           <div className="mt-auto flex flex-col gap-2.5">
-            {screening.total <= WHO5_FOLLOW_UP_MAX ? (
+            {offersFollowUp(screening.total) ? (
               <>
                 <p className="t-body font-semibold">{t('whoFollowUp')}</p>
                 <a className="btn-primary" href={href(lang, 'check-in', { i: 'gad7' })}>

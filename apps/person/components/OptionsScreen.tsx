@@ -41,6 +41,7 @@ export function OptionsScreen() {
   const [directory, setDirectory] = useState<Directory | null | 'loading'>('loading');
   const [showOther, setShowOther] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [unreadable, setUnreadable] = useState(false);
 
   const fetchDirectory = useCallback(
     (d: Device) => {
@@ -54,6 +55,7 @@ export function OptionsScreen() {
     if (device === null || device === 'unavailable') return;
     void Promise.all([loadScreenings(device.storage), loadPreferences(device.storage), loadInsurance(device.storage), loadChoice(device.storage), device.crisis.read()]).then(
       ([screenings, preferences, insurance, choice, crisis]) => setLoaded({ screenings, preferences, insurance, choice, crisisResolvedAt: crisis.record?.resolvedAt ?? null }),
+      () => setUnreadable(true),
     );
     fetchDirectory(device);
   }, [device, fetchDirectory]);
@@ -77,7 +79,7 @@ export function OptionsScreen() {
 
   const leading = { href: href(lang, 'check-ins'), label: t('title') };
 
-  if (device === 'unavailable') {
+  if (device === 'unavailable' || unreadable) {
     return (
       <>
         <FlowHeader leading={{ href: href(lang, ''), label: t('savedHome') }} title={t('title')} />
@@ -321,7 +323,7 @@ function OptionCard({ t, option, insurance, lead, onChoose }: { t: Translate; op
       <button
         type="button"
         onClick={() => onChoose(option)}
-        className={lead ? 'btn-primary min-h-12 rounded-full' : 'tap min-h-12 rounded-full border-[1.5px] border-accent px-4 text-[16px] font-semibold text-accent'}
+        className={lead ? 'btn-primary' : 'tap min-h-12 rounded-full border-[1.5px] border-accent px-4 text-[16px] font-semibold text-accent'}
       >
         {t(lead ? 'choose' : 'chooseOther')}
       </button>
