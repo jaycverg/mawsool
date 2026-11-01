@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import type { SummaryProvider } from '@mawsool/summary';
 import { buildApp } from '../../src/app';
 import { ManualClock } from '../../src/clock';
 import type { Db } from '../../src/db/client';
@@ -31,14 +32,20 @@ export interface TestApp {
   notifier: CapturingNotifier;
 }
 
-export async function createTestApp(db: Db): Promise<TestApp> {
+export interface TestAppOptions {
+  summaryLlmEnabled?: boolean;
+  summaryProvider?: SummaryProvider | null;
+}
+
+export async function createTestApp(db: Db, options: TestAppOptions = {}): Promise<TestApp> {
   const clock = new ManualClock(TEST_START);
   const notifier = new CapturingNotifier();
   const app = await buildApp({
     db,
     clock,
     notifier,
-    config: TEST_CONFIG,
+    config: { ...TEST_CONFIG, summaryLlmEnabled: options.summaryLlmEnabled ?? false },
+    summaryProvider: options.summaryProvider ?? null,
   });
   return { app, clock, notifier };
 }
