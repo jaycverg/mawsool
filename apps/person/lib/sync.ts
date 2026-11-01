@@ -15,6 +15,22 @@ export function syncNow(locale: Locale): void {
   }
 }
 
+/**
+ * Repairs an open crisis whose block or event never reached storage, then sends what is queued. Fire and forget:
+ * it does nothing when no crisis is open, and a failure leaves things as they were for the next try.
+ */
+export function repairNow(locale: Locale): Promise<void> {
+  try {
+    return getDevice()
+      .crisis.repair(locale)
+      .then((outcome) => {
+        if (outcome === 'repaired') syncNow(locale);
+      });
+  } catch {
+    return Promise.resolve();
+  }
+}
+
 /** Refreshes the saved copy of the sample directory so matching works offline. Fire and forget. */
 export function refreshDirectory(): void {
   try {

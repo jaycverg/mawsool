@@ -1,4 +1,4 @@
-import { createTabFlag } from '@mawsool/ui';
+import { createTabMark } from '@mawsool/ui';
 import { describe, expect, it } from 'vitest';
 import { deleteDeviceData, exportDeviceData } from '../lib/device-data';
 import { currentTier, loadChoice, loadInsurance, loadPreferences, saveChoice, saveInsurance, savePreferences } from '../lib/prefs';
@@ -58,12 +58,12 @@ describe('download and delete', () => {
     expect(json).not.toContain('queued');
   });
 
-  it('deleting everything also clears the tab\'s crisis flag, so nothing is left that could hold a block', async () => {
+  it('deleting everything also clears the tab\'s crisis mark, so nothing is left that could hold a block', async () => {
     const { storage } = memoryStorage(full);
-    const flag = createTabFlag(undefined, 'crisis');
-    flag.set(true);
-    await deleteDeviceData(storage, flag);
-    expect(flag.get()).toBe(false);
+    const mark = createTabMark<{ id: string }>(undefined, 'crisis', (value): value is { id: string } => typeof value === 'object');
+    mark.set({ id: 'e' });
+    await deleteDeviceData(storage, mark);
+    expect(mark.get()).toBeNull();
   });
 
   it('exports an empty device as empty values', async () => {

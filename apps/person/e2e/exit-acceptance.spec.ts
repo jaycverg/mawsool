@@ -42,6 +42,18 @@ interface Context {
  * block must hold for the rest of the tab: Back, a direct visit to each guarded screen, and a reload.
  */
 async function blockSurvivesFailingStorage({ page, locale }: Context, mode: IdbMode): Promise<void> {
+  const posts: { body: Record<string, unknown>; status: number }[] = [];
+  page.on('response', (response) => {
+    const request = response.request();
+    if (request.url() === `${API}/crisis-events` && request.method() === 'POST') posts.push({ body: JSON.parse(request.postData() ?? '{}'), status: response.status() });
+  });
+  const eventRows = async (id: unknown) => (await (await fetch(`${INSPECT}/crisis-events/${id}`)).json()) as Record<string, unknown>[];
+  /** Turns the failure off and reads the raw store on a fresh load of a page that does not touch the crisis path. */
+  const rawStoreKeysOnceBack = async (target: Page) => {
+    await setIdbMode(target, null);
+    await target.goto(`/${locale}/settings/`);
+    return rawStoreKeys(target);
+  };
   await installFailingIndexedDb(page);
   await visitOnline(page, locale);
   await page.goto(`/${locale}/check-in/?i=phq9`);
@@ -64,18 +76,55 @@ async function blockSurvivesFailingStorage({ page, locale }: Context, mode: IdbM
   await page.reload();
   await expect(page).toHaveURL(crisisUrl(locale));
 
-  // The failure was real: with storage working again, nothing about the trigger had been saved, so it was the
-  // tab's own flag that held the block.
-  await setIdbMode(page, null);
-  const keys = await rawStoreKeys(page);
-  expect(keys).not.toContain('crisis:block');
+  if (mode === 'hang') {
+    // A store that never answers is waited on for about a second and a half, and then the person is told the truth:
+    // no thanks for a contact that was not recorded.
+    await page.getByRole('button', { name: msg(locale, 'crisis.callNow'), exact: true }).click();
+    await page.getByRole('button', { name: msg(locale, 'crisis.reachedYes') }).click();
+    await expect(page.getByText(msg(locale, 'crisis.reachedNotSaved'))).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(msg(locale, 'crisis.reachedThanks'))).toHaveCount(0);
+  }
+
+  // The failure was real: nothing about the trigger reached storage, so it was the tab's own mark that held the block.
+  const keysWhileFailing = await rawStoreKeysOnceBack(page);
+  expect(keysWhileFailing).not.toContain('crisis:block');
+
+  // Storage works again, and a fresh load of the crisis screen repairs: the stored block and the crisis's one event
+  // now exist, and the event reaches the API exactly once, with no item answers in it.
+  await page.goto(`/${locale}/crisis/`);
+  await expect.poll(async () => (await rawStoreKeys(page)).includes('crisis:block'), { timeout: 15_000 }).toBe(true);
+  await expect.poll(() => posts.filter((post) => post.status === 201).length, { timeout: 15_000 }).toBe(1);
+  const created = posts.find((post) => post.status === 201)!;
+  expect(created.body).toMatchObject({ trigger: 'phq9_item9', locale, humanContactConfirmed: false, callTapped: null });
+  expect(Object.keys(created.body).filter((key) => /answer|person|item|note|score/i.test(key))).toEqual([]);
+  expect(JSON.stringify(created.body)).not.toContain('"answers"');
+  const id = created.body['id'];
+  expect(await eventRows(id)).toHaveLength(1);
+
+  // A contact confirmed after recovery is recorded on that same event, and still one row.
+  await page.getByRole('button', { name: msg(locale, 'crisis.callNow'), exact: true }).click();
+  await page.getByRole('button', { name: msg(locale, 'crisis.reachedYes') }).click();
+  await expect(page.getByText(msg(locale, 'crisis.reachedThanks'))).toBeVisible();
+  await expect.poll(async () => (await eventRows(id))[0]?.['humanContactConfirmed'], { timeout: 15_000 }).toBe(true);
+  expect(await eventRows(id)).toHaveLength(1);
+  expect(posts.filter((post) => post.status === 201)).toHaveLength(1);
+  expect(posts.every((post) => post.body['id'] === id)).toBe(true);
+
+  // The block is stored now, so the guard holds it with or without the tab's mark.
   await page.goto(`/${locale}/options/`);
   await expect(page).toHaveURL(crisisUrl(locale), { timeout: 15_000 });
 
-  // And the person is never trapped: "I'm safe right now" gets them out, however storage behaves.
+  // The person is never trapped: "I'm safe right now" gets them out, however storage behaves.
   await setIdbMode(page, mode);
   await page.getByRole('button', { name: msg(locale, 'crisis.safeNow'), exact: true }).click();
   await expect(page).not.toHaveURL(crisisUrl(locale), { timeout: 15_000 });
+
+  // And with storage still failing, a guarded screen opened after the release does not stay blank: it lands on the
+  // crisis screen, which shows its numbers without waiting on storage.
+  await page.goto(`/${locale}/options/`);
+  await expect(page).toHaveURL(crisisUrl(locale), { timeout: 15_000 });
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(msg(locale, 'crisis.heading'));
+  for (const number of ['800725462', '998', '999']) await expect(page.locator(`a[href="tel:${number}"]`)).toBeVisible();
 }
 
 /**
@@ -90,6 +139,7 @@ function screenSnapshot(screen: string, open: (ctx: Context) => Promise<void>): 
     await snapshot(ctx.page, `${screen}-${ctx.locale}`);
   };
 }
+
 
 const CASES: Record<string, (ctx: Context) => Promise<void>> = {
   'snapshot-home': screenSnapshot('home', async ({ page, locale }) => {
@@ -600,6 +650,22 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(detail).toHaveCSS('line-height', '19px');
     await expect(detail).toContainText('800 725462');
     await expect(detail).toContainText('·');
+    // The call title has the board's `normal` line height: 25 tall and a 97 tall card in English (Arabic has its own).
+    const title = page.locator('a[href="tel:800725462"] > span:last-child > span:first-child');
+    await expect(title).toHaveCSS('line-height', 'normal');
+    if (!ar) {
+      expect(await computed(page, 'a[href="tel:800725462"] > span:last-child > span:first-child', [])).toMatchObject({ height: 25 });
+      expect(await computed(page, 'a[href="tel:800725462"]', [])).toMatchObject({ height: 97 });
+    }
+
+    // Crisis prompt answers are body text: 15/22 in English, 15/24 in Arabic.
+    await triggerCrisis(page, locale);
+    await page.getByRole('button', { name: msg(locale, 'crisis.callNow'), exact: true }).click();
+    await page.getByRole('button', { name: msg(locale, 'crisis.reachedNo') }).click();
+    expect(await computed(page, `p:text-is("${msg(locale, 'crisis.reachedLater')}")`, ['font-size', 'line-height'])).toMatchObject({ 'font-size': '15px', 'line-height': lh.body });
+    await page.getByRole('button', { name: msg(locale, 'crisis.callNow'), exact: true }).click();
+    await page.getByRole('button', { name: msg(locale, 'crisis.reachedYes') }).click();
+    expect(await computed(page, `p:text-is("${msg(locale, 'crisis.reachedThanks')}")`, ['font-size', 'line-height'])).toMatchObject({ 'font-size': '15px', 'line-height': lh.body });
   },
 
   async 'data-is-encrypted-at-rest'({ page, locale }) {

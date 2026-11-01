@@ -6,14 +6,14 @@ import { createWebDialler, isLocale } from '@mawsool/ui';
 import { BrandMark, LanguageToggle } from '@mawsool/ui/components';
 import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CrisisRecord } from '../lib/crisis';
 import { crisisTexts } from '../lib/crisis-copy';
 import { crisisLines } from '../lib/crisis-numbers';
 import { href } from '../lib/routes';
 import { loadScreenings } from '../lib/screening-store';
-import { useDevice } from '../lib/use-device';
-import { syncNow } from '../lib/sync';
+import { useDevice, type Device } from '../lib/use-device';
+import { repairNow, syncNow } from '../lib/sync';
 import { within } from '../lib/within';
 
 type Reached = 'unasked' | 'asking' | 'yes' | 'later';
@@ -38,20 +38,26 @@ export function CrisisScreen() {
   const [record, setRecord] = useState<CrisisRecord | null>(null);
   const [reached, setReached] = useState<Reached>('unasked');
   const [unsaved, setUnsaved] = useState(false);
+  const [notSaved, setNotSaved] = useState(false);
   const promptRef = useRef<HTMLHeadingElement>(null);
   const dialler = useMemo(() => createWebDialler((url) => window.location.assign(url)), []);
   const lang = isLocale(locale) ? locale : 'en';
   const texts = crisisTexts(t, LINES);
 
+  const refresh = useCallback(async (d: Device) => {
+    const state = await d.crisis.read();
+    setRecord(state.record);
+    // The prompt belongs to an open crisis. After a resolution, "Help now" is only a way to reach a number.
+    if (state.record?.blocked && state.record.event?.humanContactConfirmed) setReached('yes');
+    else if (state.record?.blocked && state.record.event?.callTapped) setReached('asking');
+  }, []);
+
   useEffect(() => {
     if (device === null || device === 'unavailable') return;
-    void device.crisis.read().then((state) => {
-      setRecord(state.record);
-      // The prompt belongs to an open crisis. After a resolution, "Help now" is only a way to reach a number.
-      if (state.record?.blocked && state.record.event?.humanContactConfirmed) setReached('yes');
-      else if (state.record?.blocked && state.record.event?.callTapped) setReached('asking');
-    });
-  }, [device]);
+    void refresh(device);
+    // If storage failed when the trigger was answered, the stored block and the crisis's one event are made now.
+    void repairNow(lang).then(() => refresh(device));
+  }, [device, lang, refresh]);
 
   useEffect(() => {
     if (reached === 'asking') promptRef.current?.focus();
@@ -59,7 +65,9 @@ export function CrisisScreen() {
 
   function call(number: CrisisNumber) {
     dialler.dial(number);
-    if (record?.blocked && (reached === 'unasked' || reached === 'later')) setReached('asking');
+    // The prompt belongs to an open crisis. The tab's mark answers at once, before the stored record has been read.
+    const open = Boolean(record?.blocked) || (device !== null && device !== 'unavailable' && device.tabMark.get() !== null);
+    if (open && (reached === 'unasked' || reached === 'later')) setReached('asking');
     if (device && device !== 'unavailable') {
       void device.crisis.recordCall(number).then((next) => {
         if (next) setRecord(next);
@@ -69,12 +77,17 @@ export function CrisisScreen() {
   }
 
   async function reachedSomeone() {
-    // The thanks appears once the answer is recorded, so what the screen says and what is saved never differ.
-    if (device && device !== 'unavailable') {
-      setRecord((await device.crisis.confirmContact()) ?? record);
+    // The thanks appears only when the answer came back recorded, so what the screen says and what is saved never
+    // differ. A store that is slow or hung is waited on for 1.5 s, and then the person is told it was not saved.
+    const next = device && device !== 'unavailable' ? await within(device.crisis.confirmContact(), 1500, null) : null;
+    if (next?.event?.humanContactConfirmed) {
+      setRecord(next);
+      setNotSaved(false);
+      setReached('yes');
       syncNow(lang);
+    } else {
+      setNotSaved(true);
     }
-    setReached('yes');
   }
 
   async function release() {
@@ -130,7 +143,7 @@ export function CrisisScreen() {
             </svg>
           </span>
           <span className="flex flex-col gap-0.5">
-            <span className="text-[20px] font-bold">{texts.hotline.title}</span>
+            <span className="text-[20px] font-bold leading-[normal]">{texts.hotline.title}</span>
             <span className="text-[14px] leading-[19px] text-[#FBE3E0]">{texts.hotline.detail}</span>
           </span>
         </a>
@@ -177,8 +190,13 @@ export function CrisisScreen() {
                 </button>
               </div>
             )}
-            {reached === 'yes' && <p className="text-[15px] leading-[22px]">{t('reachedThanks')}</p>}
-            {reached === 'later' && <p className="text-[15px] leading-[22px]">{t('reachedLater')}</p>}
+            {reached === 'asking' && notSaved && (
+              <p role="status" className="t-body">
+                {t('reachedNotSaved')}
+              </p>
+            )}
+            {reached === 'yes' && <p className="t-body">{t('reachedThanks')}</p>}
+            {reached === 'later' && <p className="t-body">{t('reachedLater')}</p>}
           </section>
         )}
 

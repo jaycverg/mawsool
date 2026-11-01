@@ -1,4 +1,4 @@
-import type { StorageAdapter, TabFlagAdapter } from '@mawsool/ui';
+import type { StorageAdapter, TabMarkAdapter } from '@mawsool/ui';
 import { KEYS } from './keys';
 
 /**
@@ -18,10 +18,10 @@ export async function exportDeviceData(storage: StorageAdapter, now: () => Date)
 }
 
 /**
- * Wipes everything on this phone: the encrypted store and its key, and the tab's crisis flag with them, so deleting
+ * Wipes everything on this phone: the encrypted store and its key, and the tab's crisis mark with them, so deleting
  * everything leaves nothing behind that could still hold a block. Nothing on the server is touched here.
  */
-export async function deleteDeviceData(storage: StorageAdapter, tabFlag?: TabFlagAdapter): Promise<void> {
+export async function deleteDeviceData(storage: StorageAdapter, tabMark?: TabMarkAdapter<unknown>): Promise<void> {
   await storage.clear();
-  tabFlag?.set(false);
+  tabMark?.set(null);
 }

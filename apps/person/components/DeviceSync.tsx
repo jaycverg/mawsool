@@ -3,7 +3,7 @@
 import { useLocale } from 'next-intl';
 import { isLocale } from '@mawsool/ui';
 import { useEffect } from 'react';
-import { refreshDirectory, syncNow } from '../lib/sync';
+import { refreshDirectory, repairNow, syncNow } from '../lib/sync';
 import { getDevice } from '../lib/use-device';
 
 /**
@@ -25,6 +25,7 @@ export function DeviceSync() {
     syncNow(lang);
     refreshDirectory();
     const onOnline = () => {
+      void repairNow(lang);
       syncNow(lang);
       refreshDirectory();
     };

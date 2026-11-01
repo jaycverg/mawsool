@@ -48,7 +48,7 @@ export function SettingsScreen() {
   async function wipe() {
     if (!usable) return;
     try {
-      await deleteDeviceData(device.storage, device.tabFlag);
+      await deleteDeviceData(device.storage, device.tabMark);
       setJson(null);
       setRemoval('deleted');
     } catch {
