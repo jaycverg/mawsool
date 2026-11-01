@@ -26,7 +26,9 @@ function leaves(tree: Tree, prefix = ''): Record<string, string> {
   return out;
 }
 
-const placeholders = (text: string) => [...text.matchAll(/{(\w+)/g)].map((m) => m[1]).sort();
+// Argument names only: a name right after an opening brace and followed by a comma or a closing brace. Words inside
+// a plural or select branch (`one {# day}`, `=0 {No wait}`) are text, not arguments.
+const placeholders = (text: string) => [...text.matchAll(/{\s*(\w+)\s*[,}]/g)].map((m) => m[1]).sort();
 const read = (dir: string, locale: 'ar' | 'en') => leaves(JSON.parse(readFileSync(join(dir, `${locale}.json`), 'utf8')) as Tree);
 
 describe('message files', () => {

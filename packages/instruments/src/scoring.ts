@@ -60,7 +60,7 @@ function validate(instrument: Instrument, answers: readonly number[]): void {
  * slot (a hole, undefined, null, NaN) or a short, long or out-of-range list is false. This is the completeness
  * test for a stored check-in: a check-in in progress has empty slots and so is never scored.
  */
-export function hasCompleteAnswers(instrument: Instrument, answers: unknown): answers is number[] {
+export function hasCompleteAnswers(instrument: Instrument, answers: unknown): boolean {
   if (!Array.isArray(answers)) return false;
   try {
     validate(instrument, answers as number[]);

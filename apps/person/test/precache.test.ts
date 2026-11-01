@@ -16,11 +16,15 @@ function fixture(files: Record<string, string>): string {
   return out;
 }
 
+const PAGES = Object.fromEntries((PRECACHE_ROUTES as string[]).map((route) => [routeFile(route), `page ${route}`]));
+
 const BASE = {
+  ...PAGES,
   'index.html': 'root',
   'en/index.html': 'en page',
   'ar/index.html': 'ar page',
   'manifest.webmanifest': '{}',
+  'icon.svg': '<svg/>',
   'icons/icon-192.png': 'png',
   '_next/static/chunks/a.css': 'css',
   '_next/static/chunks/a.js': 'js',
@@ -32,19 +36,27 @@ const BASE = {
 };
 
 describe('build-time precache list', () => {
-  it('lists the pages, built css and js, Latin and Arabic woff2 fonts, the manifest and the icons', () => {
+  it('lists the pages, built css and js, Latin and Arabic woff2 fonts, the manifest, the favicon and the icons', () => {
     const { urls } = buildPrecache(fixture(BASE));
     expect(urls).toEqual([
-      '/',
-      '/en/',
-      '/ar/',
+      ...PRECACHE_ROUTES,
       '/_next/static/chunks/a.css',
       '/_next/static/chunks/a.js',
       '/_next/static/media/ibm-plex-sans-arabic-arabic-400-normal.def.woff2',
       '/_next/static/media/ibm-plex-sans-latin-400-normal.abc.woff2',
       '/manifest.webmanifest',
+      '/icon.svg',
       '/icons/icon-192.png',
     ]);
+  });
+
+  it.each(['crisis', 'check-in', 'result'])('opens the %s screen offline in both languages', (screen) => {
+    for (const locale of ['en', 'ar']) expect(PRECACHE_ROUTES).toContain(`/${locale}/${screen}/`);
+  });
+
+  it('refuses a build that lacks one of the offline screens', () => {
+    const { ['en/crisis/index.html']: _missing, ...without } = BASE;
+    expect(() => buildPrecache(fixture(without))).toThrow(/\/en\/crisis\//);
   });
 
   it('never lists the service worker itself, other font subsets or old font formats', () => {
@@ -62,8 +74,8 @@ describe('build-time precache list', () => {
   });
 
   it('can be extended with another route, and refuses a route that has no page', () => {
-    const out = fixture({ ...BASE, 'en/crisis/index.html': 'crisis' });
-    expect(buildPrecache(out, [...PRECACHE_ROUTES, '/en/crisis/']).urls).toContain('/en/crisis/');
+    const out = fixture({ ...BASE, 'en/extra/index.html': 'extra' });
+    expect(buildPrecache(out, [...PRECACHE_ROUTES, '/en/extra/']).urls).toContain('/en/extra/');
     expect(() => buildPrecache(out, [...PRECACHE_ROUTES, '/en/missing/'])).toThrow(/\/en\/missing\//);
     expect(routeFile('/')).toBe('index.html');
     expect(routeFile('/en/crisis/')).toBe('en/crisis/index.html');

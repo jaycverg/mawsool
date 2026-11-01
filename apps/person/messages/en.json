@@ -3,10 +3,283 @@
     "title": "Mawsool",
     "description": "A 2-minute check-in helps you notice changes early."
   },
+  "nav": {
+    "label": "Main",
+    "home": "Home",
+    "checkIns": "Check-ins",
+    "ticket": "Ticket",
+    "privacy": "Privacy"
+  },
+  "flow": {
+    "back": "Back",
+    "next": "Next",
+    "loading": "Loading…",
+    "retry": "Try again",
+    "sample": "Sample data"
+  },
   "home": {
+    "greetingMorning": "Good morning",
+    "greetingAfternoon": "Good afternoon",
+    "greetingEvening": "Good evening",
     "heading": "How have you been over the last two weeks?",
     "tagline": "A 2-minute check-in helps you notice changes early.",
-    "privacy": "Your answers stay on this phone unless you choose to share them."
+    "privacy": "Your answers stay on this phone unless you choose to share them.",
+    "start": "Start check-in",
+    "resume": "Continue your check-in",
+    "direct": "Or choose a questionnaire yourself",
+    "directPhq9": "Mood (PHQ-9)",
+    "directGad7": "Anxiety (GAD-7)",
+    "trendRange": "Last {span}",
+    "nextCheckIn": "Next check-in suggested: {date}",
+    "stored": "Stored on this phone. Nothing is shared without your consent.",
+    "storageUnavailable": "This browser cannot keep your answers private on this phone, so check-ins are switched off. If you need help now, tap Help now."
+  },
+  "instrument": {
+    "who5": "Wellbeing",
+    "phq9": "Mood",
+    "gad7": "Anxiety",
+    "who5Full": "Wellbeing (WHO-5)",
+    "phq9Full": "Mood (PHQ-9)",
+    "gad7Full": "Anxiety (GAD-7)",
+    "who5Title": "Wellbeing check-in",
+    "phq9Title": "Mood check-in",
+    "gad7Title": "Anxiety check-in"
+  },
+  "checkIn": {
+    "close": "Close check-in",
+    "progress": "Question {current} of {total}",
+    "finish": "See my result",
+    "note": "This is a validated screening questionnaire. There are no right or wrong answers, and you can stop at any time.",
+    "saved": "Answers are saved on this phone only.",
+    "saveFailed": "This answer could not be saved on this phone. Try again.",
+    "unavailable": "This browser cannot keep your answers private on this phone, so the check-in cannot start. If you need help now, tap Help now."
+  },
+  "wording": {
+    "unverifiedTitle": "Wording not verified",
+    "unverifiedBody": "This version of the questions has not been checked against a validated published form, so the score may be less reliable."
+  },
+  "result": {
+    "title": "Your result",
+    "back": "Back",
+    "outOf": "out of {max}",
+    "bandLabel": "Severity bands",
+    "how": "How you've changed",
+    "span": "{unit, select, week {{count, plural, one {# week} other {# weeks}}} other {{count, plural, one {# day} other {# days}}}}",
+    "points": "{count, plural, one {# point} other {# points}}",
+    "deterioration": "Up {points} in {span}. That is more than normal day-to-day ups and downs, so it's worth acting on.",
+    "improvement": "Down {points} in {span}. That is more than normal day-to-day ups and downs, which is encouraging.",
+    "steady": "Within the normal ups and downs since your last check-in ({points}).",
+    "first": "This is your first check-in of this kind. Check in again in a few weeks to see how you are changing.",
+    "chart": "{instrument} scores over time: {summary}",
+    "chartPoint": "{total} on {date}",
+    "means": "What this means",
+    "doesNotMean": "What it does not mean",
+    "options": "See support options",
+    "alsoPhq9": "Also take the mood questions (PHQ-9)",
+    "alsoGad7": "Also take the anxiety questions (GAD-7)",
+    "whoFollowUp": "Answer questions about mood and anxiety",
+    "whoFollowUpPhq9": "Mood (PHQ-9)",
+    "whoFollowUpGad7": "Anxiety (GAD-7)",
+    "whoHome": "Back to home",
+    "notFound": "We could not find that check-in on this phone.",
+    "unverified": "The wording of these questions is not verified, so treat this score with care.",
+    "bands": {
+      "minimal": "Minimal",
+      "mild": "Mild",
+      "moderate": "Moderate",
+      "moderately_severe": "Moderately severe",
+      "severe": "Severe"
+    }
+  },
+  "clinicalCopy": {
+    "phq9": {
+      "minimal": "Your answers suggest few or no low-mood symptoms at the moment. Keep an eye on how you feel and check in again in a few weeks.",
+      "mild": "Your answers suggest some low-mood symptoms. Many people feel this way at times, and simple self-help steps often help.",
+      "moderate": "Your answers suggest low mood at a level where talking to a trained professional, such as a family doctor, usually helps.",
+      "moderately_severe": "Your answers suggest low mood that is affecting your days quite a lot. Talking to a trained professional soon is recommended.",
+      "severe": "Your answers suggest low mood that is affecting your days a great deal. Talking to a specialist soon is recommended."
+    },
+    "gad7": {
+      "minimal": "Your answers suggest few or no worry symptoms at the moment. Keep an eye on how you feel and check in again in a few weeks.",
+      "mild": "Your answers suggest some worry or anxiety symptoms. Many people feel this way at times, and simple self-help steps often help.",
+      "moderate": "Your answers suggest anxiety at a level where talking to a trained professional usually helps.",
+      "severe": "Your answers suggest anxiety that is affecting your days a great deal. Talking to a trained professional soon is recommended."
+    },
+    "who5": {
+      "low": "Your wellbeing score is lower than usual. A score on its own does not tell us why. Two short sets of questions about mood and anxiety can help you see more.",
+      "typical": "Your wellbeing score is in the range most people report. You can still answer the mood or anxiety questions if you want to."
+    },
+    "doesNotMean": "This is a screening questionnaire, not a diagnosis. Only a clinician can diagnose, and many things can raise a score for a while."
+  },
+  "checkIns": {
+    "title": "Your check-ins",
+    "empty": "No check-ins yet. A 2-minute check-in helps you notice changes early.",
+    "view": "View result",
+    "start": "Start a check-in"
+  },
+  "options": {
+    "title": "Support options",
+    "heading": "Support that fits you",
+    "intro": "Lightest effective option first. You choose.",
+    "planLabel": "Your health plan",
+    "planNote": "Coverage shown is indicative. Check with your insurer before booking.",
+    "indicative": "Indicative only — verify with your insurer",
+    "coverageTitle": "What your plan likely pays for",
+    "count": "{count, plural, one {# option} other {# options}} near {region}",
+    "sampleServices": "Sample services",
+    "sampleData": "Sample data",
+    "bestMatch": "Best match",
+    "currentSupport": "Your current support",
+    "wait": "Indicative wait",
+    "waitDays": "{days, plural, =0 {No wait} one {About # day} other {About # days}}",
+    "why": "Why this fits:",
+    "toCheck": "To check: {items}",
+    "promise": "We'll check you're seen within {days, plural, one {# day} other {# days}}.",
+    "choose": "Choose this",
+    "chooseOther": "Choose",
+    "showOther": "Show other options",
+    "hideOther": "Hide other options",
+    "prefsTitle": "Your preferences (all optional)",
+    "prefsHint": "These stay on this phone. They only change the order of the options.",
+    "anyPreference": "No preference",
+    "language": "Language of care",
+    "gender": "Clinician gender",
+    "modality": "In person or tele",
+    "region": "Region",
+    "timeOfDay": "Time of day",
+    "timeOfDayHint": "Saved with your preferences. The sample directory has no times, so it does not change the order yet.",
+    "loading": "Loading the sample directory…",
+    "unavailable": "The sample directory could not be loaded. Check your connection and try again.",
+    "fromCopy": "Showing the copy saved on this phone.",
+    "noOptions": "No options were found in the sample directory.",
+    "savedTitle": "Saved on this phone",
+    "savedBody": "Nothing was shared. You can come back and choose a different option at any time.",
+    "savedHome": "Back to home",
+    "storageUnavailable": "This browser cannot keep your choices private on this phone, so options are switched off. If you need help now, tap Help now.",
+    "fit": {
+      "scorePhq9": "your mood score is {total}",
+      "scoreGad7": "your anxiety score is {total}",
+      "noScores": "you have no scores yet, so the lightest option comes first",
+      "bridge": "a way to get support while you wait for the main option",
+      "current": "you are on this support now",
+      "other": "another level of support you can choose"
+    },
+    "check": {
+      "insurance": "your plan",
+      "region": "location",
+      "language": "language",
+      "gender": "clinician gender",
+      "modality": "in person or tele"
+    },
+    "tier": {
+      "self_help": "Guided self-help",
+      "community": "Community support",
+      "tele": "Tele-mental health session",
+      "gp": "Family doctor trained in mental health",
+      "specialist": "Specialist mental health care"
+    },
+    "tierShort": {
+      "self_help": "Guided self-help",
+      "community": "Community support",
+      "tele": "Tele session",
+      "gp": "Primary care visit (PHC)",
+      "specialist": "Private therapy"
+    },
+    "insurance": {
+      "thiqa": "Thiqa",
+      "daman_basic": "Daman Basic",
+      "daman_enhanced": "Daman Enhanced",
+      "other_private": "Other private plan",
+      "not_sure": "Not sure"
+    },
+    "coverage": {
+      "covered": "Likely covered",
+      "copay": "Co-pay likely",
+      "pay_and_claim": "Pay and claim",
+      "unknown": "Not known"
+    },
+    "modalityValue": {
+      "in_person": "In person",
+      "tele": "Tele"
+    },
+    "languageName": {
+      "ar": "Arabic",
+      "en": "English",
+      "ur": "Urdu",
+      "hi": "Hindi",
+      "tl": "Tagalog",
+      "other": "Other"
+    },
+    "genderValue": {
+      "female": "Female",
+      "male": "Male",
+      "another": "Another"
+    },
+    "genderAvailable": {
+      "female": "Female clinician available",
+      "male": "Male clinician available",
+      "another": "Another gender available"
+    },
+    "regionName": {
+      "abu_dhabi_city": "Abu Dhabi city",
+      "al_ain": "Al Ain",
+      "al_dhafra": "Al Dhafra"
+    },
+    "timeName": {
+      "morning": "Morning",
+      "afternoon": "Afternoon",
+      "evening": "Evening"
+    }
+  },
+  "crisis": {
+    "heading": "You don't have to face this alone",
+    "body": "Some of your answers suggest you may be going through something very painful. Talking to someone now can help.",
+    "callSakina": "Call 800-SAKINA",
+    "sakinaDetail": "24/7 mental health support · Arabic and English",
+    "call998": "Call 998",
+    "call999": "Call 999",
+    "ambulance": "Ambulance",
+    "police": "Police",
+    "divider": "Or tell us how you are right now",
+    "callNow": "Call now",
+    "withSomeone": "I'm with someone safe",
+    "safeNow": "I'm safe right now — continue",
+    "offline": "This screen works without internet. If you're in immediate danger, call 999 or 998.",
+    "reachedTitle": "Did you reach someone?",
+    "reachedYes": "Yes, I spoke to someone",
+    "reachedNo": "Not yet",
+    "reachedThanks": "Thank you for telling us. It is good that you reached out. You can call again at any time.",
+    "reachedLater": "You can call again at any time. The numbers stay on this screen.",
+    "pinned": "Help now",
+    "manualBack": "Back",
+    "unsavedNote": "This phone could not save your choice. It will ask again if the app is reopened."
+  },
+  "settings": {
+    "title": "Privacy and your data",
+    "intro": "Everything you enter is stored on this phone, encrypted. Nothing is shared unless you choose to share it.",
+    "downloadTitle": "Download my data",
+    "downloadBody": "Copy your check-ins and choices as text you can keep.",
+    "download": "Show my data",
+    "copy": "Copy to clipboard",
+    "copied": "Copied.",
+    "copyFailed": "Could not copy. Select the text and copy it by hand.",
+    "dataLabel": "Your data",
+    "deleteTitle": "Delete everything",
+    "deleteBody": "Removes your check-ins, choices and the key that protects them from this phone. This cannot be undone.",
+    "delete": "Delete everything",
+    "deleteConfirm": "Delete everything from this phone? This cannot be undone.",
+    "deleteYes": "Yes, delete everything",
+    "deleteNo": "Keep my data",
+    "deleted": "Everything on this phone was deleted.",
+    "deleteFailed": "Deleting failed. Close other tabs of this app and try again.",
+    "unavailable": "This browser cannot keep data on this phone, so there is nothing stored here.",
+    "numbersTitle": "Crisis numbers",
+    "numbersBody": "800-SAKINA 800 725462, ambulance 998, police 999."
+  },
+  "consent": {
+    "title": "Share with a clinic",
+    "body": "Sharing a referral with a clinic is not available in this version yet. Your choice is kept on this phone and nothing has been shared.",
+    "back": "Back to options"
   },
   "ticket": {
     "heading": "Your referral",

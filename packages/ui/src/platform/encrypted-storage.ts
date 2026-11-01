@@ -7,7 +7,7 @@ const IV_BYTES = 12;
 /** What is stored for a value: a random IV and the AES-GCM ciphertext. */
 interface Envelope {
   v: 1;
-  iv: Uint8Array;
+  iv: Uint8Array<ArrayBuffer>;
   ct: ArrayBuffer;
 }
 

@@ -11,7 +11,7 @@ const config: NextConfig = {
   output: 'export',
   trailingSlash: true,
   images: { unoptimized: true },
-  transpilePackages: ['@mawsool/ui', '@mawsool/types'],
+  transpilePackages: ['@mawsool/ui', '@mawsool/types', '@mawsool/instruments', '@mawsool/rules'],
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL ?? `http://localhost:${process.env.API_PORT ?? '4000'}`,
   },

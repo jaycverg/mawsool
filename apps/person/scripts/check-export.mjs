@@ -17,7 +17,15 @@ if (!existsSync(out)) {
   process.exit(1);
 }
 
-for (const file of ['index.html', 'en/index.html', 'ar/index.html', 'en/ticket/index.html', 'ar/ticket/index.html', 'manifest.webmanifest', 'sw.js']) {
+for (const file of [
+  'index.html',
+  'en/index.html',
+  'ar/index.html',
+  ...['en', 'ar'].flatMap((l) => ['ticket', 'crisis', 'check-in', 'check-ins', 'result', 'options', 'settings', 'consent'].map((screen) => `${l}/${screen}/index.html`)),
+  'manifest.webmanifest',
+  'icon.svg',
+  'sw.js',
+]) {
   need(existsSync(resolve(out, file)), `missing out/${file}`);
 }
 
@@ -50,7 +58,9 @@ if (existsSync(resolve(out, 'sw.js'))) {
   if (precache) {
     need(typeof precache.version === 'string' && precache.version !== 'dev', 'sw.js precache version was not derived from the build');
     const urls = /** @type {string[]} */ (precache.urls);
-    for (const route of ['/', '/en/', '/ar/']) need(urls.includes(route), `precache is missing the page ${route}`);
+    for (const route of ['/', '/en/', '/ar/', ...['en', 'ar'].flatMap((l) => ['crisis', 'check-in', 'result'].map((screen) => `/${l}/${screen}/`))]) {
+      need(urls.includes(route), `precache is missing the page ${route}`);
+    }
     need(urls.some((u) => /^\/_next\/static\/.*\.css$/.test(u)), 'precache has no built stylesheet');
     need(urls.some((u) => /^\/_next\/static\/.*\.js$/.test(u)), 'precache has no built script');
     need(urls.some((u) => /latin-400-normal.*\.woff2$/.test(u)), 'precache has no Latin font');
@@ -71,6 +81,19 @@ need(stray.length === 0, 'out/ contains an api folder');
 // Self-hosted fonts: no request to a font CDN.
 const allHtml = [en, ar].join('\n');
 need(!/fonts\.(googleapis|gstatic)\.com/.test(allHtml), 'pages reference a font CDN');
+
+// The crisis screen ships with its numbers in the page itself, in both languages, so it opens offline from the cache.
+for (const [locale, call] of [['en', 'Call 800-SAKINA'], ['ar', 'اتصل بـ 800-SAKINA']]) {
+  const crisis = html(`${locale}/crisis/index.html`);
+  need(crisis.includes(call) && crisis.includes('800 725462') && crisis.includes('tel:998') && crisis.includes('tel:999'), `${locale} crisis page is missing its numbers`);
+}
+// A guarded screen's static page holds only the waiting state: no option or check-in content before the block is read.
+for (const locale of ['en', 'ar']) {
+  const options = html(`${locale}/options/index.html`);
+  need(options.includes('data-crisis-guard="checking"') && !/data-tier=/.test(options), `${locale} options page must hold only the guard's waiting state`);
+}
+// A favicon is linked, so browsers never request /favicon.ico.
+need(/rel="icon"/.test(en) && /rel="icon"/.test(ar), 'pages must link a favicon');
 
 if (problems.length > 0) {
   for (const problem of problems) console.error(`export check: ${problem}`);
