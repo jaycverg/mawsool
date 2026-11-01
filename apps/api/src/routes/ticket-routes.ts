@@ -24,7 +24,7 @@ import { facilityScopedTicket } from '../plugins/facility-scope';
 import { ownedTicket } from '../plugins/ownership';
 import { lastEvent, moveTicket } from '../tickets/events';
 import { issueTicket, personTicketView, type IssueResult, type TicketDeps } from '../tickets/service';
-import { evaluate, evaluateUnable } from '../tickets/transitions';
+import { evaluateUnable } from '../tickets/transitions';
 
 const Params = z.object({ id: z.uuid() });
 const Errors = { 400: ErrorResponseSchema, 403: ErrorResponseSchema, 404: ErrorResponseSchema, 409: ErrorResponseSchema, 410: ErrorResponseSchema };
