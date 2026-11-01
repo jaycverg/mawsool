@@ -3,6 +3,7 @@
 import { useLocale } from 'next-intl';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
+import { isBlocking } from '../lib/crisis';
 import { href, isGuardedPath } from '../lib/routes';
 import { getDevice } from '../lib/use-device';
 
@@ -30,7 +31,7 @@ export function CrisisGuard({ children }: { children: ReactNode }) {
     const check = async () => {
       let blocked = true; // failing safe: an unreadable block counts as blocked
       try {
-        blocked = (await getDevice().crisis.read()).status !== 'clear';
+        blocked = isBlocking(await getDevice().crisis.read());
       } catch {
         // Storage is unavailable; nothing can be matched without it, and the crisis screen needs none.
       }

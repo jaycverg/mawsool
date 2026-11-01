@@ -27,6 +27,14 @@ export type BlockState =
   /** The record could not be read. Guards treat this as blocked: failing safe means showing help. */
   | { status: 'unknown'; record: null };
 
+/**
+ * Whether a guarded screen must stay shut. Only a record that was read and says "clear" opens it: a block that is
+ * on, and a record that could not be read or is not a crisis record, both keep it shut.
+ */
+export function isBlocking(state: BlockState): boolean {
+  return state.status !== 'clear';
+}
+
 export const CLEAR_RECORD: CrisisRecord = { blocked: false, trigger: null, blockedAt: null, resolvedAt: null, resumeScreeningId: null, event: null };
 
 /** A write that reached storage is `saved`; one that did not is `failed`, and the change then lives in memory only. */

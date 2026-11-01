@@ -46,5 +46,9 @@
   {
     "id": "console-clean-and-favicon",
     "sentence": "Every person screen loads with no console error and its favicon answers 200"
+  },
+  {
+    "id": "tokens-at-phone-width",
+    "sentence": "Key screens hold the plan's tap-target, type and no-overflow rules at 390 px"
   }
 ]

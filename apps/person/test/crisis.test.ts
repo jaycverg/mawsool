@@ -1,7 +1,7 @@
 import { hasUnresolvedCrisis, match, selectRow } from '@mawsool/rules';
 import { CrisisEventSubmissionSchema, type Screening } from '@mawsool/types';
 import { describe, expect, it } from 'vitest';
-import { answerFiresCrisis, createCrisisStore } from '../lib/crisis';
+import { answerFiresCrisis, createCrisisStore, isBlocking } from '../lib/crisis';
 import { pendingEvents } from '../lib/crisis-outbox';
 import { loadScreenings, saveAnswer } from '../lib/screening-store';
 import { fixtureClock, memoryStorage } from './helpers/memory';
@@ -126,6 +126,19 @@ describe('the crisis block', () => {
     expect(state.status).toBe('blocked');
     expect(state.record!.resolvedAt).toBe(resolvedAt);
     expect(await pendingEvents(storage)).toHaveLength(2);
+  });
+});
+
+describe('isBlocking', () => {
+  it('keeps a guarded screen shut for a block that is on and for one that cannot be read, and opens it only for a clear record', async () => {
+    const { crisis, failures } = setup();
+    expect(isBlocking(await crisis.read())).toBe(false);
+    await crisis.raise(RAISE);
+    expect(isBlocking(await crisis.read())).toBe(true);
+    await crisis.resolve();
+    expect(isBlocking(await crisis.read())).toBe(false);
+    failures.read = true;
+    expect(isBlocking(await crisis.read())).toBe(true);
   });
 });
 

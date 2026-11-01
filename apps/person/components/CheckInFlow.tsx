@@ -44,12 +44,18 @@ export function CheckInFlow() {
 
   useEffect(() => {
     if (device === null || device === 'unavailable') return;
-    void loadScreenings(device.storage).then((all) => {
-      const draft = findDraft(all, instrument);
-      setAnswers(draft?.answers ?? []);
-      setScreeningId(draft?.id ?? null);
-      setIndex(draft?.answers.length ?? 0);
-    });
+    loadScreenings(device.storage).then(
+      (all) => {
+        const draft = findDraft(all, instrument);
+        setAnswers(draft?.answers ?? []);
+        setScreeningId(draft?.id ?? null);
+        setIndex(draft?.answers.length ?? 0);
+      },
+      () => {
+        setAnswers([]);
+        setFailed(true);
+      },
+    );
   }, [device, instrument]);
 
   const loaded = answers !== null;
