@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { z } from 'zod';
 import { API_URL } from '../lib/api';
 import { deviceNow } from '../lib/clock';
-import { followUpAt, followUpDue } from '../lib/day7';
+import { clinicCouldNotSee, followUpAt, followUpDue } from '../lib/day7';
 import { calendarDaysLeft, formatDate } from '../lib/format';
 import { href } from '../lib/routes';
 import { callServer, type ServerDeps } from '../lib/server';
@@ -206,6 +206,12 @@ function Ready({ t, lang, ticket, reads, all, savedWarning, notice, panel, setPa
         <p className="t-small text-muted" data-earlier>
           {t('earlier')} · <a className="inline-flex min-h-tap items-center font-semibold text-accent" href={href(lang, 'ticket', { id: earlier.id })}>{`${earlier.shortCode.slice(0, 2)}-${earlier.shortCode.slice(2)}`}</a>
         </p>
+      )}
+      {clinicCouldNotSee(ticket) && (
+        <section role="alert" className="flex flex-col gap-2 rounded-staff bg-warning px-3.5 py-3 text-warning-ink" data-prompt="unable">
+          <p className="text-[14px] font-semibold">{t('unablePrompt')}</p>
+          <button type="button" className="btn-primary" onClick={() => onReroute('unable_to_see')}>{t('findAnother')}</button>
+        </section>
       )}
       {ticket.state === 'overdue' && (
         <section role="alert" className="flex flex-col gap-2 rounded-staff bg-warning px-3.5 py-3 text-warning-ink" data-prompt="overdue">

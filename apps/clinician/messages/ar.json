@@ -1,4 +1,161 @@
 {
-  "meta": { "title": "موصول للأطباء", "description": "الإحالات الواردة إلى منشأتك." },
-  "home": { "heading": "الإحالات الواردة", "simulated": "بيانات محاكاة" }
+  "meta": {
+    "title": "موصول للأطباء",
+    "description": "الإحالات الواردة إلى منشأتك."
+  },
+  "home": {
+    "heading": "الإحالات الواردة",
+    "simulated": "بيانات محاكاة"
+  },
+  "nav": {
+    "label": "الطبيب",
+    "facility": "المنشأة",
+    "filters": "عرض التذاكر",
+    "open": "كل المفتوحة",
+    "incoming": "الواردة",
+    "acknowledged": "تم الاستلام",
+    "overdue": "المتأخرة",
+    "seen": "تمت المعاينة",
+    "logged": "كل سجل تفتحه يُدوَّن."
+  },
+  "queue": {
+    "label": "قائمة الانتظار",
+    "stateFilter": "الحالة",
+    "tierFilter": "الحاجة",
+    "allTiers": "كل الاحتياجات",
+    "ticket": "التذكرة",
+    "need": "الحاجة",
+    "beSeenBy": "تُعاين قبل",
+    "language": "اللغة",
+    "source": "المصدر",
+    "status": "الحالة",
+    "loading": "جارٍ تحميل القائمة…",
+    "empty": "لا توجد تذاكر تطابق هذا العرض.",
+    "showing": "عرض {shown} من {total}",
+    "failed": "تعذّر تحميل القائمة.",
+    "retry": "حاول مرة أخرى",
+    "open": "افتح هذه التذكرة",
+    "daysLeft": "{count, plural, =0 {تنتهي اليوم} one {بقي يوم} two {بقي يومان} few {بقيت # أيام} many {بقي # يومًا} other {بقي # يوم}}",
+    "daysLate": "{count, plural, one {تأخرت يومًا} two {تأخرت يومين} few {تأخرت # أيام} many {تأخرت # يومًا} other {تأخرت # يوم}}"
+  },
+  "state": {
+    "open": "كل المفتوحة",
+    "issued": "صدرت",
+    "acknowledged": "تم الاستلام",
+    "seen": "تمت المعاينة",
+    "overdue": "متأخرة",
+    "rerouted": "أُعيد توجيهها",
+    "remeasured": "أُعيد القياس",
+    "closed": "مغلقة",
+    "declined": "مرفوضة",
+    "withdrawn": "مسحوبة"
+  },
+  "tier": {
+    "self_help": "مساعدة ذاتية موجَّهة",
+    "community": "دعم مجتمعي",
+    "tele": "جلسة عن بُعد",
+    "gp": "طبيب أسرة",
+    "specialist": "رعاية متخصصة"
+  },
+  "language": {
+    "ar": "العربية",
+    "en": "الإنجليزية",
+    "ur": "الأردية",
+    "hi": "الهندية",
+    "tl": "التاغالوغية",
+    "other": "أخرى"
+  },
+  "source": {
+    "app": "تطبيق موصول",
+    "phc": "فحص المركز الصحي (تجريبي)",
+    "tamm": "تم (تجريبي)",
+    "school": "برنامج مدرسي (تجريبي)"
+  },
+  "detail": {
+    "heading": "تفاصيل التذكرة",
+    "none": "اختر تذكرة لعرضها.",
+    "loading": "جارٍ فتح التذكرة…",
+    "failed": "تعذّر فتح التذكرة.",
+    "retry": "حاول مرة أخرى",
+    "notFound": "لم يتم العثور على هذه التذكرة.",
+    "withdrawn": "سحبها الشخص",
+    "withdrawnBody": "أنهى الشخص المشاركة. لا يُحتفظ لهذه العيادة بأي شيء عن هذه التذكرة.",
+    "referred": "أُحيل في {referred} · تُعاين قبل {deadline} · مستوى {tier}",
+    "notice": "الشخص هو من اختار ما تراه أدناه. العناصر التي لم يشاركها مُعلَّمة.",
+    "notShared": "لم يشاركها الشخص",
+    "nothingShared": "لم تتم مشاركة أي شيء مع هذه التذكرة سوى التذكرة نفسها.",
+    "noneToShow": "لم تتم إضافة شيء.",
+    "summaryTitle": "ملخص الإحالة",
+    "noSummary": "لا يوجد ملخص مع هذه التذكرة.",
+    "scoresTitle": "درجات الفحص",
+    "trajectoryTitle": "المسار",
+    "conditionsTitle": "حالات أبلغ عنها الشخص",
+    "conditionLine": "{name} (أبلغ عنها الشخص)",
+    "preferencesTitle": "التفضيلات",
+    "noteTitle": "ملاحظة الشخص",
+    "instrument": {
+      "who5": "الرفاه (WHO-5)",
+      "phq9": "الاكتئاب (PHQ-9)",
+      "gad7": "القلق (GAD-7)"
+    },
+    "scoreLine": "{instrument}: {total}",
+    "trajectoryLine": "{instrument}: من {from} إلى {to}",
+    "trajectoryChart": "{instrument} من {from} إلى {to}",
+    "band": {
+      "minimal": "طفيف",
+      "mild": "خفيف",
+      "moderate": "متوسط",
+      "moderately_severe": "متوسط إلى شديد",
+      "severe": "شديد"
+    },
+    "pref": {
+      "language": "اللغة: {value}",
+      "clinicianGender": "مقدّم الرعاية: {value}",
+      "modality": "الزيارة: {value}",
+      "region": "المنطقة: {value}",
+      "timeOfDay": "وقت اليوم: {value}"
+    },
+    "gender": {
+      "female": "أنثى",
+      "male": "ذكر",
+      "another": "آخر"
+    },
+    "modality": {
+      "in_person": "حضوري",
+      "tele": "عن بُعد"
+    },
+    "region": {
+      "abu_dhabi_city": "مدينة أبوظبي",
+      "al_ain": "العين",
+      "al_dhafra": "الظفرة"
+    },
+    "timeOfDay": {
+      "morning": "صباحاً",
+      "afternoon": "بعد الظهر",
+      "evening": "مساءً"
+    },
+    "acknowledge": "تأكيد الاستلام",
+    "markSeen": "تمت المعاينة",
+    "unable": "تعذّرت المعاينة",
+    "unableTitle": "لماذا تعذّر عليك معاينة هذا الشخص؟",
+    "unableConfirm": "أبلغ الشخص",
+    "cancel": "إلغاء",
+    "unableReason": {
+      "could_not_reach": "تعذّر الوصول إليه",
+      "no_capacity": "لا يوجد مكان في العيادة",
+      "not_eligible": "لا يناسب هذه العيادة",
+      "wrong_service": "أُحيل إلى خدمة غير مناسبة",
+      "other": "سبب آخر"
+    },
+    "unableStanding": "أبلغتَ الشخص أنه تعذّر عليك معاينته ({reason}). طُلب منه اختيار خيار آخر.",
+    "noActions": "لا يوجد إجراء متاح لتذكرة في هذه الحالة.",
+    "actionFailed": "لم تتم العملية. حاول مرة أخرى.",
+    "actionChanged": "تغيّرت التذكرة. تم تحديثها.",
+    "copyFhir": "نسخ حزمة FHIR R4",
+    "exportLabel": "تصدير جاهز لملفي — لم يُرسل",
+    "exportShown": "حزمة FHIR R4",
+    "copied": "تم النسخ إلى الحافظة.",
+    "copyFailed": "الحزمة معروضة أدناه. انسخها من هناك.",
+    "exportFailed": "تعذّر إنشاء التصدير."
+  }
 }

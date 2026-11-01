@@ -17,11 +17,14 @@ export default async function SignInPage({ params }: { params: Promise<{ locale:
       <StaffSignInPage
         apiUrl={process.env.NEXT_PUBLIC_API_URL ?? ''}
         allowedRoles={['clinician']}
+        homeHref={`/${locale}/`}
         labels={{
           heading: t('heading'),
           action: t('action'),
           signingIn: t('signingIn'),
           signedIn: t('signedIn'),
+          notSaved: t('notSaved'),
+          continue: t('continue'),
           failed: t('failed'),
           wrongApp: t('wrongApp'),
           missingToken: t('missingToken'),

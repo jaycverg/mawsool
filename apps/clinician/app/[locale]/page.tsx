@@ -1,20 +1,19 @@
 import { hasLocale } from 'next-intl';
-import { getTranslations, setRequestLocale } from 'next-intl/server';
+import { setRequestLocale } from 'next-intl/server';
 import { notFound } from 'next/navigation';
+import { Suspense } from 'react';
 import { LOCALES } from '@mawsool/ui';
+import { QueueScreen } from '../../components/QueueScreen';
 
+/** The staff home is the incoming queue. It reads the tab's session in the browser and sends the person to sign-in without one. */
 export default async function HomePage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale } = await params;
   if (!hasLocale(LOCALES, locale)) notFound();
   setRequestLocale(locale);
-  const t = await getTranslations('home');
 
   return (
-    <main className="mx-auto flex max-w-5xl flex-col gap-3 p-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="t-h1 flex-1">{t('heading')}</h1>
-        <span className="t-label rounded-chip bg-mock px-2.5 py-1 font-semibold text-mock-ink">{t('simulated')}</span>
-      </div>
-    </main>
+    <Suspense>
+      <QueueScreen />
+    </Suspense>
   );
 }

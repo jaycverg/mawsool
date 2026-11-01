@@ -48,6 +48,62 @@ export function storeStaffSession(storage: Pick<Storage, 'setItem'> | undefined,
 }
 
 /**
+ * The staff session kept in this tab, if there is one that is still valid: well formed and not past its expiry. A
+ * stored value that does not parse, or has expired, is treated as no session. The server decides every request anyway;
+ * this only spares a screen from asking with a token it already knows is dead.
+ */
+export function readStaffSession(storage: Pick<Storage, 'getItem'> | undefined, now: Date): Session | null {
+  try {
+    const raw = storage?.getItem(STAFF_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = SessionSchema.safeParse(JSON.parse(raw));
+    return parsed.success && Date.parse(parsed.data.expiresAt) > now.getTime() ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Forgets the session in this tab. */
+export function clearStaffSession(storage: Pick<Storage, 'removeItem'> | undefined): void {
+  try {
+    storage?.removeItem(STAFF_SESSION_KEY);
+  } catch {
+    // Storage that cannot be reached holds no session this page could have read either.
+  }
+}
+
+/** How a staff request ended. `unauthorized` means the session is no longer good and the person must sign in again. */
+export type StaffCall<T> = { status: 'ok'; httpStatus: number; body: T } | { status: 'unauthorized' } | { status: 'refused'; httpStatus: number; error: string | null } | { status: 'unreachable' };
+
+/**
+ * One call to the Ticket API with a staff session. A 401 is `unauthorized` (the caller drops the session and goes to
+ * sign-in), any other failure answer is `refused` with the API's error code (404 not found, 410 withdrawn, 409 conflict,
+ * ...), and a network failure is `unreachable`.
+ */
+export async function staffCall<T = unknown>(options: {
+  fetch: typeof fetch;
+  apiUrl: string;
+  session: Pick<Session, 'sessionToken'>;
+  method?: 'GET' | 'POST';
+  path: string;
+  body?: unknown;
+}): Promise<StaffCall<T>> {
+  try {
+    const response = await options.fetch(`${options.apiUrl}${options.path}`, {
+      method: options.method ?? 'GET',
+      headers: { authorization: `Bearer ${options.session.sessionToken}`, ...(options.body === undefined ? {} : { 'content-type': 'application/json' }) },
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    });
+    if (response.status === 401) return { status: 'unauthorized' };
+    const body: unknown = await response.json().catch(() => null);
+    if (!response.ok) return { status: 'refused', httpStatus: response.status, error: typeof (body as { error?: unknown } | null)?.error === 'string' ? (body as { error: string }).error : null };
+    return { status: 'ok', httpStatus: response.status, body: body as T };
+  } catch {
+    return { status: 'unreachable' };
+  }
+}
+
+/**
  * Asks the API to issue a sign-in link for an address. The API answers 202 whether or not the address belongs to a
  * staff user, so `accepted` says nothing about whether the address exists and the page must not either.
  * Anything else, including a network error, is `failed`.

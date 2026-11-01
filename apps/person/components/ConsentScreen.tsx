@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { API_URL } from '../lib/api';
 import { deviceNow } from '../lib/clock';
 import { loadDirectory } from '../lib/directory';
+import { loadInvite } from '../lib/invite';
 import { formatDate } from '../lib/format';
 import { loadPendingChoice, loadPreferences, type PendingChoice } from '../lib/prefs';
 import { href } from '../lib/routes';
@@ -26,6 +27,8 @@ interface Loaded {
   screenings: Screening[];
   base: BundleContent;
   sharing: Sharing;
+  /** The front-door invite this phone claimed and no ticket has used yet. A failure to read it is no invite: the ticket is then an app ticket. */
+  inviteId: string | null;
 }
 
 type Problem = 'offline' | 'rejected' | 'changed' | 'localFailed' | null;
@@ -72,7 +75,8 @@ export function ConsentScreen() {
       const directory = await loadDirectory({ storage: device.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, now: deviceNow });
       setSharing(saved);
       setConditionsText(saved.conditions.join('\n'));
-      setLoaded({ pending, service: directory?.services.find((service) => service.id === pending.serviceId) ?? null, screenings, base: buildContent(screenings, preferences, saved), sharing: saved });
+      const invite = await loadInvite(device.storage).catch(() => null);
+      setLoaded({ pending, service: directory?.services.find((service) => service.id === pending.serviceId) ?? null, screenings, base: buildContent(screenings, preferences, saved), sharing: saved, inviteId: invite?.inviteId ?? null });
     })().catch(() => setUnreadable(true));
   }, [device]);
 
@@ -103,7 +107,7 @@ export function ConsentScreen() {
   if (loaded === null || device === null) return <Shell lang={lang} t={t}>{null}</Shell>;
 
   const dev: Device = device;
-  const { pending, service, screenings } = loaded;
+  const { pending, service, screenings, inviteId } = loaded;
   const latestScores = (content.scores ?? []).map((score) => `${score.instrument === 'phq9' ? 'PHQ-9' : score.instrument === 'gad7' ? 'GAD-7' : 'WHO-5'} ${score.total}`).join(', ');
   const trend = content.trajectory ?? [];
   const summaryWords = summary ? wordCount(summary.text) : 0;
@@ -180,6 +184,7 @@ export function ConsentScreen() {
         summaryRequestId: summary ? pending.requestId : null,
         summaryBuiltFrom: summary?.draftedFrom ?? [],
         language: content.preferences?.language ?? lang,
+        inviteId,
         now: deviceNow,
       });
       if (outcome.status === 'sent') {

@@ -98,6 +98,8 @@ describe('StaffSignIn page', () => {
     action: 'Sign in',
     signingIn: 'Signing in',
     signedIn: 'Signed in',
+    notSaved: 'Not saved',
+    continue: 'Continue',
     failed: 'Link failed',
     wrongApp: 'Wrong app',
     missingToken: 'Open your link',
@@ -107,7 +109,7 @@ describe('StaffSignIn page', () => {
     requestFailed: 'Not sent',
   };
   const html = (token: string | null) =>
-    renderToStaticMarkup(<StaffSignIn token={token} apiUrl="http://api.test" allowedRoles={['clinician']} labels={labels} />);
+    renderToStaticMarkup(<StaffSignIn token={token} apiUrl="http://api.test" allowedRoles={['clinician']} labels={labels} homeHref="/en/" />);
 
   it('shows a sign-in button, and does not use the link on load', () => {
     const markup = html('tok');
