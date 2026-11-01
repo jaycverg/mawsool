@@ -213,7 +213,12 @@ function InsurancePanel({ t, insurance, onChange }: { t: Translate; insurance: I
         ))}
       </select>
       <span className="text-[13px] leading-[18px] text-muted">{t('planNote')}</span>
-      <h2 className="mt-1 text-[13px] font-semibold text-muted">{t('coverageTitle')}</h2>
+      <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-[13px] font-semibold text-muted">{t('coverageTitle')}</h2>
+        <span className="inline-flex whitespace-nowrap rounded-chip bg-mock px-2 py-[3px] text-[12px] font-semibold text-mock-ink" data-sample-insurance>
+          {t('sampleInsurance')}
+        </span>
+      </div>
       <dl className="m-0 flex flex-col gap-1 text-[14px]">
         {TIERS.map((tier) => (
           <div key={tier} className="flex justify-between gap-3" data-coverage-row={tier}>

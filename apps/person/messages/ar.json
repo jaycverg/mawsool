@@ -126,6 +126,7 @@
     "count": "{count, plural, one {خيار واحد} two {خياران} few {# خيارات} many {# خياراً} other {# خيار}} في {region}",
     "sampleServices": "خدمات نموذجية",
     "sampleData": "بيانات نموذجية",
+    "sampleInsurance": "جدول تأمين نموذجي",
     "bestMatch": "الأنسب لك",
     "currentSupport": "دعمك الحالي",
     "wait": "مدة الانتظار التقريبية",

@@ -93,7 +93,7 @@ export function AdminPanel({ session, signOut }: { session: Session; signOut: ()
       <p className="t-body text-muted">{t('intro')}</p>
 
       <section aria-label={t('clock.heading')} className={panel} data-section="clock">
-        <h2 className="text-[17px] font-semibold">{t('clock.heading')}</h2>
+        <h2 className="text-[17px] font-bold">{t('clock.heading')}</h2>
         {clock.k === 'loading' && <p role="status" className="t-body text-muted">{t('clock.loading')}</p>}
         {clock.k === 'failed' && (
           <p role="alert" className="t-body" data-clock-state="failed">{t('clock.failed')}</p>
@@ -116,7 +116,7 @@ export function AdminPanel({ session, signOut }: { session: Session; signOut: ()
       </section>
 
       <section aria-label={t('reset.heading')} className={panel} data-section="reset">
-        <h2 className="text-[17px] font-semibold">{t('reset.heading')}</h2>
+        <h2 className="text-[17px] font-bold">{t('reset.heading')}</h2>
         <p className="t-body">{t('reset.warning')}</p>
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" className="btn-primary" disabled={!enabled} onClick={() => void doReset()} data-reset>
@@ -128,7 +128,7 @@ export function AdminPanel({ session, signOut }: { session: Session; signOut: ()
       </section>
 
       <section aria-label={t('personas.heading')} className={panel} data-section="personas">
-        <h2 className="text-[17px] font-semibold">{t('personas.heading')}</h2>
+        <h2 className="text-[17px] font-bold">{t('personas.heading')}</h2>
         <p className="t-body">{t('personas.noura')}</p>
         {reset ? (
           <div className="flex flex-col gap-2" data-noura>
@@ -145,7 +145,7 @@ export function AdminPanel({ session, signOut }: { session: Session; signOut: ()
       </section>
 
       <section aria-label={t('crisis.heading')} className={`${panel} overflow-x-auto`} data-section="crisis-numbers">
-        <h2 className="text-[17px] font-semibold">{t('crisis.heading')}</h2>
+        <h2 className="text-[17px] font-bold">{t('crisis.heading')}</h2>
         <table className="w-full border-collapse text-[14px]">
           <thead>
             <tr className="text-start text-[12px] uppercase tracking-[0.5px] text-muted">

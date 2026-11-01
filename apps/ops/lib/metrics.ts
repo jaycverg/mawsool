@@ -66,7 +66,10 @@ export async function loadDashboard(session: Pick<Session, 'sessionToken'>, filt
   return { status: 'ok', data: { funnel: parsed.funnel.data, timeliness: parsed.timeliness.data, crisis: parsed.crisis.data, equity: parsed.equity.data } };
 }
 
-/** Latin digits in both languages, like the boards. */
+/** The days a tier's hand-off is usually promised within (the spec's stepped-care table); a ticket may carry the other window. */
+export const TIER_TARGET_DAYS = { community: 14, tele: 7, gp: 7, specialist: 14 } as const;
+
+/** Whole numbers and Latin digits in both languages, like the boards (67%, 7 days). The API keeps its precision. */
 export function numberFormat(lang: 'ar' | 'en'): Intl.NumberFormat {
-  return new Intl.NumberFormat(lang === 'ar' ? 'ar-AE-u-nu-latn' : 'en-GB', { maximumFractionDigits: 1 });
+  return new Intl.NumberFormat(lang === 'ar' ? 'ar-AE-u-nu-latn' : 'en-GB', { maximumFractionDigits: 0 });
 }

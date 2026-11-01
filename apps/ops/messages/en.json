@@ -46,7 +46,7 @@
       "loopClosed": "Loop closed (seen)",
       "loopClosedOf": "{count} of {of} tickets",
       "withinTarget": "Seen within target",
-      "withinTargetOf": "{count} of {of} tickets that reached seen or went overdue; the target is the window each ticket promised (7 or 14 days)",
+      "withinTargetOf": "{count} of {of} tickets, target 7 or 14 days",
       "medianSeen": "Median time to seen",
       "medianSeenDays": "{days} days",
       "medianSeenP90": "90th percentile {days} days",
@@ -100,10 +100,11 @@
       },
       "n": "n={count}",
       "overall": "Overall",
-      "flagBelow": "Flag: {group} tickets close {points} points below the {overall}% overall rate (black line).",
-      "flagAbove": "Flag: {group} tickets close {points} points above the {overall}% overall rate (black line).",
+      "flagBelow": "{group} tickets close {points} points below the {overall}% overall rate (black line).",
+      "flagAbove": "{group} tickets close {points} points above the {overall}% overall rate (black line).",
       "basis": "Per ticket: closed means the ticket reached seen or later. Groups come from the buckets people chose to share, language included; a ticket whose person shared none is in \"No answer given\". A gap of 10 points or more from the overall rate is flagged.",
-      "medianSeen": "median {days} days to seen"
+      "medianSeen": "median {days} days to seen",
+      "flagLabel": "Flag:"
     },
     "timeliness": {
       "label": "Timeliness",
@@ -124,7 +125,8 @@
       "waitHeading": "Indicative wait by service",
       "waitNote": "The listed waits of the sample directory. These are mock services, not measurements.",
       "waitDays": "{days} days",
-      "sample": "Sample"
+      "sample": "Sample",
+      "target": "Target"
     },
     "safety": {
       "label": "Safety",

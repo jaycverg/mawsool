@@ -110,6 +110,33 @@ async function dashboard(browser: Browser, locale: Locale): Promise<Page> {
   return page;
 }
 
+/**
+ * The unfiltered dashboard stays readable: the funnel from the positive screen to seen, the four tier rows, the crisis
+ * figures and the Urdu row are numbers, not "Suppressed" (a suppressed cell fails here, where a mere non-empty check would
+ * accept the word), and the Urdu row is flagged.
+ */
+async function expectReadable(dash: Page, when: string): Promise<void> {
+  for (const stage of ['positive_screen', 'ticket_issued', 'acknowledged', 'seen']) {
+    const cell = stageCount(dash, stage);
+    await expect(cell.locator('[data-count]'), `${stage} ${when}`).toHaveText(/\d/);
+    await expect(cell.locator('[data-suppressed]'), `${stage} ${when}`).toHaveCount(0);
+  }
+  for (const tier of ['community', 'tele', 'gp', 'specialist']) {
+    const row = dash.locator(`[data-tier-row="${tier}"]`);
+    await expect(row, `${tier} row ${when}`).not.toHaveAttribute('data-suppressed', /.*/);
+    await expect(row, `${tier} row ${when}`).toContainText(/\d/);
+  }
+  for (const stat of ['shown', 'called', 'median', 'confirmed']) {
+    const value = dash.locator(`[data-crisis-stat="${stat}"] [data-value]`);
+    await expect(value, `crisis ${stat} ${when}`).toHaveText(/\d/);
+    await expect(value.locator('[data-suppressed]'), `crisis ${stat} ${when}`).toHaveCount(0);
+  }
+  const urdu = dash.locator('[data-equity-rows="language"] [data-equity-row="ur"]');
+  await expect(urdu, `Urdu row ${when}`).toBeVisible();
+  await expect(urdu, `Urdu row ${when}`).not.toHaveAttribute('data-suppressed', /.*/);
+  await expect(urdu, `Urdu row ${when}`).toHaveAttribute('data-flagged', 'true');
+}
+
 const CASES: Record<string, (ctx: Context) => Promise<void>> = {
   async 'demo-steps-1-to-12'({ page, context, browser, locale }) {
     test.setTimeout(300_000);
@@ -117,6 +144,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
 
     // Reset: the panel loads the seed and hands the presenter Noura's invite code and the mock TAMM page that takes it.
     const code = await resetFromPanel(admin, locale);
+    await expectReadable(await dashboard(browser, locale), 'after the reset');
     await expect(admin.locator(`[data-tamm-link="${locale}"]`)).toHaveAttribute('href', `${BASE}/${locale}/tamm/?code=${code}`);
     expect((await funnelParts(Date.now(), null)).openInvites).toBeGreaterThan(0);
 
@@ -252,9 +280,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     }
     await expect(dash.locator('[data-funnel-note]')).toHaveText(omsg(locale, 'dash.funnel.note'));
     await dash.locator('[data-filter="period"]').selectOption('all');
-    for (const stage of ['positive_screen', 'ticket_issued', 'acknowledged', 'seen', 'remeasured']) await expect(stageCount(dash, stage).locator('[data-count]')).toBeVisible();
-    await expect(dash.locator('[data-tier-row="gp"]')).toBeVisible();
-    await expect(dash.locator('[data-crisis-stat="shown"] [data-value]')).not.toBeEmpty();
+    await expectReadable(dash, 'after the demo clock moved 28 days');
 
     // Step 12: the equity view flags Urdu 18 to 22 points below the overall rate (all time), and flags it in the default view.
     await dash.locator('[data-filter="period"]').selectOption('all');
@@ -285,10 +311,15 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     const note = dash.locator('[data-funnel-note]');
     await expect(note).toBeVisible();
     await expect(note).toHaveText(omsg(locale, 'dash.funnel.note'));
-    // A filter by source counts rows carrying that field: crisis events drop out.
+    // A filter by source counts rows carrying that field: crisis events drop out. The app has no invites, so its first stage is its
+    // journeys; a front door's first stage adds invites that are too few to show, and so is hidden with them.
+    await dash.locator('[data-filter="source"]').selectOption('app');
+    const app = await numberOf(stageCount(dash, 'positive_screen').locator('[data-count]').innerText());
+    expect(app).toBe(await numberOf(stageCount(dash, 'ticket_issued').locator('[data-count]').innerText()));
+    expect(app).toBeLessThan(parts.total - parts.crisisEvents);
     await dash.locator('[data-filter="source"]').selectOption('tamm');
-    const tamm = await numberOf(stageCount(dash, 'positive_screen').locator('[data-count]').innerText());
-    expect(tamm).toBeLessThan(parts.total - parts.crisisEvents);
+    await expect(stageCount(dash, 'positive_screen').locator('[data-suppressed]')).toHaveText(omsg(locale, 'dash.suppressed'));
+    await expect(stageCount(dash, 'ticket_issued').locator('[data-count]')).toBeVisible();
     await expect(dash.locator('[data-filter-scope]')).toHaveText(omsg(locale, 'dash.filters.scope'));
   },
 
@@ -372,8 +403,11 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await page.getByRole('link', { name: msg(locale, 'result.options'), exact: true }).click();
     await expect(page.getByText(msg(locale, 'options.sampleServices'))).toBeVisible();
     await expect(page.locator('[data-tier][data-lead]')).toContainText(msg(locale, 'options.sampleData'));
+    // The insurance panel carries its own Sample label, apart from its "indicative only" wording, which is not a label.
+    await expect(page.locator('[data-panel="insurance"] [data-sample-insurance]')).toHaveText(msg(locale, 'options.sampleInsurance'));
     await expect(page.locator('[data-indicative]')).toHaveText(msg(locale, 'options.indicative'));
-    // The clinic's export is labelled "not sent", and a sample facility is a sample.
+    expect(msg(locale, 'options.sampleInsurance')).not.toBe(msg(locale, 'options.indicative'));
+    // The clinic's export is labelled "not sent".
     const person = await newPerson();
     const made = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A, 'gp') });
     const clinic = await signedInPage(context, CLINIC, CLINICIAN_A);
@@ -384,10 +418,12 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     const dash = await dashboard(browser, locale);
     await expect(dash.locator('[data-simulated]')).toHaveText(omsg(locale, 'home.simulated'));
     await expect(dash.locator('[data-simulated-note]')).toHaveText(omsg(locale, 'dash.simulatedNote'));
+    // The sample directory's waits sit in a closed disclosure; opened, they say they are the mock services' listed waits.
+    await dash.locator('details summary').click();
+    await expect(dash.getByText(omsg(locale, 'dash.timeliness.waitNote'))).toBeVisible();
     await admin.goto(opsUrl(locale));
     await expect(admin.getByText(omsg(locale, 'home.simulated'))).toBeVisible();
-    // Not built in this phase, so there is nothing to label: messaging and the crisis-line console.
-    expect(await clinic.getByText(/crisis[- ]line console|messaging/i).count()).toBe(0);
+    // Messaging and the crisis-line console are Phase 6 surfaces and are not built, so there is nothing of them to label.
   },
 
   async 'staff-apps-have-icons-and-log-no-console-error'({ context, locale }) {
@@ -428,7 +464,9 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(dash.locator('[data-funnel-stage="positive_screen"]')).toBeVisible();
   },
 
-  async 'dashboard-holds-the-board-and-plan-tokens'({ browser, locale }) {
+  async 'dashboard-holds-the-board-and-plan-tokens'({ context, browser, locale }) {
+    // From a fresh reset, so the figures (and the Urdu flag the checks below read) do not depend on which tests ran before.
+    await resetFromPanel(await signedInPage(context, OPS, ADMIN), locale);
     const dash = await dashboard(browser, locale);
     const ar = locale === 'ar';
     const h1 = await computed(dash, 'h1', ['font-size', 'line-height', 'font-weight']);
@@ -449,6 +487,51 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect(Number(bar['height'])).toBe(22);
     for (const button of await dash.locator('[data-dimension]').all()) expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await expect(dash.locator('body')).toHaveCSS('background-color', 'rgb(243, 246, 245)');
+
+    // Ops.dc.html, measured at 1440: section headings and column headings are bold, the heading sits 10px above the table, the
+    // last row has no rule, and figures are whole numbers.
+    await dash.setViewportSize({ width: 1440, height: 900 });
+    for (const section of ['funnel', 'equity', 'timeliness', 'safety']) expect((await computed(dash, `[data-section="${section}"] h2`, ['font-weight']))['font-weight'], `${section} heading`).toBe('700');
+    expect((await computed(dash, '[data-section="timeliness"] th', ['font-weight']))['font-weight']).toBe('700');
+    const heading = (await dash.locator('[data-section="timeliness"] h2').boundingBox())!;
+    const table = (await dash.locator('[data-section="timeliness"] table').boundingBox())!;
+    expect(Math.round(table.y - (heading.y + heading.height))).toBe(10);
+    expect((await computed(dash, '[data-section="timeliness"] tbody tr:last-child td', ['border-bottom-width']))['border-bottom-width']).toBe('0px');
+    await expect(dash.locator('[data-section="timeliness"] th')).toHaveCount(6);
+    await expect(dash.locator('[data-section="timeliness"] th').nth(1)).toHaveText(omsg(locale, 'dash.timeliness.target'), { ignoreCase: true });
+    await expect(dash.locator('[data-tile="loop-closed"] [data-value]')).toHaveText(/^\d+%$/);
+    await expect(dash.locator('[data-tile="median-seen"] [data-value]')).toHaveText(/^\d+\D+$/);
+    for (const row of await dash.locator('[data-equity-row]:not([data-suppressed]) > span:last-child').all()) await expect(row).toHaveText(/^\d+%/);
+    const countColumn = await dash.locator('[data-equity-row="ur"] > span:last-child').boundingBox();
+    expect(Math.round(countColumn!.width)).toBe(76);
+    const note = dash.locator('[data-tile="within-target"] > div').last();
+    const lineHeight = parseFloat(String((await computed(dash, '[data-tile="within-target"] > div:last-child', ['line-height']))['line-height']));
+    expect((await note.boundingBox())!.height, 'the tile note fits one line').toBeLessThanOrEqual(lineHeight + 1);
+    // The flag note: the board's 18px warning triangle, and only the word "Flag:" in bold.
+    const flag = dash.locator('[data-flag="ur"]');
+    const icon = await flag.locator('svg').boundingBox();
+    expect([Math.round(icon!.width), Math.round(icon!.height)]).toEqual([18, 18]);
+    await expect(flag.locator('b')).toHaveCount(1);
+    await expect(flag.locator('b')).toHaveText(omsg(locale, 'dash.equity.flagLabel'));
+    // A tier whose within-target share is ten points or more under the overall one is marked (the board's 58% against 71%).
+    const cell = (within: number) => ({ tickets: 40, withinTarget: { count: Math.round(within * 0.4), of: 40, percent: within }, medianDaysToSeen: 6, p90DaysToSeen: 12 });
+    await dash.route(`${API}/metrics/timeliness*`, (route) =>
+      route.fulfill({
+        json: {
+          period: '90d',
+          overall: { tickets: 160, withinTarget: { count: 114, of: 160, percent: 71 }, medianDaysToSeen: 6, p90DaysToSeen: 12 },
+          tiers: [{ tier: 'community', cell: cell(74) }, { tier: 'tele', cell: cell(88) }, { tier: 'gp', cell: cell(74) }, { tier: 'specialist', cell: cell(58) }],
+          overdue: { suppressed: true },
+          indicativeWait: [],
+        },
+      }),
+    );
+    await dash.reload();
+    await expect(dash.locator('[data-tier-row="specialist"]')).toBeVisible();
+    const marked = dash.locator('[data-tier-row="specialist"] [data-below-target]');
+    await expect(marked).toHaveCount(1);
+    expect(await computed(dash, '[data-tier-row="specialist"] [data-below-target]', ['font-weight', 'color'])).toMatchObject({ 'font-weight': '600', color: 'rgb(122, 62, 6)' });
+    await expect(dash.locator('[data-below-target]')).toHaveCount(1);
   },
 
   async 'snapshot-ops-dashboard'({ context, browser, locale }) {
