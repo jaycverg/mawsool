@@ -4,7 +4,7 @@ import { getMessages, getTranslations, setRequestLocale } from 'next-intl/server
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { LOCALES, htmlAttributes } from '@mawsool/ui';
-import { LanguageToggle } from '@mawsool/ui/components';
+import { AppHeader } from '@mawsool/ui/components';
 import '../globals.css';
 
 type Params = Promise<{ locale: string }>;
@@ -37,10 +37,7 @@ export default async function LocaleLayout({ children, params }: { children: Rea
     <html {...htmlAttributes(locale)}>
       <body className="min-h-dvh bg-ground font-sans text-ink">
         <NextIntlClientProvider locale={locale} messages={messages}>
-          <header className="flex items-center justify-between gap-3 border-b border-border bg-surface px-4 py-3">
-            <span className="t-body font-semibold">{t('appName')}</span>
-            <LanguageToggle locale={locale} ariaLabel={t('language')} />
-          </header>
+          <AppHeader locale={locale} appName={t('appName')} languageLabel={t('language')} />
           {children}
         </NextIntlClientProvider>
       </body>

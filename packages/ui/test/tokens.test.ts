@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { COLORS, CTA_HEIGHT_PX, RADII_PX, TAP_TARGET_PX, TYPE } from '../src';
+import { COLORS, CTA_HEIGHT_PX, PILL_RADII_PX, RADII_PX, TAP_TARGET_PX, TYPE } from '../src';
 
 const css = readFileSync(join(__dirname, '..', 'src', 'tokens.css'), 'utf8');
 const declared = (name: string) => new RegExp(`--${name}:\\s*([^;]+);`).exec(css)?.[1]?.trim();
@@ -80,5 +80,41 @@ describe('design tokens match the boards', () => {
 
   it('mirrors directional icons in right-to-left layouts', () => {
     expect(css).toMatch(/\[dir='rtl'\]\s*\.rtl-flip\s*{[^}]*scaleX\(-1\)/);
+  });
+
+  it('uses the boards\' pill radii: 22 px on 44 px controls and 26 px on the 52 px call to action', () => {
+    expect(PILL_RADII_PX).toEqual({ control: 22, cta: 26 });
+    expect(declared('radius-pill')).toBe('22px');
+    expect(declared('radius-cta')).toBe('26px');
+  });
+
+  const rule = (selector: string) => new RegExp(`${selector.replace(/[.[\]'()]/g, '\\$&')}\\s*{([^}]*)}`).exec(css)?.[1] ?? '';
+
+  it('styles the primary button as the board does: 52 px tall, radius 26, weight 600, 16 px, accent on white', () => {
+    const body = rule('.btn-primary');
+    expect(body).toMatch(/min-height:\s*var\(--spacing-cta\)/);
+    expect(body).toMatch(/border-radius:\s*var\(--radius-cta\)/);
+    expect(body).toMatch(/font-weight:\s*600/);
+    expect(body).toMatch(/font-size:\s*16px/);
+    expect(body).toMatch(/background:\s*var\(--color-accent\)/);
+  });
+
+  it('styles the language toggle as the board does: 44 px pill, 1 px border, ink text at weight 400', () => {
+    const body = rule('.lang-toggle');
+    expect(body).toMatch(/min-height:\s*var\(--spacing-tap\)/);
+    expect(body).toMatch(/border:\s*1px solid var\(--color-border\)/);
+    expect(body).toMatch(/border-radius:\s*var\(--radius-pill\)/);
+    expect(body).toMatch(/color:\s*var\(--color-ink\)/);
+    expect(body).toMatch(/font-weight:\s*400/);
+    expect(body).toMatch(/font-size:\s*14px/);
+    expect(body).toMatch(/padding:\s*0 12px/);
+    const arabicLabel = rule(".lang-toggle[lang='ar']");
+    expect(arabicLabel).toMatch(/font-size:\s*15px/);
+    expect(arabicLabel).toMatch(/padding:\s*0 14px/);
+  });
+
+  it('sets the wordmark at 700 weight: 18 px with -0.2 px tracking in English, 20 px in Arabic', () => {
+    expect(rule('.wordmark')).toMatch(/font-size:\s*18px[\s\S]*font-weight:\s*700[\s\S]*letter-spacing:\s*-0\.2px/);
+    expect(rule("html[lang='ar'] .wordmark")).toMatch(/font-size:\s*20px/);
   });
 });

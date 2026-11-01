@@ -28,8 +28,7 @@ export function LanguageToggle({ locale, ariaLabel, className }: LanguageToggleP
       hrefLang={target}
       aria-label={ariaLabel}
       className={
-        className ??
-        'tap inline-flex items-center justify-center rounded-input border border-border bg-surface px-3 t-body font-medium text-accent'
+        className ?? 'lang-toggle tap'
       }
       onClick={(event) => {
         event.preventDefault();
