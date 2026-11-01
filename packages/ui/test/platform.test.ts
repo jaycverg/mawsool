@@ -1,4 +1,4 @@
-import { IDBFactory } from 'fake-indexeddb';
+import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 import {
   InvalidPhoneNumberError,
@@ -31,6 +31,45 @@ describe('storage adapter (IndexedDB)', () => {
     await storage.set('other', 3);
     await storage.clear();
     expect(await storage.keys()).toEqual([]);
+  });
+
+  describe('a write that is accepted and then rolled back', () => {
+    /** Makes every call of `method` succeed as a request and then abort its transaction, as a commit-time failure does. */
+    function rollBackAfterSuccess(method: 'put' | 'delete' | 'clear') {
+      const original = IDBObjectStore.prototype[method] as (...args: unknown[]) => IDBRequest;
+      return vi.spyOn(IDBObjectStore.prototype, method as 'put').mockImplementation(function (this: IDBObjectStore, ...args: unknown[]) {
+        const request = original.apply(this, args);
+        request.addEventListener('success', () => this.transaction.abort());
+        return request;
+      } as never);
+    }
+
+    it('set rejects, because the value was not committed', async () => {
+      const storage = fresh();
+      await storage.set('k', 'before');
+      const spy = rollBackAfterSuccess('put');
+      await expect(storage.set('k', 'after')).rejects.toThrow();
+      spy.mockRestore();
+      expect(await storage.get('k')).toBe('before');
+    });
+
+    it('remove rejects, because the value is still there', async () => {
+      const storage = fresh();
+      await storage.set('k', 'kept');
+      const spy = rollBackAfterSuccess('delete');
+      await expect(storage.remove('k')).rejects.toThrow();
+      spy.mockRestore();
+      expect(await storage.get('k')).toBe('kept');
+    });
+
+    it('clear rejects, because nothing was removed', async () => {
+      const storage = fresh();
+      await storage.set('k', 'kept');
+      const spy = rollBackAfterSuccess('clear');
+      await expect(storage.clear()).rejects.toThrow();
+      spy.mockRestore();
+      expect(await storage.keys()).toEqual(['k']);
+    });
   });
 
   it('setIfAbsent stores a missing key and returns the value', async () => {
