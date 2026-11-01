@@ -12,6 +12,7 @@ export const RELIABLE_CHANGE = { phq9: 6, gad7: 4 } as const;
 export const DEPLOYMENT_TIME_ZONE = 'Asia/Dubai';
 export const DEPLOYMENT_UTC_OFFSET_MINUTES = 240;
 
+/** A score band. Selection tries rows most intensive first and uses only `min`; `max` documents the band. */
 export interface Range {
   min: number;
   max: number;

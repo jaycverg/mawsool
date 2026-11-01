@@ -1,7 +1,10 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { STEP_ROWS, hasUnresolvedCrisis, latestByInstrument, selectRow, type RowId } from '../src';
+import { STEP_ROWS, hasUnresolvedCrisis, isCompleteScreening, latestByInstrument, selectRow, type RowId } from '../src';
 import { gad7, phq9, screening } from './fixtures';
+
+const T1 = '2026-10-01T08:00:00+04:00';
+const T2 = '2026-10-02T08:00:00+04:00';
 
 /**
  * Independent restatement of the spec's stepped-care table, written as an if-chain from the spec text,
@@ -47,6 +50,37 @@ describe('selectRow', () => {
     expect(selectRow(history).phq9Total).toBe(6);
   });
 
+  it('puts a total above the instrument maximum on the top row, never on below 5', () => {
+    expect(selectRow([phq9(30)]).row.id).toBe('specialist_high');
+    expect(selectRow([gad7(22)]).row.id).toBe('specialist_high');
+    expect(selectRow([phq9(28), gad7(0)]).row.id).toBe('specialist_high');
+  });
+
+  it('ignores a total that is not a finite number rather than matching on it', () => {
+    expect(selectRow([screening('phq9', Number.NaN, T1, Array(9).fill(0))]).row.id).toBe('below_5');
+    expect(selectRow([screening('gad7', Number.POSITIVE_INFINITY, T1, Array(7).fill(0)), phq9(11)]).row.id).toBe('gp_or_tele');
+  });
+
+  it('skips an incomplete screening, so a half-finished check-in does not replace a finished one', () => {
+    const complete = phq9(18, T1);
+    const partial = screening('phq9', 3, T2, [1, 1, 1]);
+    expect(selectRow([complete, partial]).row.id).toBe('specialist_or_gp');
+    expect(selectRow([complete, partial]).phq9Total).toBe(18);
+    expect(selectRow([partial, complete]).row.id).toBe('specialist_or_gp');
+  });
+
+  it('treats an instrument with only incomplete screenings as having no score', () => {
+    expect(selectRow([screening('gad7', 19, T1, [3, 3])]).row.id).toBe('below_5');
+    expect(selectRow([screening('gad7', 19, T1, [3, 3])]).gad7Total).toBeNull();
+    expect(selectRow([screening('phq9', 25, T1, [])]).row.id).toBe('below_5');
+  });
+
+  it('counts an over-complete answer list as incomplete too', () => {
+    expect(isCompleteScreening(screening('phq9', 3, T1, Array(10).fill(0)))).toBe(false);
+    expect(isCompleteScreening(phq9(3))).toBe(true);
+    expect(isCompleteScreening(gad7(3))).toBe(true);
+  });
+
   it('has exactly one fallback row, last, and every other row has a range', () => {
     const fallbacks = STEP_ROWS.filter((row) => !row.phq9 && !row.gad7);
     expect(fallbacks.map((row) => row.id)).toEqual(['below_5']);
@@ -74,6 +108,21 @@ describe('latestByInstrument', () => {
     const first = gad7(9, '2026-10-01T08:00:00+04:00');
     const second = gad7(14, '2026-10-01T08:00:00+04:00');
     expect(latestByInstrument([first, second]).gad7).toBe(second);
+  });
+
+  it('never lets a screening with an unreadable date beat one with a readable date', () => {
+    const garbled = { ...phq9(20), takenAt: 'not a date' };
+    const valid = phq9(7, T1);
+    expect(latestByInstrument([garbled, valid]).phq9).toBe(valid);
+    expect(latestByInstrument([valid, garbled]).phq9).toBe(valid);
+    expect(selectRow([garbled, valid]).row.id).toBe('self_help_or_community');
+    expect(selectRow([valid, garbled]).row.id).toBe('self_help_or_community');
+  });
+
+  it('falls back to the later entry when no date can be read', () => {
+    const first = { ...phq9(20), takenAt: 'x' };
+    const second = { ...phq9(7), takenAt: 'y' };
+    expect(latestByInstrument([first, second]).phq9).toBe(second);
   });
 
   it('keeps instruments apart', () => {
@@ -106,6 +155,31 @@ describe('hasUnresolvedCrisis', () => {
   it('fires again for an answer given after the resolution', () => {
     const later = phq9(3, '2026-10-20T08:00:00+04:00', 1);
     expect(hasUnresolvedCrisis([item9, later], '2026-10-01T08:05:00+04:00')).toBe(true);
+  });
+
+  it('counts an incomplete screening for crisis detection even though row selection skips it', () => {
+    const partialCssrs = screening('cssrs', 1, T1, [1]);
+    expect(isCompleteScreening(partialCssrs)).toBe(false);
+    expect(hasUnresolvedCrisis([partialCssrs], null)).toBe(true);
+    expect(selectRow([partialCssrs]).row.id).toBe('below_5');
+  });
+
+  it('treats a stored item 9 flag as a trigger even when the answers are missing', () => {
+    const flagged = { ...screening('phq9', 0, T1, []), item9Flag: true };
+    expect(hasUnresolvedCrisis([flagged], null)).toBe(true);
+    const shortened = { ...screening('phq9', 4, T1, [0, 0, 0]), item9Flag: true };
+    expect(hasUnresolvedCrisis([shortened], null)).toBe(true);
+  });
+
+  it('lets a resolution cover a flagged screening, and fires again for a later flagged one', () => {
+    const flagged = { ...screening('phq9', 0, T1, []), item9Flag: true };
+    expect(hasUnresolvedCrisis([flagged], '2026-10-01T09:00:00+04:00')).toBe(false);
+    const later = { ...screening('phq9', 0, T2, []), item9Flag: true };
+    expect(hasUnresolvedCrisis([flagged, later], '2026-10-01T09:00:00+04:00')).toBe(true);
+  });
+
+  it('does not fire on a screening with no flag and no triggering answer', () => {
+    expect(hasUnresolvedCrisis([screening('phq9', 0, T1, [])], null)).toBe(false);
   });
 
   it('fails safe when a timestamp cannot be read', () => {
