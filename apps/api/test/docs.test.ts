@@ -53,3 +53,22 @@ describe('CORS', () => {
     }
   });
 });
+
+describe('GET /docs for the front-door hand-over', () => {
+  it('tells a front door which headers to sign and send, and what it gets back', async () => {
+    const testDb = await createTestDb();
+    const ctx = await createTestApp(testDb.db);
+    try {
+      const doc = (await ctx.app.inject({ method: 'GET', url: '/docs' })).json() as { paths: Record<string, Record<string, { parameters?: { name: string; in: string; required?: boolean }[]; responses: Record<string, unknown> }>> };
+      const post = doc.paths['/inbound/screens']!['post']!;
+      const headers = post.parameters!.filter((parameter) => parameter.in === 'header').map((parameter) => parameter.name).sort();
+      expect(headers).toEqual(['x-mawsool-nonce', 'x-mawsool-signature', 'x-mawsool-source', 'x-mawsool-timestamp']);
+      expect(Object.keys(post.responses).sort()).toEqual(['201', '400', '401']);
+      expect(JSON.stringify(doc.paths['/inbound/screens'])).toContain('claimUrl');
+      for (const path of ['/tickets', '/tickets/{id}/fhir', '/me/invites/claim']) expect(doc.paths[path], path).toBeDefined();
+    } finally {
+      await ctx.app.close();
+      await testDb.close();
+    }
+  });
+});

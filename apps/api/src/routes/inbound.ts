@@ -1,9 +1,11 @@
 import { ClaimInviteRequestSchema, ClaimedInviteSchema, ErrorResponseSchema, InboundScreenReceiptSchema, InboundScreenRequestSchema } from '@mawsool/types';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
+import { z } from 'zod';
 import type { Clock } from '../clock';
 import type { Db } from '../db/client';
 import { claimInvite, createInvite, formatInviteCode } from '../inbound/service';
+import { INBOUND_HEADERS } from '../inbound/signing';
 import { personIdOf, sendError } from '../plugins/auth';
 
 export interface InboundRouteDeps {
@@ -42,7 +44,17 @@ export function registerInboundRoutes(app: FastifyInstance, deps: InboundRouteDe
       '/inbound/screens',
       {
         config: { access: 'inbound' },
-        schema: { body: InboundScreenRequestSchema, response: { 201: InboundScreenReceiptSchema, 400: ErrorResponseSchema, 401: ErrorResponseSchema } },
+        schema: {
+          // The headers are checked by the signature hook before this runs; they are declared here so the OpenAPI document tells a front door what to send.
+          headers: z.object({
+            [INBOUND_HEADERS.source]: z.string().describe('The front door: phc, tamm or school'),
+            [INBOUND_HEADERS.timestamp]: z.string().describe('Seconds since the epoch, ten digits, within 300 seconds of the API clock'),
+            [INBOUND_HEADERS.nonce]: z.string().describe('16 to 64 URL-safe characters, new for every request'),
+            [INBOUND_HEADERS.signature]: z.string().describe('Lowercase hex HMAC-SHA256, with the front door key, of source, timestamp, nonce and the exact body, one per line'),
+          }),
+          body: InboundScreenRequestSchema,
+          response: { 201: InboundScreenReceiptSchema, 400: ErrorResponseSchema, 401: ErrorResponseSchema },
+        },
       },
       async (request, reply) => {
         const created = await createInvite(deps.db, deps.clock, request.inboundSource!, request.body);
