@@ -1,22 +1,26 @@
 // Serves the real Ticket API on an in-process Postgres (PGlite) seeded with the deterministic seed, for end-to-end
 // checks. No Docker. Every route, schema and migration is the production one; only the database driver differs.
 //
-// A second, read-only listener lets a test look at what the API stored without going through the API: the rows of
-// a crisis event and the number of registered devices. It is part of this harness, not of the product API.
+// A second, read-only listener lets a test look at what the API stored without going through the API: the rows of a
+// crisis event, the raw bundle of a ticket (as stored, and decrypted with this harness's own key), its events and
+// consents, a person's equity buckets and the number of registered devices. It is part of this harness, not of the
+// product API.
 //
 // Usage: tsx src/cli/serve-e2e.ts   (E2E_API_PORT, E2E_INSPECT_PORT, E2E_ORIGIN)
 import { PGlite } from '@electric-sql/pglite';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { createServer } from 'node:http';
 import { buildApp } from '../app';
+import { createCipher } from '../crypto';
 import { schema, type Db } from '../db/client';
 import { MIGRATIONS_FOLDER } from '../db/migrate';
 import { runSeed } from '../seed/run';
 
 // A fixed key for the throwaway end-to-end database; it protects nothing.
 const E2E_ENCRYPTION_KEY = Buffer.alloc(32, 9).toString('base64');
+const cipher = createCipher(E2E_ENCRYPTION_KEY);
 const apiPort = Number(process.env.E2E_API_PORT ?? 4450);
 const inspectPort = Number(process.env.E2E_INSPECT_PORT ?? 4451);
 const origin = process.env.E2E_ORIGIN ?? 'http://localhost:3450';
@@ -40,6 +44,32 @@ const inspect = createServer(async (request, response) => {
   if (crisis) {
     const rows = await db.select().from(schema.crisisEvents).where(eq(schema.crisisEvents.id, crisis[1]!));
     response.end(JSON.stringify(rows));
+  } else if (/^\/tickets\/[0-9a-f-]{36}$/.test(url.pathname)) {
+    const id = url.pathname.split('/')[2]!;
+    const [ticket] = await db.select().from(schema.tickets).where(eq(schema.tickets.id, id));
+    const [bundle] = await db.select().from(schema.sharedBundles).where(eq(schema.sharedBundles.ticketId, id));
+    const events = await db.select().from(schema.ticketEvents).where(eq(schema.ticketEvents.ticketId, id)).orderBy(asc(schema.ticketEvents.seq));
+    const consents = await db.select().from(schema.consents).where(eq(schema.consents.ticketId, id));
+    const logs = await db.select().from(schema.summaryLogs).where(eq(schema.summaryLogs.ticketId, id));
+    const children = await db.select({ id: schema.tickets.id }).from(schema.tickets).where(eq(schema.tickets.parentTicketId, id));
+    response.end(
+      JSON.stringify({
+        ticket,
+        events,
+        consents,
+        summaryLogs: logs.length,
+        children: children.map((child) => child.id),
+        bundle: bundle && {
+          contentCiphertext: bundle.contentCiphertext,
+          approvedSummaryCiphertext: bundle.approvedSummaryCiphertext,
+          deletedAt: bundle.deletedAt,
+          content: bundle.contentCiphertext ? JSON.parse(cipher.decrypt(bundle.contentCiphertext, `bundle:${id}`)) : null,
+        },
+      }),
+    );
+  } else if (/^\/persons\/[0-9a-f-]{36}$/.test(url.pathname)) {
+    const [person] = await db.select().from(schema.persons).where(eq(schema.persons.id, url.pathname.split('/')[2]!));
+    response.end(JSON.stringify(person && { equityOptIn: person.equityOptIn, ageBand: person.ageBand, gender: person.gender, language: person.language, region: person.region }));
   } else if (url.pathname === '/persons/count') {
     response.end(JSON.stringify({ count: (await db.select({ id: schema.persons.id }).from(schema.persons)).length }));
   } else {
