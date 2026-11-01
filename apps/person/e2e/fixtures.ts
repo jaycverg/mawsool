@@ -15,7 +15,10 @@ import { test as base, expect, type Browser, type BrowserContext, type ConsoleMe
 export interface Allowance {
   /** The exact URL of the failing resource. */
   url: string;
-  /** The HTTP status the test provokes (a 4xx), or the browser's network error, such as `net::ERR_FAILED`. */
+  /**
+   * The HTTP status the test provokes (a 4xx), the browser's network error (such as `net::ERR_FAILED`), or `'csp'` for a
+   * request or frame the page's own security policy blocks. For `'csp'`, `url` is the exact blocked address.
+   */
   expect: number | string;
   /** Why this test provokes it. */
   reason: string;
@@ -59,7 +62,12 @@ export class ConsoleGuard {
     const url = message.location().url;
     const status = /status of (\d{3})/.exec(text)?.[1];
     const network = /net::ERR_[A-Z_]+/.exec(text)?.[0];
-    const match = this.allowances.find((entry) => entry.url === url && (status ? entry.expect === Number(status) : network ? entry.expect === network : false));
+    const policy = text.includes('Content Security Policy') || text.startsWith('policy violation:');
+    const match = this.allowances.find((entry) =>
+      entry.expect === 'csp'
+        ? policy && text.includes(entry.url)
+        : entry.url === url && (status ? entry.expect === Number(status) : network ? entry.expect === network : false),
+    );
     if (match) {
       match.hits += 1;
       return;
