@@ -12,8 +12,10 @@ import { LogMagicLinkNotifier, type MagicLinkNotifier } from './notifier';
 import { registerAuth } from './plugins/auth';
 import { registerRouteRegistry } from './plugins/route-registry';
 import { registerAuthRoutes } from './routes/auth';
+import { registerCrisisEventRoutes } from './routes/crisis-events';
 import { registerHealthRoutes } from './routes/health';
 import { registerPersonRoutes } from './routes/persons';
+import { registerServiceRoutes } from './routes/services';
 import { registerTicketRoutes } from './routes/tickets';
 
 export interface AppDeps {
@@ -62,6 +64,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     staffApps: { clinician: deps.config.clinicianAppUrl, ops: deps.config.opsAppUrl },
     log: app.log,
   });
+  registerServiceRoutes(app, { db: deps.db });
+  registerCrisisEventRoutes(app, { db: deps.db });
   registerTicketRoutes(app, { db: deps.db });
   deps.extraRoutes?.(app);
 
