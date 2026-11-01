@@ -5,6 +5,17 @@ const DAY_MS = 86_400_000;
 /** States in which the person has not yet been seen, so "did you get seen?" still makes sense. */
 const WAITING: readonly TicketState[] = ['issued', 'acknowledged', 'overdue'];
 
+/**
+ * True while the clinic's latest word on the ticket is "unable to see": the newest event is one the clinic fired that
+ * left the state where it was, and the ticket is still in a state that allows a reroute. The person is then offered
+ * another option. An acknowledgement, an overdue mark or a reroute after it ends the prompt.
+ */
+export function clinicCouldNotSee(ticket: { state: TicketState; events: readonly { seq: number; fromState: TicketState | null; toState: TicketState; actor: string }[] }): boolean {
+  if (!WAITING.includes(ticket.state)) return false;
+  const latest = ticket.events.reduce<(typeof ticket.events)[number] | null>((newest, event) => (newest === null || event.seq > newest.seq ? event : newest), null);
+  return latest !== null && latest.actor === 'clinic' && latest.fromState === latest.toState;
+}
+
 /** The days after issue at which the person is asked whether they were seen. */
 export const FOLLOW_UP_DAY = 7;
 

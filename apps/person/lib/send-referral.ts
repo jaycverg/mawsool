@@ -1,5 +1,6 @@
 import { redact, withinWordLimit } from '@mawsool/consent';
 import { CreatedTicketSchema, type BundleContent, type CareLanguage, type ConsentElement, type CreateTicketRequest, type CreatedTicket } from '@mawsool/types';
+import { clearInvite } from './invite';
 import { clearPendingChoice, saveChoice, type PendingChoice } from './prefs';
 import { callServer, markServerFootprint, type ServerDeps } from './server';
 import { rememberTicket } from './share';
@@ -24,6 +25,8 @@ export interface SendInput {
   /** The elements the approved summary was written from: empty when the person wrote it by hand. */
   summaryBuiltFrom: readonly ConsentElement[];
   language: CareLanguage;
+  /** The front-door invite this phone claimed, so the ticket carries its source. Not used for a reroute, which is not a new screen. */
+  inviteId?: string | null;
   now: () => Date;
 }
 
@@ -40,6 +43,7 @@ export function ticketRequest(input: SendInput): CreateTicketRequest {
     summaryRequestId: input.summaryRequestId,
     // Only what is actually shared can be what a summary was built from.
     summaryBuiltFrom: input.approvedSummary ? input.summaryBuiltFrom.filter((element) => input.elements.includes(element) || element === 'ticket') : [],
+    inviteId: input.pending.reroute ? null : (input.inviteId ?? null),
   };
 }
 
@@ -76,5 +80,8 @@ export async function sendReferral(deps: ServerDeps, input: SendInput): Promise<
   ]) {
     saved = (await keep().then(() => true, () => false)) && saved;
   }
+  // The invite has been used by this ticket. A failure to forget it is harmless: the server uses an invite once and
+  // ignores a used one, so the next ticket is simply an app ticket.
+  if (body.inviteId !== null) await clearInvite(storage).catch(() => undefined);
   return { status: 'sent', ticketId: ticket.id, saved };
 }

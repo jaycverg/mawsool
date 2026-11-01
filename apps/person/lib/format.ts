@@ -1,19 +1,7 @@
-import type { Locale } from '@mawsool/types';
-
 const DAY_MS = 86_400_000;
 
-/**
- * Formats a date in the person's language and the deployment time zone. Latin digits in both languages, like the
- * boards. An unreadable date gives an empty string rather than "Invalid Date".
- */
-export function formatDate(iso: string, locale: Locale, style: 'short' | 'long' = 'short'): string {
-  const time = Date.parse(iso);
-  if (Number.isNaN(time)) return '';
-  const tag = locale === 'ar' ? 'ar-AE-u-nu-latn' : 'en-GB';
-  const options: Intl.DateTimeFormatOptions =
-    style === 'long' ? { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Dubai' } : { day: 'numeric', month: 'short', timeZone: 'Asia/Dubai' };
-  return new Intl.DateTimeFormat(tag, options).format(time);
-}
+// Dates are formatted by the same code in every app, so the person and the clinic read the same day.
+export { calendarDaysLeft, formatDate } from '@mawsool/ui';
 
 export type Span = { unit: 'week' | 'day'; count: number };
 
@@ -35,17 +23,4 @@ export function partOfDay(date: Date): Part {
   const hour = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hourCycle: 'h23', timeZone: 'Asia/Dubai' }).format(date));
   if (hour < 12) return 'morning';
   return hour < 17 ? 'afternoon' : 'evening';
-}
-
-/** The calendar day an instant falls on in the deployment time zone, as a day number (UTC+4, no daylight saving). */
-function dubaiDay(ms: number): number {
-  return Math.floor((ms + 4 * 3_600_000) / DAY_MS);
-}
-
-/**
- * Days left until a deadline, counted as calendar days in Asia/Dubai: the day it is issued on is day 0, so a 7-day
- * promise issued this morning reads 7, not 8, and the deadline day itself reads 0. Never negative.
- */
-export function calendarDaysLeft(deadlineIso: string, now: Date): number {
-  return Math.max(0, dubaiDay(Date.parse(deadlineIso)) - dubaiDay(now.getTime()));
 }

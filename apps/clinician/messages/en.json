@@ -1,4 +1,161 @@
 {
-  "meta": { "title": "Mawsool Clinician", "description": "Incoming referrals for your facility." },
-  "home": { "heading": "Incoming referrals", "simulated": "Simulated data" }
+  "meta": {
+    "title": "Mawsool Clinician",
+    "description": "Incoming referrals for your facility."
+  },
+  "home": {
+    "heading": "Incoming referrals",
+    "simulated": "Simulated data"
+  },
+  "nav": {
+    "label": "Clinician",
+    "facility": "Facility",
+    "filters": "Show tickets",
+    "open": "All open",
+    "incoming": "Incoming",
+    "acknowledged": "Acknowledged",
+    "overdue": "Overdue",
+    "seen": "Seen",
+    "logged": "Every record you open is logged."
+  },
+  "queue": {
+    "label": "Queue",
+    "stateFilter": "Status",
+    "tierFilter": "Need",
+    "allTiers": "All needs",
+    "ticket": "Ticket",
+    "need": "Need",
+    "beSeenBy": "Be seen by",
+    "language": "Language",
+    "source": "Source",
+    "status": "Status",
+    "loading": "Loading the queue…",
+    "empty": "No tickets match this view.",
+    "showing": "Showing {shown} of {total}",
+    "failed": "The queue could not be loaded.",
+    "retry": "Try again",
+    "open": "Open this ticket",
+    "daysLeft": "{count, plural, =0 {due today} one {# day left} other {# days left}}",
+    "daysLate": "{count, plural, one {# day late} other {# days late}}"
+  },
+  "state": {
+    "open": "All open",
+    "issued": "Issued",
+    "acknowledged": "Acknowledged",
+    "seen": "Seen",
+    "overdue": "Overdue",
+    "rerouted": "Rerouted",
+    "remeasured": "Re-measured",
+    "closed": "Closed",
+    "declined": "Declined",
+    "withdrawn": "Withdrawn"
+  },
+  "tier": {
+    "self_help": "Guided self-help",
+    "community": "Community support",
+    "tele": "Tele session",
+    "gp": "GP",
+    "specialist": "Specialist"
+  },
+  "language": {
+    "ar": "Arabic",
+    "en": "English",
+    "ur": "Urdu",
+    "hi": "Hindi",
+    "tl": "Tagalog",
+    "other": "Other"
+  },
+  "source": {
+    "app": "Mawsool app",
+    "phc": "PHC screen (mock)",
+    "tamm": "TAMM (mock)",
+    "school": "School programme (mock)"
+  },
+  "detail": {
+    "heading": "Ticket details",
+    "none": "Choose a ticket to see it.",
+    "loading": "Opening the ticket…",
+    "failed": "The ticket could not be opened.",
+    "retry": "Try again",
+    "notFound": "This ticket was not found.",
+    "withdrawn": "Withdrawn by the person",
+    "withdrawnBody": "The person ended the sharing. Nothing about this ticket is kept for this clinic.",
+    "referred": "Referred {referred} · be seen by {deadline} · {tier} tier",
+    "notice": "The person chose what you see below. Items they did not share are marked.",
+    "notShared": "Not shared by the person",
+    "nothingShared": "Nothing was shared with this ticket beyond the ticket itself.",
+    "noneToShow": "Nothing was added.",
+    "summaryTitle": "Referral summary",
+    "noSummary": "No summary comes with this ticket.",
+    "scoresTitle": "Check-in scores",
+    "trajectoryTitle": "Trajectory",
+    "conditionsTitle": "Self-reported conditions",
+    "conditionLine": "{name} (self-reported)",
+    "preferencesTitle": "Preferences",
+    "noteTitle": "Person's note",
+    "instrument": {
+      "who5": "Wellbeing (WHO-5)",
+      "phq9": "Depression (PHQ-9)",
+      "gad7": "Anxiety (GAD-7)"
+    },
+    "scoreLine": "{instrument} {total}",
+    "trajectoryLine": "{instrument}: {from} to {to}",
+    "trajectoryChart": "{instrument} from {from} to {to}",
+    "band": {
+      "minimal": "minimal",
+      "mild": "mild",
+      "moderate": "moderate",
+      "moderately_severe": "moderately severe",
+      "severe": "severe"
+    },
+    "pref": {
+      "language": "Language: {value}",
+      "clinicianGender": "Clinician: {value}",
+      "modality": "Visit: {value}",
+      "region": "Area: {value}",
+      "timeOfDay": "Time of day: {value}"
+    },
+    "gender": {
+      "female": "female",
+      "male": "male",
+      "another": "another gender"
+    },
+    "modality": {
+      "in_person": "in person",
+      "tele": "tele"
+    },
+    "region": {
+      "abu_dhabi_city": "Abu Dhabi city",
+      "al_ain": "Al Ain",
+      "al_dhafra": "Al Dhafra"
+    },
+    "timeOfDay": {
+      "morning": "morning",
+      "afternoon": "afternoon",
+      "evening": "evening"
+    },
+    "acknowledge": "Acknowledge",
+    "markSeen": "Mark as seen",
+    "unable": "Unable to see",
+    "unableTitle": "Why could you not see this person?",
+    "unableConfirm": "Tell the person",
+    "cancel": "Cancel",
+    "unableReason": {
+      "could_not_reach": "Could not reach them",
+      "no_capacity": "No room at the clinic",
+      "not_eligible": "Not a fit for this clinic",
+      "wrong_service": "Referred to the wrong service",
+      "other": "Another reason"
+    },
+    "unableStanding": "You told the person you could not see them ({reason}). They are asked to find another option.",
+    "noActions": "No action is open for a ticket in this state.",
+    "actionFailed": "That did not go through. Try again.",
+    "actionChanged": "The ticket had changed. It has been refreshed.",
+    "copyFhir": "Copy FHIR R4 bundle",
+    "exportLabel": "Malaffi-ready export — not sent",
+    "exportShown": "FHIR R4 bundle",
+    "copied": "Copied to the clipboard.",
+    "copyFailed": "The bundle is shown below. Copy it from there.",
+    "exportFailed": "The export could not be made."
+  }
 }

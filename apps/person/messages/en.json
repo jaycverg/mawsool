@@ -452,6 +452,42 @@
     "yourReferrals": "Your referrals",
     "earlier": "Earlier referral",
     "savedWarning": "Your referral was sent, but this phone could not keep a note of it. Open it from the Ticket tab.",
-    "currentReferral": "Open now"
+    "currentReferral": "Open now",
+    "unablePrompt": "The clinic could not see you this time. You can choose another option. Your earlier referral stays as it is until you send a new one."
+  },
+  "claim": {
+    "title": "Your screen result",
+    "back": "Back to home",
+    "heading": "Continue with Mawsool",
+    "intro": "A service you visited handed over that your screening suggests you may benefit from support. Enter the code you were given to link it to this phone.",
+    "codeLabel": "Your code",
+    "claim": "Link it to this phone",
+    "claimNote": "This shares nothing about you. You choose what a clinic sees later, and you can stop at any time.",
+    "claimedTitle": "Linked: your screen from {source}",
+    "claimedBody": "When you send a referral, the clinic will see that it came from this service. Nothing has been shared yet.",
+    "startCheckIn": "Start my check-in",
+    "home": "Back to home",
+    "source": {
+      "phc": "your primary health centre (mock)",
+      "tamm": "TAMM (mock)",
+      "school": "your school programme (mock)"
+    },
+    "problem": {
+      "bad_code": "That does not look like a code. It has 8 letters and numbers, like ABCD-EFGH.",
+      "not_found": "This code is not valid, or it has expired. Check it and try again, or ask the service that gave it to you.",
+      "offline": "The code could not be checked right now. Check your connection and try again.",
+      "not_saved": "This phone could not save the link, so nothing was sent. Try again.",
+      "claimed_not_kept": "The link was made, but this phone could not keep it. Try the same code again."
+    }
+  },
+  "tamm": {
+    "mockBanner": "Mock page for the demo. This is not TAMM.",
+    "portal": "TAMM (mock)",
+    "heading": "Your screening result",
+    "result": "Your recent screening suggests you may benefit from support.",
+    "next": "Support is available, and you decide what happens next.",
+    "continue": "Continue with Mawsool",
+    "noCode": "This link has no code. Ask for a new one.",
+    "mockNote": "This screen only shows how a service hands a screen result over. It holds no real data."
   }
 }

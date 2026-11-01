@@ -2,7 +2,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { STAFF_SESSION_KEY } from '../src';
-import { StaffSignIn, type StaffSignInLabels } from '../src/components';
+import { SearchParamsContext } from 'next/dist/shared/lib/hooks-client-context.shared-runtime';
+import { StaffSignIn, StaffSignInPage, type StaffSignInLabels } from '../src/components';
 
 const SESSION = {
   sessionToken: 'session-token',
@@ -16,6 +17,8 @@ const labels: StaffSignInLabels = {
   action: 'Sign in',
   signingIn: 'Signing in',
   signedIn: 'Signed in',
+  notSaved: 'Not saved',
+  continue: 'Continue',
   failed: 'Link failed',
   wrongApp: 'Wrong app',
   missingToken: 'Open your link',
@@ -27,7 +30,7 @@ const labels: StaffSignInLabels = {
 
 const reply = (status: number, body: unknown = {}) => vi.fn(async () => new Response(JSON.stringify(body), { status }));
 const show = (token: string | null, roles: ('clinician' | 'ops' | 'admin')[] = ['clinician']) =>
-  render(<StaffSignIn token={token} apiUrl="http://api.test" allowedRoles={roles} labels={labels} />);
+  render(<StaffSignIn token={token} apiUrl="http://api.test" allowedRoles={roles} labels={labels} homeHref="/en/" />);
 const callOf = (fetchFn: ReturnType<typeof reply>) => fetchFn.mock.calls[0] as unknown as [string, RequestInit];
 
 beforeEach(() => window.sessionStorage.clear());
@@ -145,5 +148,93 @@ describe('requesting a sign-in link', () => {
     fireEvent.click(screen.getByRole('button', { name: labels.requestAction }));
     await screen.findByText('Request not sent');
     expect(screen.queryByText(labels.requestSent)).toBeNull();
+  });
+});
+
+describe('when this browser will not keep the session', () => {
+  const blockStorage = () => vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new DOMException('quota', 'QuotaExceededError');
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('does not say the person is signed in, says the session was not kept, and offers a new link', async () => {
+    vi.stubGlobal('fetch', reply(200, SESSION));
+    const blocked = blockStorage();
+    show('tok');
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    const message = await screen.findByText(labels.notSaved);
+    expect(blocked).toHaveBeenCalled();
+    expect(message.getAttribute('data-phase')).toBe('not_saved');
+    expect(screen.queryByText(labels.signedIn)).toBeNull();
+    expect(screen.queryByText(labels.continue)).toBeNull();
+    expect(window.sessionStorage.getItem(STAFF_SESSION_KEY)).toBeNull();
+    // The link is spent, so signing in again with it is not offered; a new one is.
+    expect(screen.queryByRole('button', { name: 'Sign in' })).toBeNull();
+    expect(screen.getByLabelText(labels.emailLabel)).toBeTruthy();
+  });
+
+  it('says it was kept, and links on to the app, only when the session is stored', async () => {
+    vi.stubGlobal('fetch', reply(200, SESSION));
+    show('tok');
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await screen.findByText(labels.signedIn);
+    expect(screen.getByText(labels.continue).closest('a')?.getAttribute('href')).toBe('/en/');
+    expect(screen.queryByText(labels.notSaved)).toBeNull();
+  });
+
+  it('says not saved too when the browser has no session storage at all', async () => {
+    vi.stubGlobal('fetch', reply(200, SESSION));
+    vi.spyOn(window, 'sessionStorage', 'get').mockImplementation(() => {
+      throw new DOMException('denied', 'SecurityError');
+    });
+    show('tok');
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await screen.findByText(labels.notSaved);
+    expect(screen.queryByText(labels.signedIn)).toBeNull();
+  });
+});
+
+describe('the page reads the token from the link it was opened with', () => {
+  // The link is built the way the API builds it: <app>/<locale>/sign-in/?token=<url-encoded token>.
+  const TOKEN = 'q3vK-8_Zr0T5mP2xLw9cHd1YtB7nJfEaUoSgRi4VkXs';
+  const link = `http://localhost:3001/en/sign-in/?token=${encodeURIComponent(TOKEN)}`;
+
+  const openAt = (url: string) =>
+    render(
+      <SearchParamsContext.Provider value={new URL(url).searchParams}>
+        <StaffSignInPage apiUrl="http://api.test" allowedRoles={['clinician']} labels={labels} homeHref="/en/" />
+      </SearchParamsContext.Provider>,
+    );
+
+  it('posts the token from the link’s query string to /auth/verify when Sign in is pressed, and not before', async () => {
+    const fetchFn = reply(200, SESSION);
+    vi.stubGlobal('fetch', fetchFn);
+    openAt(link);
+    expect(fetchFn).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await screen.findByText(labels.signedIn);
+    expect(JSON.parse(callOf(fetchFn)[1].body as string)).toEqual({ token: TOKEN });
+    expect(JSON.parse(window.sessionStorage.getItem(STAFF_SESSION_KEY)!)).toEqual(SESSION);
+  });
+
+  it('decodes a token that was percent-encoded in the link', async () => {
+    const fetchFn = reply(200, SESSION);
+    vi.stubGlobal('fetch', fetchFn);
+    openAt('http://localhost:3001/en/sign-in/?token=ab%2Bcd%2Fef%3D');
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await screen.findByText(labels.signedIn);
+    expect(JSON.parse(callOf(fetchFn)[1].body as string)).toEqual({ token: 'ab+cd/ef=' });
+  });
+
+  it('shows the missing-link message, with no Sign in button, when the link carries no token', () => {
+    openAt('http://localhost:3001/en/sign-in/');
+    expect(screen.getByText(labels.missingToken)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Sign in' })).toBeNull();
+  });
+
+  it('ignores a token in some other parameter', () => {
+    openAt('http://localhost:3001/en/sign-in/?tok=abc&next=token');
+    expect(screen.getByText(labels.missingToken)).toBeTruthy();
   });
 });

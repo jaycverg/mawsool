@@ -7,6 +7,7 @@ export const KEYS = {
   pendingChoice: 'choice:pending',
   sharing: 'sharing',
   tickets: 'tickets',
+  invite: 'invite',
   equity: 'equity',
   footprint: 'server:footprint',
   directory: 'directory',
