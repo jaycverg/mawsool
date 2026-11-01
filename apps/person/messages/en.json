@@ -434,7 +434,7 @@
     },
     "readsTitle": "Who has opened it",
     "readsNone": "Nobody has opened it yet.",
-    "readLine": "{facility} · {date}",
+    "readLine": "{facility}, on {date}",
     "actionFailed": "That did not work. Check your connection and try again.",
     "stopButton": "Stop sharing"
   }

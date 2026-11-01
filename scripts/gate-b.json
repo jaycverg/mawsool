@@ -1,0 +1,107 @@
+[
+  { "id": "mw-502-consent-ledger", "sentence": "The MW-502 tests pass: the ledger grants and revokes per element, append-only, and every bundle read checks live consent", "project": "apps/api",
+    "tests": [
+      { "file": "test/consent.test.ts", "name": "adds the consent row and the content" },
+      { "file": "test/consent.test.ts", "name": "checks live consent on every read" },
+      { "file": "test/consent.test.ts", "name": "is idempotent: revoking again" },
+      { "file": "test/consent.test.ts", "name": "and to one that does not exist" },
+      { "file": "test/consent.test.ts", "name": "stores the four buckets only on opt-in" }
+    ] },
+  { "id": "mw-505-no-employer-or-insurer", "sentence": "The MW-505 tests pass: every route is reviewed, declares its access, and refuses every wrong principal without returning data", "project": "apps/api",
+    "tests": [ { "file": "test/access.test.ts" }, { "file": "test/suppress.test.ts" } ] },
+  { "id": "revoke-deletes-raw-rows", "sentence": "Revoking the ticket element leaves no bundle content and no logged drafts in the raw rows, and the read returns 410", "project": "apps/api",
+    "tests": [
+      { "file": "test/consent.test.ts", "name": "empties the stored bundle and the logged summaries, withdraws the ticket and answers 410" },
+      { "file": "test/consent.test.ts", "name": "withdraws a ticket that is acknowledged, overdue or seen" }
+    ] },
+  { "id": "revoke-one-element", "sentence": "Revoking one element removes only that element from the raw row, and the read still succeeds", "project": "apps/api",
+    "tests": [ { "file": "test/consent.test.ts", "name": "removes only that element from the stored row" } ] },
+  { "id": "no-key-no-start", "sentence": "With no encryption key the API refuses to start", "project": "apps/api",
+    "tests": [
+      { "file": "test/startup.test.ts", "name": "buildApp throws for a missing, short or empty key" },
+      { "file": "test/startup.test.ts", "name": "the real entry point exits non-zero and names the variable" },
+      { "file": "test/config.test.ts", "name": "is required: without it the config does not load" },
+      { "file": "test/config.test.ts", "name": "must be 32 bytes of base64" }
+    ] },
+  { "id": "ciphertext-at-rest", "sentence": "With a key, the raw SharedBundle row and the logged drafts are ciphertext", "project": "apps/api",
+    "tests": [
+      { "file": "test/consent.test.ts", "name": "keeps the bundle and the approved summary as ciphertext" },
+      { "file": "test/consent.test.ts", "name": "keeps the logged drafts and approved summaries as ciphertext too" },
+      { "file": "test/summary.test.ts", "name": "logs every draft as ciphertext, and nothing in the clear" },
+      { "file": "test/startup.test.ts", "name": "refuses a different context, a tampered value" }
+    ] },
+  { "id": "forged-transition-409", "sentence": "A forged illegal transition returns 409", "project": "apps/api",
+    "tests": [
+      { "file": "test/tickets.test.ts", "name": "answers 409 to a forged transition" },
+      { "file": "test/transitions.test.ts", "name": "allows exactly the listed moves for exactly the listed actors" },
+      { "file": "test/transitions.test.ts", "name": "keeps the cached state equal to the state derived from the events" },
+      { "file": "test/transitions.test.ts", "name": "refuses a second event with the same sequence number at the database" }
+    ] },
+  { "id": "other-persons-ticket-404", "sentence": "A person gets 404 on another person's ticket", "project": "apps/api",
+    "tests": [ { "file": "test/tickets.test.ts", "name": "answers 404 to another person for a ticket, its events" } ] },
+  { "id": "clinic-only-event-403", "sentence": "A person gets 403 on a clinic-only event, and a clinic on a person-only one", "project": "apps/api",
+    "tests": [
+      { "file": "test/tickets.test.ts", "name": "answers 403 to a person who sends a clinic-only event" },
+      { "file": "test/tickets.test.ts", "name": "lets a clinician at the right facility acknowledge and mark seen" }
+    ] },
+  { "id": "day-7-yes-reaches-seen", "sentence": "A day-7 Yes on an issued ticket reaches seen", "project": "apps/api",
+    "tests": [ { "file": "test/tickets.test.ts", "name": "moves an issued ticket to seen on the person" } ] },
+  { "id": "rerouted-child-bundle", "sentence": "A rerouted child's bundle holds only what the new consent allows", "project": "apps/api",
+    "tests": [
+      { "file": "test/tickets.test.ts", "name": "moves the parent to rerouted and builds the child" },
+      { "file": "test/tickets.test.ts", "name": "creates one child and answers 409 to the loser" }
+    ] },
+  { "id": "redirect-while-blocked", "sentence": "/consent and /ticket redirect to /crisis while the block is set, in both languages", "browser": "consent-and-ticket-redirect-while-blocked" },
+  { "id": "replayed-post-tickets", "sentence": "A replayed POST /tickets returns the same ticket with one row", "project": "apps/api",
+    "tests": [
+      { "file": "test/tickets.test.ts", "name": "returns the same ticket for a replayed request id and writes nothing more" },
+      { "file": "test/tickets.test.ts", "name": "makes one ticket from two requests with the same id that arrive together" }
+    ] },
+  { "id": "concurrent-sweeps", "sentence": "Two concurrent sweeps yield one overdue event", "project": "apps/api",
+    "tests": [
+      { "file": "test/sweep.test.ts", "name": "yields one overdue event when two sweeps run at the same time" },
+      { "file": "test/sweep.test.ts", "name": "is a no-op for a sweep that loses the race" },
+      { "file": "test/sweep.test.ts", "name": "is idempotent: running it again appends nothing" }
+    ] },
+  { "id": "llm-flag-off-or-tick-off", "sentence": "With the flag off, or the flag on and the tick off, no outbound LLM call occurs", "project": "apps/api",
+    "tests": [
+      { "file": "test/summary.test.ts", "name": "makes no outbound call with the flag off" },
+      { "file": "test/summary.test.ts", "name": "makes no outbound call with the flag on and the box not ticked" },
+      { "file": "test/config.test.ts", "name": "is off by default, and on only for true or 1" }
+    ] },
+  { "id": "llm-both-on-consented-only", "sentence": "With both on, a stubbed provider receives no unconsented element", "project": "apps/api",
+    "tests": [
+      { "file": "test/summary.test.ts", "name": "sends the provider only what was consented to when both are on" },
+      { "file": "test/summary.test.ts", "name": "includes an element in the provider" }
+    ] },
+  { "id": "import-boundary-lint", "sentence": "The import-boundary lint fails if anything outside packages/summary imports an LLM SDK, proved by cases that make it fail", "project": "packages/summary",
+    "tests": [
+      { "file": "test/boundary.test.ts", "name": "fails the lint when code outside packages/summary imports @anthropic-ai/sdk" },
+      { "file": "test/boundary.test.ts", "name": "allows the same import inside packages/summary" },
+      { "file": "test/boundary.test.ts", "name": "lists an LLM SDK as a dependency of packages/summary and of no other package" }
+    ] },
+  { "id": "redaction-device-and-server", "sentence": "redact() keeps only consented elements, on the device before send and on the server at read", "project": "packages/consent",
+    "tests": [ { "file": "test/consent.test.ts", "name": "keeps exactly the granted elements" } ] },
+  { "id": "openapi", "sentence": "/docs serves OpenAPI generated from the Zod schemas, covering every route", "project": "apps/api",
+    "tests": [ { "file": "test/docs.test.ts", "name": "describes every registered route" } ] },
+  { "id": "carried-storage-commit", "sentence": "Carried: a storage write that is rolled back after the request succeeded rejects instead of reporting success", "project": "packages/ui",
+    "tests": [
+      { "file": "test/platform.test.ts", "name": "set rejects, because the value was not committed" },
+      { "file": "test/platform.test.ts", "name": "remove rejects, because the value is still there" },
+      { "file": "test/platform.test.ts", "name": "clear rejects, because nothing was removed" }
+    ] },
+  { "id": "carried-delete-everything", "sentence": "Carried: Delete everything revokes on the server first, stops when it cannot, and lets erasure win over an unsent crisis record", "project": "apps/person",
+    "tests": [
+      { "file": "test/erase.test.ts", "name": "asks the server to remove what it holds before it wipes the phone" },
+      { "file": "test/erase.test.ts", "name": "stops with nothing deleted when the server cannot be reached" },
+      { "file": "test/erase.test.ts", "name": "lets erasure win when the crisis record cannot be sent" },
+      { "file": "test/erase.test.ts", "name": "does not wait for ever on a send that hangs" }
+    ] },
+  { "id": "carried-pending-choice", "sentence": "Carried: a pending pick never replaces the current support, and an offline send loses nothing", "project": "apps/person",
+    "tests": [
+      { "file": "test/referral.test.ts", "name": "never replaces the support the person is already on" },
+      { "file": "test/referral.test.ts", "name": "when offline, loses nothing" }
+    ] },
+  { "id": "carried-checklist-keys", "sentence": "Carried: the safe-messaging checklist cites only message keys that exist", "project": "apps/person",
+    "tests": [ { "file": "test/checklist-keys.test.ts", "name": "cites only message keys that exist in both languages" } ] }
+]
