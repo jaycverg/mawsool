@@ -82,5 +82,33 @@
   {
     "id": "settings-download-and-delete",
     "sentence": "Settings download yields the person's own data, and Delete everything leaves the raw stores empty"
+  },
+  {
+    "id": "snapshot-home",
+    "sentence": "The home screen matches its committed snapshot at 390 x 844"
+  },
+  {
+    "id": "snapshot-check-in",
+    "sentence": "The check-in screen matches its committed snapshot at 390 x 844"
+  },
+  {
+    "id": "snapshot-result",
+    "sentence": "The result screen matches its committed snapshot at 390 x 844"
+  },
+  {
+    "id": "snapshot-check-ins",
+    "sentence": "The check-ins screen matches its committed snapshot at 390 x 844"
+  },
+  {
+    "id": "snapshot-options",
+    "sentence": "The options screen matches its committed snapshot at 390 x 844"
+  },
+  {
+    "id": "snapshot-crisis",
+    "sentence": "The crisis screen matches its committed snapshot at 390 x 844"
+  },
+  {
+    "id": "snapshot-settings",
+    "sentence": "The settings screen matches its committed snapshot at 390 x 844"
   }
 ]

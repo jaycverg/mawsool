@@ -14,11 +14,14 @@ export default defineConfig({
   testMatch: ['exit-acceptance.spec.ts'],
   timeout: 60_000,
   globalTimeout: 540_000,
-  expect: { timeout: 10_000 },
+  expect: { timeout: 10_000, toHaveScreenshot: { maxDiffPixelRatio: 0.005, animations: 'disabled', caret: 'hide' } },
   fullyParallel: false,
   workers: 1,
   retries: 0,
   forbidOnly: true,
+  // Screenshot baselines are committed beside the spec, one per platform (`-chromium-darwin.png`). A missing baseline
+  // fails the run instead of writing one; `E2E_UPDATE_SNAPSHOTS=1 pnpm gate:phase2` rewrites them on purpose.
+  updateSnapshots: process.env.E2E_UPDATE_SNAPSHOTS === '1' ? 'all' : 'none',
   reporter: [['list'], ['json', { outputFile: 'test-results/e2e-report.json' }]],
   outputDir: 'test-results/e2e',
   use: {
