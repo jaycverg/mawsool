@@ -1,17 +1,17 @@
-import { evaluateCrisisForAnswers, itemCount } from '@mawsool/instruments';
+import { evaluateCrisisForAnswers, hasCompleteAnswers } from '@mawsool/instruments';
 import { INSTRUMENTS, type Instrument, type Screening } from '@mawsool/types';
 import { STEP_ROWS, type Range, type StepRow } from './config';
 
 /**
- * True when a screening can supply a score: a known instrument, an answer for every item, and a total that is a
- * whole number of at least 0. A partial or damaged row has no meaningful total, so row selection skips it. Crisis
- * detection does not use this check and still sees every row.
+ * True when a screening can supply a score: a known instrument, a real in-range answer in every slot, and a total
+ * that is a whole number of at least 0. A check-in in progress has empty slots (a hole, null or undefined where an
+ * item is not yet answered), and a damaged row has no meaningful total, so row selection and trajectory skip both.
+ * Crisis detection does not use this check and still sees every row.
  */
 export function isCompleteScreening(screening: Screening): boolean {
   return (
     (INSTRUMENTS as readonly string[]).includes(screening.instrument) &&
-    Array.isArray(screening.answers) &&
-    screening.answers.length === itemCount(screening.instrument) &&
+    hasCompleteAnswers(screening.instrument, screening.answers) &&
     Number.isInteger(screening.total) &&
     screening.total >= 0
   );

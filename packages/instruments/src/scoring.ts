@@ -45,11 +45,29 @@ function validate(instrument: Instrument, answers: readonly number[]): void {
   if (answers.length !== itemCount) {
     throw new InvalidAnswersError(`${instrument} needs ${itemCount} answers, got ${answers.length}`);
   }
-  answers.forEach((value, index) => {
-    if (!Number.isInteger(value) || value < 0 || value > maxValue) {
+  // An indexed loop, not forEach: forEach skips the empty slots of a sparse array, which would score a
+  // half-answered check-in as if the missing items were zero.
+  for (let index = 0; index < itemCount; index += 1) {
+    const value = answers[index];
+    if (!Number.isInteger(value) || value! < 0 || value! > maxValue) {
       throw new InvalidAnswersError(`${instrument} item ${index + 1}: ${String(value)} is not an integer from 0 to ${maxValue}`);
     }
-  });
+  }
+}
+
+/**
+ * True when `answers` is an array holding one in-range whole number for every item of the instrument. An empty
+ * slot (a hole, undefined, null, NaN) or a short, long or out-of-range list is false. This is the completeness
+ * test for a stored check-in: a check-in in progress has empty slots and so is never scored.
+ */
+export function hasCompleteAnswers(instrument: Instrument, answers: unknown): answers is number[] {
+  if (!Array.isArray(answers)) return false;
+  try {
+    validate(instrument, answers as number[]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function sum(answers: readonly number[]): number {

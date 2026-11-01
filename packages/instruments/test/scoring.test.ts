@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   InvalidAnswersError,
   WHO5_FOLLOW_UP_MAX_SCORE,
+  hasCompleteAnswers,
   itemCount,
   offersFollowUp,
   scoreCssrs,
@@ -140,6 +141,18 @@ describe('invalid answers are never scored', () => {
     expect(() => scoreCssrs([2, 0, 0, 0, 0, 0])).toThrow(InvalidAnswersError);
   });
 
+  it.each([
+    ['a hole', () => new Array(9) as number[]],
+    ['a hole among answers', () => Object.assign(Array(9).fill(1), { 3: undefined }) as number[]],
+    ['an undefined slot', () => [1, 1, 1, undefined, 1, 1, 1, 1, 1] as unknown as number[]],
+    ['a null slot, as NaN returns from JSON', () => [1, 1, 1, null, 1, 1, 1, 1, 1] as unknown as number[]],
+  ])('rejects %s in an answer list of the right length, so a half-answered check-in is never scored', (_name, build) => {
+    const answers = build();
+    expect(answers).toHaveLength(9);
+    expect(() => scorePhq9(answers)).toThrow(InvalidAnswersError);
+    expect(() => scoreInstrument('phq9', answers)).toThrow(/item/);
+  });
+
   it('rejects a total above the instrument maximum', () => {
     expect(() => severityBand('phq9', 28)).toThrow(InvalidAnswersError);
     expect(() => severityBand('gad7', 22)).toThrow(InvalidAnswersError);
@@ -147,5 +160,34 @@ describe('invalid answers are never scored', () => {
 
   it('names the error class', () => {
     expect(new InvalidAnswersError('x').name).toBe('InvalidAnswersError');
+  });
+});
+
+describe('hasCompleteAnswers', () => {
+  it('is true for one in-range whole number per item, for every instrument', () => {
+    expect(hasCompleteAnswers('who5', [0, 1, 2, 3, 5])).toBe(true);
+    expect(hasCompleteAnswers('phq9', Array(9).fill(3))).toBe(true);
+    expect(hasCompleteAnswers('gad7', Array(7).fill(0))).toBe(true);
+    expect(hasCompleteAnswers('cssrs', [0, 1, 0, 0, 0, 1])).toBe(true);
+  });
+
+  it('is false for a short list, a long list and a list that is not an array', () => {
+    expect(hasCompleteAnswers('phq9', [1, 1, 1])).toBe(false);
+    expect(hasCompleteAnswers('phq9', Array(10).fill(0))).toBe(false);
+    expect(hasCompleteAnswers('phq9', null)).toBe(false);
+    expect(hasCompleteAnswers('phq9', 'nine answers')).toBe(false);
+  });
+
+  it('is false when any slot is empty or not a valid answer, wherever it sits', () => {
+    for (let slot = 0; slot < 9; slot += 1) {
+      for (const bad of [undefined, null, Number.NaN, 4, -1, 0.5, '1']) {
+        const answers: unknown[] = Array(9).fill(1);
+        answers[slot] = bad;
+        expect(hasCompleteAnswers('phq9', answers), `slot ${slot} = ${String(bad)}`).toBe(false);
+      }
+      const holey = Array(9).fill(1) as unknown[];
+      delete holey[slot];
+      expect(hasCompleteAnswers('phq9', holey), `hole at ${slot}`).toBe(false);
+    }
   });
 });
