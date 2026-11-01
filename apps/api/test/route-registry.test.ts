@@ -40,6 +40,8 @@ describe('route registry', () => {
     expect(byKey).toMatchObject({
       'GET /health': 'public',
       'POST /persons': 'public',
+      'GET /services': 'public',
+      'POST /crisis-events': 'person',
       'POST /auth/magic-link': 'public',
       'POST /auth/verify': 'public',
       'GET /tickets/:id': 'clinician',

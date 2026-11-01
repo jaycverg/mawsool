@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { LocaleSchema, StaffRoleSchema } from './enums';
-import { TicketSchema } from './entities';
+import { CareLanguageSchema, LocaleSchema, ModalitySchema, RegionSchema, StaffRoleSchema, TierSchema } from './enums';
+import { CrisisEventSchema, ServiceSchema, TicketSchema } from './entities';
 
 /** Person bearer credential: `<personId>.<secret>`. The secret is 32 random bytes, base64url. */
 export const PERSON_SECRET_PATTERN = /^[A-Za-z0-9_-]{43}$/;
@@ -64,3 +64,32 @@ export const ErrorResponseSchema = z.object({
 export type ErrorResponse = z.infer<typeof ErrorResponseSchema>;
 
 export const HealthResponseSchema = z.object({ status: z.literal('ok') });
+
+/**
+ * POST /crisis-events: one snapshot of a crisis event, keyed by the id the device generated. It carries no person
+ * id, no item answers and no free text, and the schema is strict so a body that adds any of them is refused
+ * instead of quietly dropped. `followUpAt` is the server's alone and is not accepted.
+ */
+export const CrisisEventSubmissionSchema = CrisisEventSchema.omit({ followUpAt: true })
+  .strict()
+  .refine((event) => event.humanContactConfirmed === (event.contactAt !== null), {
+    message: 'contactAt is set exactly when human contact is confirmed',
+  })
+  .refine((event) => event.humanContactConfirmed === (event.contactSource !== null), {
+    message: 'contactSource is set exactly when human contact is confirmed',
+  });
+export type CrisisEventSubmission = z.infer<typeof CrisisEventSubmissionSchema>;
+
+export const CrisisEventReceiptSchema = z.object({ id: z.uuid(), created: z.boolean() });
+export type CrisisEventReceipt = z.infer<typeof CrisisEventReceiptSchema>;
+
+/** GET /services filters. The person app sends none: matching happens on the device. */
+export const ServicesQuerySchema = z.object({
+  tier: TierSchema.optional(),
+  region: RegionSchema.optional(),
+  modality: ModalitySchema.optional(),
+  language: CareLanguageSchema.optional(),
+});
+export type ServicesQuery = z.infer<typeof ServicesQuerySchema>;
+
+export const ServicesResponseSchema = z.array(ServiceSchema);
