@@ -164,7 +164,7 @@ describe('the server client', () => {
 describe('sending the referral', () => {
   const content: BundleContent = { free_text: 'NOTE-MARKER', conditions: ['COND-MARKER'], scores: [{ instrument: 'phq9', total: 12, band: 'moderate', takenAt: '2026-10-29T08:00:00+04:00' }] };
   const pending = pendingFrom({ tier: 'gp', serviceId: 'svc-1', handoffWindowDays: 7 }, { now: NOW, newId: () => REQUEST_ID }, null);
-  const input = (overrides: Partial<SendInput> = {}): SendInput => ({ pending, elements: ['ticket', 'scores'], content, approvedSummary: null, summaryRequestId: null, language: 'en', now: NOW, ...overrides });
+  const input = (overrides: Partial<SendInput> = {}): SendInput => ({ pending, elements: ['ticket', 'scores'], content, approvedSummary: null, summaryRequestId: null, summaryBuiltFrom: [], language: 'en', now: NOW, ...overrides });
   const created = { created: true, ticket: { id: TICKET_ID, shortCode: 'MW4K7Q', serviceId: 'svc-1', tier: 'gp', createdAt: '2026-11-02T08:00:00+04:00' } };
 
   it('keeps out of the request every element that was not ticked, and always sends the ticket element', () => {
@@ -174,6 +174,12 @@ describe('sending the referral', () => {
     expect(JSON.stringify(request)).not.toContain('NOTE-MARKER');
     expect(JSON.stringify(request)).not.toContain('COND-MARKER');
     expect(request).toMatchObject({ clientRequestId: REQUEST_ID, serviceId: 'svc-1', windowDays: 7 });
+  });
+
+  it('sends what the approved summary was built from, only for a summary, and only elements that are shared', () => {
+    expect(ticketRequest(input({ approvedSummary: 'a note', summaryBuiltFrom: ['scores', 'conditions'], elements: ['ticket', 'scores'] })).summaryBuiltFrom).toEqual(['scores']);
+    expect(ticketRequest(input({ approvedSummary: null, summaryBuiltFrom: ['scores'] })).summaryBuiltFrom).toEqual([]);
+    expect(ticketRequest(input({ approvedSummary: 'by hand', summaryBuiltFrom: [] })).summaryBuiltFrom).toEqual([]);
   });
 
   it('sends an approved summary only when it is within the word limit', () => {
