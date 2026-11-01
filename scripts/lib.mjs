@@ -86,6 +86,10 @@ export function appUrls(env) {
     { name: 'ops', url: `http://localhost:${env.OPS_PORT}/en/` },
     { name: 'clinician sign-in', url: `http://localhost:${env.CLINICIAN_PORT}/en/sign-in/` },
     { name: 'ops sign-in', url: `http://localhost:${env.OPS_PORT}/en/sign-in/` },
+    // A missing favicon is a 404 in the browser console, so each app's is checked beside its pages.
+    { name: 'person favicon', url: `http://localhost:${env.PERSON_PORT}/icon.svg` },
+    { name: 'clinician favicon', url: `http://localhost:${env.CLINICIAN_PORT}/icon.svg` },
+    { name: 'ops favicon', url: `http://localhost:${env.OPS_PORT}/icon.svg` },
   ];
 }
 

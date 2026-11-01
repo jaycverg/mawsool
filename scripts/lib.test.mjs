@@ -51,19 +51,21 @@ test('an invalid offset is rejected', () => {
   }
 });
 
-test('appUrls lists the API health route, the three locale roots and both staff sign-in pages', () => {
+test('appUrls lists the API health route, the three locale roots, both staff sign-in pages and each app favicon', () => {
   const urls = appUrls(deriveEnv({}));
   assert.deepEqual(
     urls.map((u) => u.name),
-    ['api', 'person', 'clinician', 'ops', 'clinician sign-in', 'ops sign-in'],
+    ['api', 'person', 'clinician', 'ops', 'clinician sign-in', 'ops sign-in', 'person favicon', 'clinician favicon', 'ops favicon'],
   );
+  assert.deepEqual(urls.slice(6).map((u) => u.url), ['http://localhost:3000/icon.svg', 'http://localhost:3001/icon.svg', 'http://localhost:3002/icon.svg']);
   assert.equal(urls[0]?.url, 'http://localhost:4000/health');
   assert.equal(urls[4]?.url, 'http://localhost:3001/en/sign-in/');
   assert.equal(urls[5]?.url, 'http://localhost:3002/en/sign-in/');
 });
 
-test('appUrls follows PORT_OFFSET for the sign-in pages', () => {
+test('appUrls follows PORT_OFFSET for the sign-in pages and the favicons', () => {
   const urls = appUrls(deriveEnv({ PORT_OFFSET: '100' }));
-  assert.equal(urls.at(-2)?.url, 'http://localhost:3101/en/sign-in/');
-  assert.equal(urls.at(-1)?.url, 'http://localhost:3102/en/sign-in/');
+  assert.equal(urls[4]?.url, 'http://localhost:3101/en/sign-in/');
+  assert.equal(urls[5]?.url, 'http://localhost:3102/en/sign-in/');
+  assert.equal(urls.at(-1)?.url, 'http://localhost:3102/icon.svg');
 });
