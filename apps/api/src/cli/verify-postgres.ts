@@ -2,6 +2,7 @@
 //   1. several connections sweeping at once leave exactly one `overdue` event per ticket, and every due ticket gets one;
 //   2. pg-boss starts, the sweep's schedule exists, and one fire of the queue runs the sweep.
 // It works in a database of its own, created here and dropped at the end, so the dev data is never touched.
+import { randomUUID } from 'node:crypto';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { inArray, eq } from 'drizzle-orm';
@@ -23,7 +24,7 @@ const check = (ok: boolean, message: string) => {
   if (!ok) problems.push(message);
 };
 
-const databaseName = `gate_${Date.now().toString(36)}`;
+const databaseName = `gate_${randomUUID().replaceAll('-', '').slice(0, 12)}`;
 const adminUrl = new URL(config.databaseUrl);
 const gateUrl = new URL(config.databaseUrl);
 gateUrl.pathname = `/${databaseName}`;
@@ -66,8 +67,8 @@ try {
     const schedules = await jobs.boss.getSchedules();
     check(schedules.some((schedule) => schedule.name === SWEEP_QUEUE && schedule.cron === '* * * * *'), 'the sweep is scheduled every minute');
     await jobs.boss.send(SWEEP_QUEUE, {});
-    const deadline = Date.now() + 40_000;
-    while (Date.now() < deadline && (await overdue()).length - eventsBefore < dueAgain) await new Promise((resolve) => setTimeout(resolve, 500));
+    const deadline = performance.now() + 40_000;
+    while (performance.now() < deadline && (await overdue()).length - eventsBefore < dueAgain) await new Promise((resolve) => setTimeout(resolve, 500));
     check((await overdue()).length - eventsBefore === dueAgain, `one fire of the queue ran the sweep: ${dueAgain} tickets marked overdue by the worker`);
   } finally {
     await jobs.stop();
