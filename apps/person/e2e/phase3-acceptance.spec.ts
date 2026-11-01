@@ -660,6 +660,9 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     // Sending: a refused save before anything is sent is shown, and the button is usable again.
     await page.locator('[data-tier][data-lead] button').click();
     await expect(page).toHaveURL(consentUrl(locale));
+    // The screen reads the phone before it shows Send; storage is refused only once it has finished, or a refused read
+    // trips the crisis guard or the unreadable screen instead of the send this step is about.
+    await expect(page.getByRole('button', { name: msg(locale, 'consent.send'), exact: true })).toBeEnabled();
     await setIdbMode(page, 'refuse');
     await send(page, locale);
     await expect(page.getByRole('alert').filter({ hasText: msg(locale, 'consent.localFailed') })).toBeVisible();
