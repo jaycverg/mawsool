@@ -26,14 +26,14 @@ Node comes from `.nvmrc` (`nvm use`); pnpm is pinned by `packageManager`. Copy `
 | Command | What it does |
 | --- | --- |
 | `pnpm dev` | Postgres (Compose), migrations, then API :4000, person :3000, clinician :3001, ops :3002 |
-| `pnpm verify` | script tests, lint, typecheck, Vitest with coverage thresholds, builds. CI runs exactly this |
+| `pnpm verify` | script tests, lint, typecheck, Vitest with coverage thresholds, builds, then `smoke:dev`. CI runs exactly this, so Docker must be running |
 | `pnpm smoke:dev` | starts `pnpm dev`, waits for all four apps to answer 200, stops everything |
 | `pnpm gate:a` | crisis triggers fire with every network entry point stubbed to throw |
 | `pnpm gate:facility-scope` | a clinician at one facility gets 404 on another facility's ticket |
 | `pnpm gate:seed` | seed content, determinism and the planted Urdu gap |
 | `pnpm db:up` / `db:down` / `db:migrate` / `db:seed` | Postgres lifecycle, migrations, deterministic seed |
 
-Tests that need a database use in-process PGlite with the real migrations, so `pnpm verify` needs no Docker. `smoke:dev` and `db:*` do.
+Tests that need a database use in-process PGlite with the real migrations, so `pnpm test` and the `gate:*` commands need no Docker. `pnpm verify` ends with `smoke:dev`, and `smoke:dev` and `db:*` do need Docker.
 
 Second copy of the repo on one machine (for example a gate run from another worktree): set `PORT_OFFSET=100` in its `.env`. Every port moves together (api 4100, apps 3100-3102, Postgres 54429) and the Compose project becomes `mawsool-100`, so containers and volumes never collide.
 
@@ -46,18 +46,19 @@ Second copy of the repo on one machine (for example a gate run from another work
 - Label every mock (directory, insurance, Malaffi export, TAMM link, messaging, crisis console).
 - Arabic and English for every user-facing string. Message files hold all text; a lint rule fails on hard-coded JSX text.
 - No phone number is collected before the reminders story. The device registers with a random id and secret; the server keeps only the secret's hash.
-- Instrument wording comes from published sources only, never machine translation. `wordingStatus: 'unverified'` text shows a visible label. Never mark wording verified without a row in `packages/instruments/SOURCES.md`.
+- Instrument wording comes from published sources only, never machine translation. `wordingStatus: 'verified'` means published validated wording: copied from an obtained source and backed by a cited validation study in `packages/instruments/SOURCES.md`. Everything else is `unverified` and shows a visible label.
 
 ## API conventions
 
 - Every route declares `config.access` (`public | person | clinician | ops | admin | inbound`); startup throws otherwise. A clinician route under `/tickets` must also declare `facilityScoped: true` and use `facilityScopedTicket`.
 - Time comes from `apps/api/src/clock.ts` through an injected `Clock`. Lint forbids `Date.now()` and `new Date()` elsewhere in `apps/api/src`.
 - No column defaults to the database clock; the application writes every timestamp.
-- Staff sign-in links are logged, never sent; one use, 15 minutes, only the hash stored.
+- Staff sign-in links are logged, never sent; one use, 15 minutes, only the hash stored. A clinician's link opens `<CLINICIAN_APP_URL>/en/sign-in/`, an ops or admin link opens `<OPS_APP_URL>/en/sign-in/`; the page spends the token only on a button press.
 
 ## Code and commit conventions
 
 - A commit message is one line. No ticket numbers in code comments or product identifiers.
 - Tests: a case per recovery branch; prove a guard by deleting it and watching its test fail; no disjunctive assertions.
 - The person app stays wrappable as a native app: static export, no server components or actions, platform access only through `packages/ui` adapters.
+- The person app's service worker gets its precache list from `apps/person/scripts/build-precache.mjs` after `next build` (pages, built CSS and JS, fonts, manifest, icons, version from the build). To make a screen open offline, add its route to `PRECACHE_ROUTES` there.
 - `.local/` (plans, spec, design boards) is git-ignored and lives outside worktrees; read it by absolute path.
