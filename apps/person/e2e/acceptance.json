@@ -66,5 +66,9 @@
   {
     "id": "block-survives-hung-storage",
     "sentence": "If IndexedDB hangs on the trigger answer, the crisis screen shows and Back or a direct guarded route in that tab still lands on the crisis screen"
+  },
+  {
+    "id": "direct-unslashed-lands-on-crisis",
+    "sentence": "Offline, a direct visit to each guarded screen typed without its trailing slash lands on the crisis screen"
   }
 ]
