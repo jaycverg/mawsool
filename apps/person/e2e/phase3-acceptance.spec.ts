@@ -34,7 +34,7 @@ const DAY_MS = 86_400_000;
 const PHQ9_ELEVEN = [2, 2, 2, 1, 1, 1, 1, 1, 0] as const;
 
 interface Stored {
-  ticket: { id: string; personId: string; state: string; parentTicketId: string | null };
+  ticket: { id: string; personId: string; shortCode: string; state: string; parentTicketId: string | null };
   events: { seq: number; fromState: string | null; toState: string; actor: string; reason: string | null; selfConfirmed: boolean }[];
   consents: { element: string; revokedAt: string | null }[];
   summaryLogs: number;
@@ -819,14 +819,15 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     });
     await send(page, locale);
     await expect(page).toHaveURL(/\/ticket\/\?id=.*saved=0/);
-    const id = ticketIdOf(page);
+    const { shortCode } = (await stored(ticketIdOf(page))).ticket;
     await setIdbMode(page, null);
     await page.unroute(`${API}/tickets`);
 
     // The phone kept no note of the ticket, but it did give the server something: the tab asks for the list and opens the newest.
     await page.goto(`/${locale}/ticket/`);
     await expect(page.locator('[data-ticket]')).toBeVisible();
-    expect(ticketIdOf(page) ?? id).toBeTruthy();
+    // It is the ticket just sent, not any ticket: the code on screen is the stored ticket's short code.
+    await expect(page.locator('[data-code]')).toHaveText(`${shortCode.slice(0, 2)}-${shortCode.slice(2)}`);
     await expect(page.getByText(msg(locale, 'ticket.noTicket'))).toHaveCount(0);
 
     // If that list cannot be had, the person is told so, never that they have no referral.
