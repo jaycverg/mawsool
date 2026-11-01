@@ -1,21 +1,20 @@
 'use client';
 
 import { redact, wordCount } from '@mawsool/consent';
-import { AGE_BANDS, CARE_LANGUAGES, GENDERS, REGIONS, SUMMARY_WORD_LIMIT, SummaryDraftSchema, type BundleContent, type ConsentElement, type Demographics, type Screening, type Service } from '@mawsool/types';
+import { AGE_BANDS, CARE_LANGUAGES, GENDERS, REGIONS, SUMMARY_WORD_LIMIT, SummaryDraftSchema, type BundleContent, type ConsentElement, type Demographics, type Preferences, type Screening, type Service } from '@mawsool/types';
 import { isLocale } from '@mawsool/ui';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 import { API_URL } from '../lib/api';
 import { deviceNow } from '../lib/clock';
 import { loadDirectory } from '../lib/directory';
-import { KEYS } from '../lib/keys';
 import { formatDate } from '../lib/format';
 import { loadPendingChoice, loadPreferences, type PendingChoice } from '../lib/prefs';
 import { href } from '../lib/routes';
 import { loadScreenings } from '../lib/screening-store';
 import { sendReferral } from '../lib/send-referral';
 import { callServer, markServerFootprint, type ServerDeps } from '../lib/server';
-import { EMPTY_SHARING, buildContent, loadSharing, parseConditions, saveSharing, type Sharing } from '../lib/share';
+import { EMPTY_SHARING, buildContent, loadEquity, loadSharing, parseConditions, saveEquity, saveSharing, type Sharing } from '../lib/share';
 import { useDevice, type Device } from '../lib/use-device';
 import { FlowHeader } from './FlowHeader';
 
@@ -29,7 +28,7 @@ interface Loaded {
   sharing: Sharing;
 }
 
-type Problem = 'offline' | 'rejected' | 'changed' | null;
+type Problem = 'offline' | 'rejected' | 'changed' | 'localFailed' | null;
 
 /** The optional elements in the order the board lists them: one row each, all off until ticked. */
 const ROWS = ['scores', 'trajectory', 'conditions', 'preferences', 'free_text'] as const;
@@ -46,6 +45,7 @@ const SELECT = 'h-11 w-full rounded-input border border-[#9AAAA7] bg-surface px-
  */
 export function ConsentScreen() {
   const t = useTranslations('consent');
+  const to = useTranslations('options');
   const locale = useLocale();
   const lang = isLocale(locale) ? locale : 'en';
   const device = useDevice();
@@ -54,7 +54,9 @@ export function ConsentScreen() {
   const [ticked, setTicked] = useState<ReadonlySet<Row>>(new Set());
   const [conditionsText, setConditionsText] = useState('');
   const [sharing, setSharing] = useState<Sharing>(EMPTY_SHARING);
-  const [summary, setSummary] = useState<{ text: string; source: 'ai' | 'template'; approved: boolean } | null>(null);
+  const [summary, setSummary] = useState<{ text: string; source: 'ai' | 'template'; approved: boolean; builtFrom: ConsentElement[] } | null>(null);
+  const [typedFailed, setTypedFailed] = useState(false);
+  const [storedOptIn, setStoredOptIn] = useState(false);
   const [drafting, setDrafting] = useState<'idle' | 'working' | 'failed'>('idle');
   const [equity, setEquity] = useState<{ on: boolean; buckets: Partial<Demographics> }>({ on: false, buckets: {} });
   const [sending, setSending] = useState(false);
@@ -63,7 +65,9 @@ export function ConsentScreen() {
   useEffect(() => {
     if (device === null || device === 'unavailable') return;
     void (async () => {
-      const [pending, screenings, preferences, saved] = await Promise.all([loadPendingChoice(device.storage), loadScreenings(device.storage), loadPreferences(device.storage), loadSharing(device.storage)]);
+      const [pending, screenings, preferences, saved, equityStored] = await Promise.all([loadPendingChoice(device.storage), loadScreenings(device.storage), loadPreferences(device.storage), loadSharing(device.storage), loadEquity(device.storage)]);
+      setStoredOptIn(equityStored.optIn);
+      setEquity({ on: equityStored.optIn, buckets: equityStored.buckets as Partial<Demographics> });
       if (!pending) return setLoaded('none');
       const directory = await loadDirectory({ storage: device.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, now: deviceNow });
       setSharing(saved);
@@ -79,6 +83,11 @@ export function ConsentScreen() {
   }, [loaded, sharing.note, conditionsText]);
 
   const elements = useMemo<ConsentElement[]>(() => ['ticket', ...ROWS.filter((row) => ticked.has(row) && redact(content, [row])[row] !== undefined)], [ticked, content]);
+  // An approval holds only for what it was drafted from: when an element it used is unticked, it has to be given again.
+  useEffect(() => {
+    if (summary?.approved && summary.builtFrom.some((element) => !elements.includes(element))) setSummary({ ...summary, approved: false });
+  }, [elements, summary]);
+
   const serverDeps = (d: Device): ServerDeps => ({ storage: d.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, random: window.crypto });
 
   if (device === 'unavailable' || unreadable) return <Shell lang={lang} t={t}><p role="alert" className="t-body">{t('storageUnavailable')}</p></Shell>;
@@ -103,7 +112,7 @@ export function ConsentScreen() {
     scores: { title: t('scoresTitle'), detail: content.scores ? t('scoresDetail', { list: latestScores }) : t('scoresNone'), available: content.scores !== undefined },
     trajectory: { title: t('trendTitle'), detail: trend.length > 0 ? t('trendDetail', { count: trend.length, date: formatDate(trend[0]!.takenAt, lang) }) : t('trendNone'), available: trend.length > 0 },
     conditions: { title: t('conditionsTitle'), detail: content.conditions ? content.conditions.join(', ') : t('conditionsNone'), available: content.conditions !== undefined },
-    preferences: { title: t('prefsTitle'), detail: content.preferences ? Object.values(content.preferences).join(', ') : t('prefsNone'), available: content.preferences !== undefined },
+    preferences: { title: t('prefsTitle'), detail: content.preferences ? preferenceText(content.preferences, to) : t('prefsNone'), available: content.preferences !== undefined },
     free_text: { title: t('noteTitle'), detail: content.free_text ? t('noteWritten') : t('noteNone'), available: content.free_text !== undefined },
   };
 
@@ -119,54 +128,67 @@ export function ConsentScreen() {
   async function keepTyped(next: Sharing, conditions: string) {
     setSharing(next);
     setConditionsText(conditions);
-    await saveSharing(dev.storage, { ...next, conditions: parseConditions(conditions) }).catch(() => undefined);
+    setTypedFailed(false);
+    await saveSharing(dev.storage, { ...next, conditions: parseConditions(conditions) }).catch(() => setTypedFailed(true));
   }
 
   async function draft() {
     setDrafting('working');
-    await markServerFootprint(dev.storage, deviceNow);
-    const result = await callServer<unknown>(serverDeps(dev), 'POST', '/summary/draft', {
-      requestId: pending.requestId,
-      locale: lang,
-      useAi: sharing.useAi,
-      consented: elements,
-      content: redact(content, elements),
-    });
-    const parsed = result.ok ? SummaryDraftSchema.safeParse(result.body) : null;
-    if (!parsed?.success) return setDrafting('failed');
-    setSummary({ text: parsed.data.text, source: parsed.data.source, approved: false });
-    setDrafting('idle');
+    try {
+      await markServerFootprint(dev.storage, deviceNow);
+      // With the AI box unticked nothing about the person goes with the request: the server only returns the template.
+      const aiOn = sharing.useAi;
+      const result = await callServer<unknown>(serverDeps(dev), 'POST', '/summary/draft', {
+        requestId: pending.requestId,
+        locale: lang,
+        useAi: aiOn,
+        consented: aiOn ? elements : ['ticket'],
+        content: aiOn ? redact(content, elements) : {},
+      });
+      const parsed = result.ok ? SummaryDraftSchema.safeParse(result.body) : null;
+      if (!parsed?.success) return setDrafting('failed');
+      setSummary({ text: parsed.data.text, source: parsed.data.source, approved: false, builtFrom: elements });
+      setDrafting('idle');
+    } catch {
+      setDrafting('failed');
+    }
   }
 
   async function send() {
     setSending(true);
     setProblem(null);
     const deps = serverDeps(dev);
-    if (equity.on) {
-      const buckets: Demographics = { ageBand: equity.buckets.ageBand ?? null, gender: equity.buckets.gender ?? null, language: equity.buckets.language ?? null, region: equity.buckets.region ?? null };
-      await markServerFootprint(dev.storage, deviceNow);
-      const saved = await callServer(deps, 'PUT', '/me/equity', { optIn: true, buckets });
-      if (!saved.ok) {
-        setSending(false);
-        return setProblem(saved.reason === 'offline' ? 'offline' : 'rejected');
+    try {
+      let optInSaved = true;
+      if (equity.on || storedOptIn) {
+        const buckets: Demographics = { ageBand: equity.buckets.ageBand ?? null, gender: equity.buckets.gender ?? null, language: equity.buckets.language ?? null, region: equity.buckets.region ?? null };
+        await markServerFootprint(dev.storage, deviceNow);
+        const saved = await callServer(deps, 'PUT', '/me/equity', equity.on ? { optIn: true, buckets } : { optIn: false });
+        if (!saved.ok) {
+          setSending(false);
+          return setProblem(saved.reason === 'offline' ? 'offline' : 'rejected');
+        }
+        optInSaved = await saveEquity(dev.storage, { optIn: equity.on, buckets: equity.on ? buckets : {} }).then(() => true, () => false);
       }
-      await dev.storage.set(KEYS.equity, { optIn: true }).catch(() => undefined);
-    }
-    const outcome = await sendReferral(deps, {
-      pending,
-      elements,
-      content,
-      approvedSummary,
-      summaryRequestId: summary ? pending.requestId : null,
-      language: content.preferences?.language ?? lang,
-      now: deviceNow,
-    });
-    if (outcome.status === 'sent') {
-      window.location.assign(href(lang, 'ticket', { id: outcome.ticketId }));
-      return;
+      const outcome = await sendReferral(deps, {
+        pending,
+        elements,
+        content,
+        approvedSummary,
+        summaryRequestId: summary ? pending.requestId : null,
+        language: content.preferences?.language ?? lang,
+        now: deviceNow,
+      });
+      if (outcome.status === 'sent') {
+        // The server has the ticket, so the person always goes to it; a note that this phone could not keep its own copy travels with them.
+        window.location.assign(href(lang, 'ticket', outcome.saved && optInSaved ? { id: outcome.ticketId } : { id: outcome.ticketId, saved: '0' }));
+        return;
+      }
+      setProblem(outcome.status === 'offline' ? 'offline' : outcome.status === 'changed' ? 'changed' : outcome.status === 'not_saved' ? 'localFailed' : 'rejected');
+    } catch {
+      setProblem('localFailed');
     }
     setSending(false);
-    setProblem(outcome.status === 'offline' ? 'offline' : outcome.status === 'changed' ? 'changed' : 'rejected');
   }
 
   const preview = [
@@ -182,7 +204,7 @@ export function ConsentScreen() {
         <div className="flex flex-col gap-1">
           <h1 className="t-h1">{t('heading')}</h1>
           <p className="t-body text-muted">
-            {t('sendingTo')} <b className="text-ink">{service?.name ?? ''}</b> <span className="ms-1 rounded-chip bg-mock px-2 py-[3px] text-[12px] font-semibold text-mock-ink">{t('sample')}</span>
+            {t('sendingTo')} <b className="text-ink" dir="auto">{service?.name ?? ''}</b> <span className="ms-1 rounded-chip bg-mock px-2 py-[3px] text-[12px] font-semibold text-mock-ink">{t('sample')}</span>
           </p>
           {pending.reroute && <p className="t-small text-muted">{t('reroutingNote')}</p>}
         </div>
@@ -222,14 +244,17 @@ export function ConsentScreen() {
         </section>
 
         <section className="flex flex-col gap-2 rounded-staff border border-dashed border-[#9AAAA7] bg-surface px-3.5 py-3">
-          <p className="t-small text-muted">{t('aiText')}</p>
+          <div className="flex items-center gap-3">
+            <p className="t-small flex-1 text-muted">{t('aiText')}</p>
+            <button type="button" className="h-11 shrink-0 rounded-pill border-[1.5px] border-accent bg-surface px-3.5 text-[14px] font-semibold text-accent" disabled={drafting === 'working'} onClick={() => void draft()}>
+              {drafting === 'working' ? t('drafting') : t('draft')}
+            </button>
+          </div>
           <label className="flex min-h-tap items-center gap-3 text-[14px] font-semibold">
             <input type="checkbox" id="use-ai" className="size-6 accent-accent" checked={sharing.useAi} onChange={(event) => void keepTyped({ ...sharing, useAi: event.target.checked }, conditionsText)} />
             {t('aiTick')}
           </label>
-          <button type="button" className="tap self-start rounded-pill border-[1.5px] border-accent px-4 text-[14px] font-semibold text-accent" disabled={drafting === 'working'} onClick={() => void draft()}>
-            {drafting === 'working' ? t('drafting') : t('draft')}
-          </button>
+          {typedFailed && <p role="alert" className="t-small text-danger">{t('typedNotSaved')}</p>}
           {drafting === 'failed' && <p role="alert" className="t-small text-danger">{t('draftFailed')}</p>}
           {summary && (
             <div className="flex flex-col gap-1.5" data-summary={summary.source}>
@@ -238,6 +263,7 @@ export function ConsentScreen() {
               <p className="t-small text-muted">{summary.source === 'ai' ? t('sourceAi') : t('sourceTemplate')}</p>
               <p className={`t-small ${summaryWords > SUMMARY_WORD_LIMIT ? 'text-danger' : 'text-muted'}`}>{summaryWords > SUMMARY_WORD_LIMIT ? t('tooLong') : t('words', { count: summaryWords })}</p>
               <p className="t-small text-muted">{t('summaryHint')}</p>
+              {!summary.approved && summary.builtFrom.some((element) => !elements.includes(element)) && <p className="t-small text-danger" data-stale>{t('staleSummary')}</p>}
               {summary.approved ? (
                 <p role="status" className="text-[14px] font-semibold text-accent-dark">{t('approved')}</p>
               ) : (
@@ -249,7 +275,7 @@ export function ConsentScreen() {
           )}
         </section>
 
-        <EquityPanel t={t} value={equity} onChange={setEquity} />
+        <EquityPanel t={t} to={to} value={equity} onChange={setEquity} />
 
         <section className="flex flex-col gap-1.5 rounded-staff bg-accent-tint px-4 py-3.5" data-preview>
           <span className="text-[13px] font-semibold uppercase tracking-[0.6px] text-accent-dark">{t('previewTitle')}</span>
@@ -281,13 +307,13 @@ function Shell({ lang, t, children }: { lang: 'ar' | 'en'; t: Translate; childre
   );
 }
 
-function EquityPanel({ t, value, onChange }: { t: Translate; value: { on: boolean; buckets: Partial<Demographics> }; onChange: (next: { on: boolean; buckets: Partial<Demographics> }) => void }) {
+function EquityPanel({ t, to, value, onChange }: { t: Translate; to: Translate; value: { on: boolean; buckets: Partial<Demographics> }; onChange: (next: { on: boolean; buckets: Partial<Demographics> }) => void }) {
   const set = (key: keyof Demographics, entry: string) => onChange({ ...value, buckets: { ...value.buckets, [key]: entry === '' ? null : entry } });
   const fields = [
     { key: 'ageBand', label: t('ageBand'), values: AGE_BANDS, text: (v: string) => t(`ageBands.${v}`) },
     { key: 'gender', label: t('gender'), values: GENDERS, text: (v: string) => t(`genders.${v}`) },
-    { key: 'language', label: t('language'), values: CARE_LANGUAGES, text: (v: string) => v.toUpperCase() },
-    { key: 'region', label: t('region'), values: REGIONS, text: (v: string) => v.replaceAll('_', ' ') },
+    { key: 'language', label: t('language'), values: CARE_LANGUAGES, text: (v: string) => to(`languageName.${v}`) },
+    { key: 'region', label: t('region'), values: REGIONS, text: (v: string) => to(`regionName.${v}`) },
   ] as const;
   return (
     <section className="flex flex-col gap-2 rounded-staff border border-border bg-surface px-3.5 py-3" data-panel="equity">
@@ -311,4 +337,13 @@ function EquityPanel({ t, value, onChange }: { t: Translate; value: { on: boolea
         ))}
     </section>
   );
+}
+
+const PREFERENCE_LABELS = { language: 'languageName', clinicianGender: 'genderValue', modality: 'modalityValue', region: 'regionName', timeOfDay: 'timeName' } as const;
+
+/** The preferences as the person reads them on the options screen, in their language, never as stored codes. */
+function preferenceText(preferences: Preferences, to: Translate): string {
+  return (Object.keys(PREFERENCE_LABELS) as (keyof typeof PREFERENCE_LABELS)[])
+    .flatMap((key) => (preferences[key] === undefined ? [] : [to(`${PREFERENCE_LABELS[key]}.${preferences[key]}`)]))
+    .join(', ');
 }

@@ -2,7 +2,7 @@
 
 import { isLocale } from '@mawsool/ui';
 import { useLocale, useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { API_URL } from '../lib/api';
 import { deviceNow } from '../lib/clock';
 import { numbersText } from '../lib/crisis-copy';
@@ -10,6 +10,8 @@ import { crisisLines } from '../lib/crisis-numbers';
 import { flushOutbox } from '../lib/crisis-outbox';
 import { exportDeviceData } from '../lib/device-data';
 import { eraseEverything, type EraseOutcome } from '../lib/erase';
+import { callServer, markServerFootprint } from '../lib/server';
+import { loadEquity, saveEquity } from '../lib/share';
 import { useDevice } from '../lib/use-device';
 import { BottomNav } from './BottomNav';
 import { HomeHeader } from './HomeHeader';
@@ -32,6 +34,34 @@ export function SettingsScreen() {
   const [removal, setRemoval] = useState<Delete>('idle');
   const [unreadable, setUnreadable] = useState(false);
   const usable = device !== null && device !== 'unavailable';
+  const [equityOn, setEquityOn] = useState<boolean | null>(null);
+  const [equityState, setEquityState] = useState<'idle' | 'working' | 'removed' | 'failed'>('idle');
+
+  useEffect(() => {
+    if (!usable) return;
+    void loadEquity(device.storage).then((stored) => setEquityOn(stored.optIn), () => setEquityOn(null));
+  }, [device, usable]);
+
+  /** Takes the person out of the equity group totals: the server clears the four buckets, then the phone remembers it. */
+  async function optOut() {
+    if (!usable) return;
+    setEquityState('working');
+    try {
+      await markServerFootprint(device.storage, deviceNow);
+      const done = await callServer(
+        { storage: device.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, random: window.crypto },
+        'PUT',
+        '/me/equity',
+        { optIn: false },
+      );
+      if (!done.ok) return setEquityState('failed');
+      await saveEquity(device.storage, { optIn: false, buckets: {} });
+      setEquityOn(false);
+      setEquityState('removed');
+    } catch {
+      setEquityState('failed');
+    }
+  }
 
   async function show() {
     if (!usable) return;
@@ -99,6 +129,20 @@ export function SettingsScreen() {
             </>
           )}
         </section>
+
+        {(equityOn || equityState === 'removed' || equityState === 'failed') && (
+          <section className="flex flex-col gap-2.5 rounded-card border border-border bg-surface p-5" data-panel="equity">
+            <h2 className="text-[16px] font-semibold">{t('equityTitle')}</h2>
+            <p className="t-body text-muted">{t(equityOn ? 'equityOnBody' : 'equityOffBody')}</p>
+            {equityOn && (
+              <button type="button" className="tap rounded-pill border-[1.5px] border-accent px-4 font-semibold text-accent" disabled={equityState === 'working'} onClick={() => void optOut()}>
+                {t('equityOptOut')}
+              </button>
+            )}
+            {equityState === 'removed' && <p role="status" className="text-[15px] font-semibold text-accent-dark">{t('equityRemoved')}</p>}
+            {equityState === 'failed' && <p role="alert" className="text-[15px] font-semibold text-danger">{t('equityFailed')}</p>}
+          </section>
+        )}
 
         <section className="flex flex-col gap-2.5 rounded-card border border-border bg-surface p-5">
           <h2 className="text-[16px] font-semibold">{t('deleteTitle')}</h2>
