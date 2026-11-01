@@ -256,3 +256,11 @@ export async function rawStoreDump(page: Page): Promise<RawEntry[]> {
       }),
   );
 }
+
+/** Waits for the fonts and a settled layout, then compares the whole page with the committed baseline `name`. */
+export async function snapshot(page: Page, name: string): Promise<void> {
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
+  await expect(page).toHaveScreenshot(`${name}.png`, { fullPage: true });
+}

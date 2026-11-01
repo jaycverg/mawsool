@@ -8,6 +8,7 @@ import {
   answerAll,
   computed,
   seedTrend,
+  snapshot,
   crisisUrl,
   finishButton,
   goOffline,
@@ -77,7 +78,50 @@ async function blockSurvivesFailingStorage({ page, locale }: Context, mode: IdbM
   await expect(page).not.toHaveURL(crisisUrl(locale), { timeout: 15_000 });
 }
 
+/**
+ * Pixel snapshots of the key screens at 390 x 844, in both languages, from the same stored data and a clock fixed
+ * at 29 Oct 2026 08:00 Dubai: a GAD-7 of 9 three weeks before one of 14. The baselines are for Chromium on macOS.
+ */
+function screenSnapshot(screen: string, open: (ctx: Context) => Promise<void>): (ctx: Context) => Promise<void> {
+  return async (ctx) => {
+    await visitOnline(ctx.page, ctx.locale);
+    await seedTrend(ctx.page, ctx.context, ctx.locale);
+    await open(ctx);
+    await snapshot(ctx.page, `${screen}-${ctx.locale}`);
+  };
+}
+
 const CASES: Record<string, (ctx: Context) => Promise<void>> = {
+  'snapshot-home': screenSnapshot('home', async ({ page, locale }) => {
+    await page.goto(`/${locale}/`);
+    await expect(page.locator('[data-trend]')).toBeVisible();
+    await expect(page.getByText(msg(locale, 'home.greetingMorning'))).toBeVisible();
+  }),
+  'snapshot-check-in': screenSnapshot('check-in', async ({ page, locale }) => {
+    await page.goto(`/${locale}/check-in/?i=phq9`);
+    await expect(page.getByRole('progressbar')).toBeVisible();
+  }),
+  // The result is the screen the seeding ends on.
+  'snapshot-result': screenSnapshot('result', async ({ page }) => {
+    await expect(page.locator('[data-change="reliable_deterioration"]')).toBeVisible();
+  }),
+  'snapshot-check-ins': screenSnapshot('check-ins', async ({ page, locale }) => {
+    await page.goto(`/${locale}/check-ins/`);
+    await expect(page.locator('ul li')).toHaveCount(2);
+  }),
+  'snapshot-options': screenSnapshot('options', async ({ page, locale }) => {
+    await page.goto(`/${locale}/options/`);
+    await expect(page.locator('[data-tier]').first()).toBeVisible();
+  }),
+  'snapshot-crisis': screenSnapshot('crisis', async ({ page, locale }) => {
+    await page.goto(`/${locale}/crisis/`);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(msg(locale, 'crisis.heading'));
+  }),
+  'snapshot-settings': screenSnapshot('settings', async ({ page, locale }) => {
+    await page.goto(`/${locale}/settings/`);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(msg(locale, 'settings.title'));
+  }),
+
   async 'block-survives-refused-storage'(ctx) {
     await blockSurvivesFailingStorage(ctx, 'refuse');
   },
