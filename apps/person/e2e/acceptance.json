@@ -1,0 +1,50 @@
+[
+  {
+    "id": "halts-at-crisis",
+    "sentence": "With the network off after one online visit, PHQ-9 item 9 \"several days\" halts the flow at the crisis screen"
+  },
+  {
+    "id": "reload-lands-on-crisis",
+    "sentence": "Reload lands on the crisis screen while the block is on"
+  },
+  {
+    "id": "back-lands-on-crisis",
+    "sentence": "Back lands on the crisis screen while the block is on"
+  },
+  {
+    "id": "direct-options-lands-on-crisis",
+    "sentence": "A direct visit to /options (and /consent and /ticket) lands on the crisis screen while the block is on"
+  },
+  {
+    "id": "numbers-visible-and-tappable",
+    "sentence": "Each crisis number is visible as text and tappable"
+  },
+  {
+    "id": "call-now-keeps-block",
+    "sentence": "\"Call now\" alone leaves the block on"
+  },
+  {
+    "id": "safe-continue-releases-and-matches",
+    "sentence": "\"I'm safe right now — continue\" releases the block and matching runs"
+  },
+  {
+    "id": "queued-event-arrives-once",
+    "sentence": "After reconnecting, the queued crisis event arrives once, with no item answers"
+  },
+  {
+    "id": "demo-persona-1-steps-2-5",
+    "sentence": "Demo persona 1 steps 2-5 pass with the stated scores, a stored earlier check-in standing in for step 3's clock move"
+  },
+  {
+    "id": "unverified-item-shows-label",
+    "sentence": "An unverified item shows its label"
+  },
+  {
+    "id": "no-matching-input-reaches-network",
+    "sentence": "No matching input reaches the network, asserted by request interception"
+  },
+  {
+    "id": "console-clean-and-favicon",
+    "sentence": "Every person screen loads with no console error and its favicon answers 200"
+  }
+]
