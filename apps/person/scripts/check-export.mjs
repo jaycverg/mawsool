@@ -41,6 +41,28 @@ if (existsSync(resolve(out, 'manifest.webmanifest'))) {
   for (const icon of manifest.icons ?? []) need(existsSync(resolve(out, icon.src.replace(/^\//, ''))), `manifest icon ${icon.src} is missing from out/`);
 }
 
+// The service worker must carry the real precache list written after the build.
+if (existsSync(resolve(out, 'sw.js'))) {
+  const worker = readFileSync(resolve(out, 'sw.js'), 'utf8');
+  const listed = /\/\*PRECACHE_START\*\/\s*(\{[\s\S]*?\})\s*\/\*PRECACHE_END\*\//.exec(worker)?.[1];
+  const precache = listed ? JSON.parse(listed) : null;
+  need(precache !== null, 'sw.js has no precache list');
+  if (precache) {
+    need(typeof precache.version === 'string' && precache.version !== 'dev', 'sw.js precache version was not derived from the build');
+    const urls = /** @type {string[]} */ (precache.urls);
+    for (const route of ['/', '/en/', '/ar/']) need(urls.includes(route), `precache is missing the page ${route}`);
+    need(urls.some((u) => /^\/_next\/static\/.*\.css$/.test(u)), 'precache has no built stylesheet');
+    need(urls.some((u) => /^\/_next\/static\/.*\.js$/.test(u)), 'precache has no built script');
+    need(urls.some((u) => /latin-400-normal.*\.woff2$/.test(u)), 'precache has no Latin font');
+    need(urls.some((u) => /arabic-400-normal.*\.woff2$/.test(u)), 'precache has no Arabic font');
+    need(urls.includes('/manifest.webmanifest') && urls.some((u) => u.startsWith('/icons/')), 'precache is missing the manifest or icons');
+    for (const url of urls) {
+      const file = url.endsWith('/') ? `${url}index.html` : url;
+      need(existsSync(resolve(out, file.replace(/^\//, ''))), `precache lists ${url}, which is not in out/`);
+    }
+  }
+}
+
 // No server output may sneak into a static export.
 need(!existsSync(resolve(out, '_next/server')), 'out/ contains _next/server');
 const stray = readdirSync(out).filter((name) => name === 'api');
