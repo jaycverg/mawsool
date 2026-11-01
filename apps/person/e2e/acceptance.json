@@ -81,7 +81,7 @@
   },
   {
     "id": "data-is-encrypted-at-rest",
-    "sentence": "Everything the app keeps in IndexedDB is ciphertext under a non-extractable key, with no answer, score or choice in the clear"
+    "sentence": "Everything the app keeps in IndexedDB, the crisis block and the queued crisis event included, is ciphertext under a non-extractable key, with no answer, score, choice or trigger in the clear"
   },
   {
     "id": "settings-download-and-delete",

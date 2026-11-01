@@ -51,7 +51,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.setSerializerCompiler(serializerCompiler);
 
   // CORS registers its own preflight route, so it goes in before the registry starts checking routes.
-  await app.register(cors, { origin: deps.config.corsOrigins, methods: ['GET', 'POST', 'DELETE', 'OPTIONS'] });
+  await app.register(cors, { origin: deps.config.corsOrigins, methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] });
   await app.register(swagger, {
     openapi: { openapi: '3.0.3', info: { title: 'Mawsool Ticket API', version: '0.0.0', description: 'Closed-loop referral tickets, consent and metrics.' } },
     transform: jsonSchemaTransform,

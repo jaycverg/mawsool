@@ -35,3 +35,21 @@ describe('GET /docs (OpenAPI)', () => {
     expect(JSON.stringify(doc.paths['/consents/{id}']!['delete'])).toContain('ticketState');
   });
 });
+
+describe('CORS', () => {
+  it('lets the browser apps use every method the API serves, PUT and DELETE included', async () => {
+    const testDb = await createTestDb();
+    const ctx = await createTestApp(testDb.db);
+    try {
+      const methods = [...new Set(ctx.app.routeRegistry.map((route) => route.method).filter((method) => method !== 'HEAD' && method !== 'OPTIONS'))];
+      expect(methods.sort()).toEqual(['DELETE', 'GET', 'POST', 'PUT']);
+      for (const method of methods) {
+        const res = await ctx.app.inject({ method: 'OPTIONS', url: '/consents/00000000-0000-4000-8000-000000000000', headers: { origin: 'http://localhost:3001', 'access-control-request-method': method, 'access-control-request-headers': 'authorization,content-type' } });
+        expect(res.headers['access-control-allow-methods'], method).toContain(method);
+      }
+    } finally {
+      await ctx.app.close();
+      await testDb.close();
+    }
+  });
+});

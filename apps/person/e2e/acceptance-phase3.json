@@ -1,0 +1,58 @@
+[
+  {
+    "id": "consent-and-ticket-redirect-while-blocked",
+    "sentence": "/consent and /ticket redirect to /crisis while the block is set"
+  },
+  {
+    "id": "consent-defaults-off-and-previews",
+    "sentence": "The consent screen shows every optional element off, the ticket as needed, the equity opt-in off, sends nothing before Send, and previews what the clinic will see"
+  },
+  {
+    "id": "ticket-sends-only-ticked-and-stores-ciphertext",
+    "sentence": "The request carries only the ticked elements, and the stored bundle is ciphertext holding only those"
+  },
+  {
+    "id": "revoke-one-then-withdraw",
+    "sentence": "Stopping one element removes only it from the stored bundle; withdrawing deletes the bundle and moves the ticket to withdrawn"
+  },
+  {
+    "id": "day-7-yes-reaches-seen",
+    "sentence": "The day-7 check appears from ticket data, and Yes on an issued ticket reaches seen"
+  },
+  {
+    "id": "not-yet-reroutes-with-new-consent",
+    "sentence": "Not yet leads to other options and a new consent; the child bundle holds only what the new consent allows"
+  },
+  {
+    "id": "delete-everything-revokes-first",
+    "sentence": "Delete everything revokes on the server before wiping, and when the server cannot be reached with data on it, deletes nothing"
+  },
+  {
+    "id": "delete-everything-offline-without-server-data",
+    "sentence": "Delete everything wipes offline, with no request, when nothing was ever shared"
+  },
+  {
+    "id": "delete-during-crisis-sends-the-record",
+    "sentence": "Delete everything during an open crisis sends the unsent crisis record first, then wipes, and says so"
+  },
+  {
+    "id": "delete-during-crisis-offline-loses-the-record",
+    "sentence": "Delete everything during an open crisis with no network deletes the unsent record with the rest, and says so"
+  },
+  {
+    "id": "pending-choice-keeps-current-support",
+    "sentence": "Choosing a clinic option and leaving the consent screen unsent keeps the support the person is already on"
+  },
+  {
+    "id": "options-save-failure-is-shown",
+    "sentence": "When the phone refuses to save a change on the options screen, the person is told"
+  },
+  {
+    "id": "tab-mark-exception-is-named",
+    "sentence": "Settings names the plain-text crisis note in the tab, and the note holds only the trigger, an id and the time"
+  },
+  {
+    "id": "consent-and-ticket-measure-at-390",
+    "sentence": "The consent and ticket screens hold the plan's type, tap-target and no-overflow rules at 390 px"
+  }
+]

@@ -10,8 +10,9 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './e2e',
   // An explicit registry of spec files: a spec that is not listed here does not run, and the gate fails if the
-  // report does not hold exactly the tests in e2e/acceptance.json.
-  testMatch: ['exit-acceptance.spec.ts'],
+  // report does not hold exactly the tests in the gate's registry (acceptance.json for gate:phase2,
+  // acceptance-phase3.json for gate:phase3). Each gate names its own spec on the command line.
+  testMatch: ['exit-acceptance.spec.ts', 'phase3-acceptance.spec.ts'],
   timeout: 60_000,
   globalTimeout: 540_000,
   expect: { timeout: 10_000, toHaveScreenshot: { maxDiffPixelRatio: 0.005, animations: 'disabled', caret: 'hide' } },
