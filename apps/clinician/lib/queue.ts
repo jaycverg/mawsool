@@ -1,4 +1,4 @@
-import { QueueStateFilterSchema, TierSchema, type BundleContent, type QueueStateFilter, type ScoreEntry, type Tier } from '@mawsool/types';
+import { QUEUE_MAX_PAGE, QueueStateFilterSchema, TierSchema, type BundleContent, type QueueStateFilter, type ScoreEntry, type Tier } from '@mawsool/types';
 
 /** Base URL of the Ticket API, fixed at build time. */
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -21,8 +21,8 @@ export function viewFromQuery(params: Pick<URLSearchParams, 'get'>): QueueView {
   };
 }
 
-/** The query string for the API call: `limit` is the largest page the API allows, so one call fills the table. */
-export function queueQuery(view: QueueView, limit = 100): string {
+/** The query string for the API call: by default the largest page the API allows, so one call fills the table. */
+export function queueQuery(view: QueueView, limit: number = QUEUE_MAX_PAGE): string {
   const query = new URLSearchParams({ state: view.state, limit: String(limit) });
   if (view.tier) query.set('tier', view.tier);
   return `?${query.toString()}`;

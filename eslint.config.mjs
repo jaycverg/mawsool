@@ -37,6 +37,7 @@ export default tseslint.config(
     ignores: [
       '**/node_modules/**',
       '**/.next/**',
+      '**/.next-e2e/**',
       '**/out/**',
       '**/dist/**',
       '**/coverage/**',
@@ -64,6 +65,8 @@ export default tseslint.config(
     rules: {
       ...react.configs.recommended.rules,
       ...react.configs['jsx-runtime'].rules,
+      // No raw HTML anywhere: the staff apps' page policy allows inline scripts, so nothing may be able to write one.
+      'react/no-danger': 'error',
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'error',
       ...noHardCodedText,

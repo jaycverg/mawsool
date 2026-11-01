@@ -18,7 +18,7 @@ describe('the queue view in the address', () => {
   });
 
   it('builds the API query with the state, the page size and the tier only when there is one', () => {
-    expect(queueQuery({ state: 'open', tier: null })).toBe('?state=open&limit=100');
+    expect(queueQuery({ state: 'open', tier: null })).toBe('?state=open&limit=200');
     expect(queueQuery({ state: 'seen', tier: 'tele' }, 50)).toBe('?state=seen&limit=50&tier=tele');
   });
 

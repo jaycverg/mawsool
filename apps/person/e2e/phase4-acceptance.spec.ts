@@ -1,0 +1,950 @@
+import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import acceptance from './acceptance-phase4.json';
+import {
+  API,
+  BASE,
+  INSPECT,
+  LOCALES,
+  computed,
+  msg,
+  snapshot,
+  takeCheckIn,
+  visitOnline,
+  type Locale,
+} from './helpers';
+import {
+  CLINIC,
+  CLINICIAN_A,
+  CLINICIAN_B,
+  CONDITION,
+  FACILITY_A,
+  FACILITY_B,
+  FREE_TEXT,
+  OPS,
+  OPS_USER,
+  SESSION_KEY,
+  SUMMARY,
+  bearer,
+  call,
+  cmsg,
+  handOver,
+  inboundCounts,
+  keepSession,
+  loggedLink,
+  makeTicket,
+  newPerson,
+  requestLink,
+  revokeConsent,
+  sendScreen,
+  serviceAt,
+  signedRequest,
+  staffSession,
+  validateBundle,
+} from './staff-helpers';
+
+/**
+ * Every sentence of Phase 4's exit acceptance, and each carried item, as its own named test in both languages.
+ * `acceptance-phase4.json` is the registry: the gate fails unless the report holds exactly one passing test per entry and
+ * locale. The API is the real one on an in-process database, the person app is the real static export and the clinician
+ * and ops apps are real production builds, all in a real Chromium. The inspect listener shows what the API stored.
+ *
+ * Tests that are about the clinician's screens make their tickets through the API (a person's device is not the point);
+ * the demo and reroute tests make theirs through the person app.
+ */
+interface Context {
+  page: Page;
+  context: BrowserContext;
+  browser: Browser;
+  locale: Locale;
+}
+
+/** PHQ-9 = 11: the "trained GP or tele" row, so a GP is the lead card. Item 9 is 0, so no crisis. */
+const PHQ9_ELEVEN = [2, 2, 2, 1, 1, 1, 1, 1, 0] as const;
+const UNABLE_REASONS = ['could_not_reach', 'no_capacity', 'not_eligible', 'wrong_service', 'other'];
+const NOT_SHARED_EN = 'Not shared by the person';
+const WITHDRAWN_EN = 'Withdrawn by the person';
+
+interface Stored {
+  ticket: { id: string; personId: string; shortCode: string; state: string; source: string; parentTicketId: string | null };
+  events: { seq: number; fromState: string | null; toState: string; actor: string; reason: string | null }[];
+  consents: { element: string; revokedAt: string | null }[];
+  bundleReads: number;
+  bundle: { content: Record<string, unknown> | null } | null;
+}
+
+async function stored(ticketId: string): Promise<Stored> {
+  return (await (await fetch(`${INSPECT}/tickets/${ticketId}`)).json()) as Stored;
+}
+
+async function invite(id: string): Promise<{ claimedBy: string | null; ticketId: string | null; source: string; codeHash: string }> {
+  return (await (await fetch(`${INSPECT}/invites/${id}`)).json()) as { claimedBy: string | null; ticketId: string | null; source: string; codeHash: string };
+}
+
+const ticketIdOf = (page: Page) => new URL(page.url()).searchParams.get('id')!;
+const consentUrl = (locale: Locale) => new RegExp(`/${locale}/consent/$`);
+const ticketUrl = (locale: Locale) => new RegExp(`/${locale}/ticket/\\?id=`);
+const displayCode = (shortCode: string) => `${shortCode.slice(0, 2)}-${shortCode.slice(2)}`;
+const clinicUrl = (locale: Locale, query = '') => `${CLINIC}/${locale}/${query}`;
+const row = (page: Page, shortCode: string) => page.locator(`[data-queue] tr[data-ticket="${shortCode}"]`);
+
+/** The text of every answer the API gave this page, to prove a value is in none of them. */
+function recordApiBodies(page: Page): () => Promise<string> {
+  const bodies: Promise<string>[] = [];
+  page.on('response', (response) => {
+    if (response.url().startsWith(API)) bodies.push(response.text().catch(() => ''));
+  });
+  return async () => (await Promise.all(bodies)).join('\n');
+}
+
+/** A check-in worth a GP referral, then the options screen. (The same flow as the Phase 3 spec.) */
+async function toConsent(page: Page, locale: Locale): Promise<void> {
+  await visitOnline(page, locale);
+  await takeCheckIn(page, locale, 'phq9', PHQ9_ELEVEN);
+  await expect(page.locator('[data-score]')).toHaveText('11');
+  await page.getByRole('link', { name: msg(locale, 'result.options'), exact: true }).click();
+  await expect(page.locator('[data-tier][data-lead]')).toHaveAttribute('data-tier', 'gp');
+  await page.locator('[data-tier][data-lead]').getByRole('button', { name: msg(locale, 'options.choose'), exact: true }).click();
+  await expect(page).toHaveURL(consentUrl(locale));
+  await expect(page.locator('[data-screen="consent"]')).toBeVisible();
+}
+
+const sendConsent = (page: Page, locale: Locale) => page.getByRole('button', { name: msg(locale, 'consent.send'), exact: true }).click();
+
+/** Takes a GP referral all the way to a ticket from the person app, with the given elements ticked and a note typed. */
+async function issueViaPersonApp(page: Page, locale: Locale, ticked: string[] = ['scores'], note = FREE_TEXT): Promise<string> {
+  await toConsent(page, locale);
+  await page.locator('#note').fill(note);
+  for (const element of ticked) await page.locator(`input[data-element="${element}"]`).check();
+  await sendConsent(page, locale);
+  await expect(page).toHaveURL(ticketUrl(locale));
+  await expect(page.locator('[data-ticket]')).toBeVisible();
+  return ticketIdOf(page);
+}
+
+/** A page for the clinician app signed in as the given staff member, the way a finished sign-in leaves the tab. */
+async function clinicianPage(context: BrowserContext, email = CLINICIAN_A): Promise<Page> {
+  await keepSession(context, CLINIC, await staffSession(email));
+  return context.newPage();
+}
+
+async function openTicket(clinic: Page, locale: Locale, id: string): Promise<void> {
+  await clinic.goto(clinicUrl(locale, `?ticket=${id}`));
+  await expect(clinic.locator('[data-detail] [data-code]')).toBeVisible();
+}
+
+const CASES: Record<string, (ctx: Context) => Promise<void>> = {
+  async 'demo-steps-1-and-8'({ page, context, locale }) {
+    // Step 1: the front door (TAMM) hands the screen over, signed; the person arrives from its mock page and claims it.
+    const receipt = await handOver('tamm', locale);
+    expect(receipt.claimUrl).toBe(`${BASE}/${locale}/claim/?code=${receipt.code}`);
+    await page.goto(`/${locale}/tamm/?code=${receipt.code}`);
+    await expect(page.locator('[data-mock-banner]')).toHaveText(msg(locale, 'tamm.mockBanner'));
+    await page.locator('[data-continue-with-mawsool]').click();
+    await expect(page).toHaveURL(new RegExp(`/${locale}/claim/\\?code=${receipt.code}$`));
+    await expect(page.locator('#invite-code')).toHaveValue(receipt.code);
+    expect((await invite(receipt.inviteId)).claimedBy).toBeNull(); // opening the link claims nothing
+    await page.getByRole('button', { name: msg(locale, 'claim.claim'), exact: true }).click();
+    await expect(page.locator('[data-claimed="tamm"]')).toContainText(msg(locale, 'claim.source.tamm'));
+    expect((await invite(receipt.inviteId)).claimedBy).not.toBeNull();
+
+    // Steps 2 to 7 in short: a score that leads to a GP, then the consent screen with the free-text note kept back.
+    const ticketId = await issueViaPersonApp(page, locale, ['scores']);
+    const row0 = await stored(ticketId);
+    expect(row0.ticket.source).toBe('tamm');
+    expect((await invite(receipt.inviteId)).ticketId).toBe(ticketId);
+
+    // Step 8: the clinic's queue shows the ticket, the GP opens it and sees the note was not shared.
+    const clinic = await clinicianPage(context);
+    const bodies = recordApiBodies(clinic);
+    await clinic.goto(clinicUrl(locale));
+    const ticketRow = row(clinic, row0.ticket.shortCode);
+    await expect(ticketRow).toBeVisible();
+    await expect(ticketRow).toHaveAttribute('data-state', 'issued');
+    await expect(ticketRow).toContainText(cmsg(locale, 'tier.gp'));
+    await expect(ticketRow).toContainText(cmsg(locale, 'source.tamm'));
+    // Tier only: no diagnostic label before the ticket is opened.
+    await expect(ticketRow).not.toContainText(/depress|anxi|moderate/i);
+    const bundleRead = clinic.waitForResponse((response) => response.url() === `${API}/tickets/${ticketId}/bundle`);
+    await ticketRow.getByRole('button').click();
+    await expect(clinic.locator('[data-detail] [data-code]')).toHaveText(displayCode(row0.ticket.shortCode));
+    const noteSection = clinic.locator('[data-section="free_text"]');
+    await expect(noteSection.locator('[data-not-shared]')).toHaveText(cmsg(locale, 'detail.notShared'));
+    if (locale === 'en') await expect(noteSection.locator('[data-not-shared]')).toHaveText(NOT_SHARED_EN);
+    await expect(noteSection.locator('[data-note]')).toHaveCount(0);
+    await expect(clinic.locator('[data-section="scores"]')).toContainText('PHQ-9');
+    expect((await (await bundleRead).text())).not.toContain(FREE_TEXT);
+    expect(await bodies()).not.toContain(FREE_TEXT);
+    await expect(clinic.locator('body')).not.toContainText(FREE_TEXT);
+
+    // Acknowledge: the ticket moves, and the person sees it and who opened their data.
+    await clinic.getByRole('button', { name: cmsg(locale, 'detail.acknowledge'), exact: true }).click();
+    await expect(clinic.locator('[data-detail] [data-state]')).toHaveAttribute('data-state', 'acknowledged');
+    await expect(ticketRow).toHaveAttribute('data-state', 'acknowledged');
+    expect((await stored(ticketId)).events.at(-1)).toMatchObject({ fromState: 'issued', toState: 'acknowledged', actor: 'clinic' });
+    await page.reload();
+    await expect(page.locator('[data-step="acknowledged"]')).toHaveAttribute('data-done', 'true');
+    await expect(page.locator('[data-reads] li')).toHaveCount(1);
+  },
+
+  async 'tamm-invite-ticket-has-source-tamm'({ context, locale }) {
+    const receipt = await handOver('tamm', locale);
+    const person = await newPerson();
+    const claimed = await call('POST', '/me/invites/claim', { headers: person.headers, body: { code: receipt.code } });
+    expect(claimed.status).toBe(200);
+    expect(claimed.json()).toMatchObject({ inviteId: receipt.inviteId, source: 'tamm' });
+    const gp = await serviceAt(FACILITY_A);
+    const fromTamm = await makeTicket(person, { serviceId: gp, inviteId: receipt.inviteId });
+    const ownApp = await makeTicket(person, { serviceId: gp });
+
+    expect(fromTamm.source).toBe('tamm');
+    expect(ownApp.source).toBe('app');
+    expect((await call('GET', `/me/tickets/${fromTamm.id}`, { headers: person.headers })).json().source).toBe('tamm');
+    expect((await stored(fromTamm.id)).ticket.source).toBe('tamm');
+    expect((await invite(receipt.inviteId)).ticketId).toBe(fromTamm.id);
+
+    // The clinic sees the source on the ticket, labelled as a mock.
+    const clinic = await clinicianPage(context);
+    await clinic.goto(clinicUrl(locale));
+    await expect(row(clinic, fromTamm.shortCode)).toContainText(cmsg(locale, 'source.tamm'));
+    await expect(row(clinic, ownApp.shortCode)).toContainText(cmsg(locale, 'source.app'));
+    expect(cmsg(locale, 'source.tamm')).toMatch(locale === 'en' ? /mock/i : /تجريبي/);
+    const staff = await staffSession(CLINICIAN_A);
+    expect((await call('GET', `/tickets/${fromTamm.id}`, { headers: bearer(staff) })).json().source).toBe('tamm');
+  },
+
+  async 'revoked-ticket-shows-withdrawn-and-no-data'({ context, locale }) {
+    const person = await newPerson();
+    const ticket = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A), consents: ['ticket', 'scores', 'free_text'], approvedSummary: SUMMARY });
+    const clinic = await clinicianPage(context);
+    await openTicket(clinic, locale, ticket.id);
+    await expect(clinic.locator('[data-section="free_text"] [data-note]')).toHaveText(FREE_TEXT); // shared, so shown
+    await expect(clinic.locator('[data-summary]')).toHaveText(SUMMARY);
+
+    // The person ends the sharing while the clinic has the ticket open. The clinic's next action finds out.
+    expect((await revokeConsent(person, ticket, 'ticket')).status).toBe(200);
+    await clinic.getByRole('button', { name: cmsg(locale, 'detail.markSeen'), exact: true }).click();
+    const banner = clinic.locator('[data-detail-state="withdrawn"]');
+    await expect(banner).toBeVisible();
+    await expect(banner.getByRole('heading')).toHaveText(cmsg(locale, 'detail.withdrawn'));
+    if (locale === 'en') await expect(banner.getByRole('heading')).toHaveText(WITHDRAWN_EN);
+    for (const gone of [displayCode(ticket.shortCode), ticket.shortCode, FREE_TEXT, SUMMARY, 'PHQ-9']) await expect(clinic.locator('[data-detail]'), gone).not.toContainText(gone);
+    await expect(clinic.locator('[data-detail] [data-code]')).toHaveCount(0);
+    await expect(clinic.locator('[data-detail] button')).toHaveCount(0);
+
+    // Opened afresh from a link, the same: the banner and nothing else, and the ticket is gone from the queue.
+    const bodies = recordApiBodies(clinic);
+    await openWithdrawn(clinic, locale, ticket.id);
+    expect(await bodies()).not.toMatch(new RegExp(`${ticket.shortCode}|${FREE_TEXT}|${SUMMARY}`));
+    await expect(row(clinic, ticket.shortCode)).toHaveCount(0);
+
+    const staff = bearer(await staffSession(CLINICIAN_A));
+    for (const path of [`/tickets/${ticket.id}`, `/tickets/${ticket.id}/bundle`, `/tickets/${ticket.id}/fhir`]) {
+      const res = await call('GET', path, { headers: staff });
+      expect(res.status, path).toBe(410);
+      expect(res.json()).toEqual({ error: 'withdrawn', message: 'Withdrawn by the person' });
+    }
+    expect((await stored(ticket.id)).bundle).toMatchObject({ contentCiphertext: null });
+  },
+
+  async 'unable-to-see-prompts-person-to-reroute'({ page, context, locale }) {
+    const parent = await issueViaPersonApp(page, locale, ['scores']);
+    await expect(page.locator('[data-prompt="unable"]')).toHaveCount(0); // nothing reported yet
+
+    // The clinic reports it cannot see the person.
+    const clinic = await clinicianPage(context);
+    await openTicket(clinic, locale, parent);
+    await clinic.getByRole('button', { name: cmsg(locale, 'detail.unable'), exact: true }).click();
+    await clinic.locator('[data-panel="unable"] input[value="no_capacity"]').check();
+    await clinic.getByRole('button', { name: cmsg(locale, 'detail.unableConfirm'), exact: true }).click();
+    await expect(clinic.locator('[data-unable-standing]')).toContainText(cmsg(locale, 'detail.unableReason.no_capacity'));
+    expect((await stored(parent)).events.at(-1)).toMatchObject({ fromState: 'issued', toState: 'issued', actor: 'clinic', reason: 'no_capacity' });
+    expect((await stored(parent)).ticket.state).toBe('issued');
+
+    // The person app shows the reroute prompt from that event.
+    await page.reload();
+    const prompt = page.locator('[data-prompt="unable"]');
+    await expect(prompt).toBeVisible();
+    await expect(prompt).toContainText(msg(locale, 'ticket.unablePrompt'));
+    await prompt.getByRole('button', { name: msg(locale, 'ticket.findAnother'), exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/${locale}/options/\\?reroute=${parent}&reason=unable_to_see`));
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(msg(locale, 'options.rerouteHeading'));
+    await page.locator('[data-tier][data-lead] button').click();
+    await expect(page).toHaveURL(consentUrl(locale));
+    await sendConsent(page, locale);
+    await expect(page).toHaveURL(ticketUrl(locale));
+    const child = ticketIdOf(page);
+    expect(child).not.toBe(parent);
+    expect((await stored(child)).ticket.parentTicketId).toBe(parent);
+    const parentAfter = await stored(parent);
+    expect(parentAfter.ticket.state).toBe('rerouted');
+    expect(parentAfter.events.at(-1)).toMatchObject({ toState: 'rerouted', actor: 'person', reason: 'unable_to_see' });
+
+    // Once the person has moved on, the earlier ticket no longer prompts.
+    await page.goto(`/${locale}/ticket/?id=${parent}`);
+    await expect(page.locator('[data-ticket]')).toBeVisible();
+    await expect(page.locator('[data-prompt="unable"]')).toHaveCount(0);
+  },
+
+  async 'exported-bundle-validates-and-holds-only-consented'({ context, locale }) {
+    const person = await newPerson();
+    const ticket = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A), consents: ['ticket', 'scores', 'conditions'], approvedSummary: SUMMARY, summaryBuiltFrom: ['ticket', 'scores'] });
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(CLINIC).origin });
+    const clinic = await clinicianPage(context);
+    await openTicket(clinic, locale, ticket.id);
+    await expect(clinic.locator('[data-export-label]')).toHaveText(cmsg(locale, 'detail.exportLabel'));
+    if (locale === 'en') await expect(clinic.locator('[data-export-label]')).toHaveText('Malaffi-ready export — not sent');
+    await clinic.getByRole('button', { name: cmsg(locale, 'detail.copyFhir'), exact: true }).click();
+    await expect(clinic.locator('[data-fhir]')).toBeVisible();
+    await expect(clinic.getByText(cmsg(locale, 'detail.copied'))).toBeVisible();
+
+    const text = (await clinic.locator('[data-fhir]').textContent())!;
+    expect(await clinic.evaluate(() => navigator.clipboard.readText())).toBe(text);
+    const bundle = JSON.parse(text) as { resourceType: string; meta: { tag: { display: string }[] }; entry: { resource: { resourceType: string; meta?: { tag: { code: string }[] } } }[] };
+    expect(await validateBundle(text)).toEqual({ valid: true });
+    expect(bundle.resourceType).toBe('Bundle');
+    expect(bundle.meta.tag[0]!.display).toBe('Malaffi-ready export — not sent');
+    expect(bundle.entry.map((entry) => entry.resource.resourceType)).toEqual(['ServiceRequest', 'QuestionnaireResponse', 'Condition']);
+    // Everything consented to is there ...
+    for (const present of [CONDITION, SUMMARY, 'phq9']) expect(text, present).toContain(present);
+    // ... and nothing else is: not the note, the trajectory, the preferences, or anything that names the person.
+    for (const absent of [FREE_TEXT, 'gad7', 'in_person', person.id, '"personId"']) expect(text, absent).not.toContain(absent);
+    for (const entry of bundle.entry.slice(1)) expect(['scores', 'conditions']).toContain(entry.resource.meta!.tag[0]!.code);
+
+    // The export is a read of the bundle like the screen's: the person can see both.
+    expect((await stored(ticket.id)).bundleReads).toBe(2);
+    expect((await call('GET', `/me/tickets/${ticket.id}/reads`, { headers: person.headers })).json()).toHaveLength(2);
+  },
+
+  async 'bad-signature-and-replay-are-rejected-with-no-invite'({ locale }) {
+    const before = await inboundCounts();
+    const body = { result: 'positive', screenedAt: new Date().toISOString(), locale };
+    const now = Math.floor(Date.now() / 1000);
+
+    const bad: [string, Awaited<ReturnType<typeof sendScreen>>][] = [
+      ['wrong key', await sendScreen(signedRequest('tamm', { body, key: 'not-the-key-not-the-key-not-the-key-0123' }))],
+      ['another front door’s key', await sendScreen(signedRequest('tamm', { body, key: 'e2e-only-phc-signing-key-0123456789abcdef' }))],
+      ['no signature at all', await call('POST', '/inbound/screens', { body })],
+      ['a person’s token instead', await call('POST', '/inbound/screens', { body, headers: (await newPerson()).headers })],
+      ['a mangled signature', await sendScreen(signedRequest('tamm', { body }), { 'x-mawsool-signature': 'ab'.repeat(32) })],
+      ['an unknown source', await sendScreen(signedRequest('tamm', { body }), { 'x-mawsool-source': 'app' })],
+      ['a stale timestamp', await sendScreen(signedRequest('tamm', { body, timestamp: now - 3600 }))],
+      ['a future timestamp', await sendScreen(signedRequest('tamm', { body, timestamp: now + 3600 }))],
+    ];
+    // A body changed after it was signed.
+    const signed = signedRequest('tamm', { body });
+    bad.push(['a body changed after signing', await call('POST', '/inbound/screens', { raw: JSON.stringify({ ...body, locale: locale === 'en' ? 'ar' : 'en' }), headers: signed.headers })]);
+    for (const [label, res] of bad) expect(res.status, label).toBe(401);
+    expect(await inboundCounts()).toEqual(before);
+
+    // A good request is accepted once, and the identical request sent again is refused as a replay, with no second invite.
+    const request = signedRequest('tamm', { body });
+    const first = await sendScreen(request);
+    expect(first.status).toBe(201);
+    expect(await inboundCounts()).toEqual({ invites: before.invites + 1, nonces: before.nonces + 1 });
+    const replay = await sendScreen(request);
+    expect(replay.status).toBe(401);
+    expect(replay.json()).toMatchObject({ error: 'replayed' });
+    expect(await inboundCounts()).toEqual({ invites: before.invites + 1, nonces: before.nonces + 1 });
+    // The claim code is shown once, and the invite holds only its hash.
+    const row0 = await invite(first.json().inviteId);
+    expect(JSON.stringify(row0)).not.toContain(first.json().code.replace('-', ''));
+  },
+
+  async 'clinician-at-other-facility-gets-404'({ context, locale }) {
+    const person = await newPerson();
+    const ticket = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A), consents: ['ticket', 'scores', 'free_text'] });
+    const b = await staffSession(CLINICIAN_B);
+    const a = await staffSession(CLINICIAN_A);
+    expect(b.facilityId).toBe(FACILITY_B);
+
+    // The same 404 body as for a ticket that does not exist, on every route that takes a ticket id, and no audit row.
+    const missing = '00000000-0000-4000-8000-ffffffffffff';
+    for (const [method, path, body] of [
+      ['GET', '', undefined],
+      ['GET', '/bundle', undefined],
+      ['GET', '/fhir', undefined],
+      ['POST', '/events', { to: 'acknowledged' }],
+      ['POST', '/events', { unable: true, reason: 'other' }],
+    ] as const) {
+      const other = await call(method, `/tickets/${ticket.id}${path}`, { headers: bearer(b), body });
+      const none = await call(method, `/tickets/${missing}${path}`, { headers: bearer(b), body });
+      expect(other.status, `${method} ${path}`).toBe(404);
+      expect(other.text).toBe(none.text);
+      expect(other.text).not.toContain(ticket.shortCode);
+    }
+    expect((await stored(ticket.id)).bundleReads).toBe(0);
+    expect((await stored(ticket.id)).events).toHaveLength(1); // nothing was changed from the other side
+    expect((await call('GET', `/tickets/${ticket.id}`, { headers: bearer(a) })).status).toBe(200);
+
+    // In the clinician app the same: not in the queue, and a link to it says it was not found, with none of its data.
+    const clinic = await clinicianPage(context, CLINICIAN_B);
+    const bodies = recordApiBodies(clinic);
+    await clinic.goto(clinicUrl(locale));
+    await expect(clinic.locator('[data-facility]')).toContainText('Al Ain');
+    await expect(clinic.locator('[data-queue] tr[data-ticket]').first()).toBeVisible();
+    await expect(row(clinic, ticket.shortCode)).toHaveCount(0);
+    await clinic.goto(clinicUrl(locale, `?ticket=${ticket.id}`));
+    await expect(clinic.locator('[data-detail-state="not-found"]')).toHaveText(cmsg(locale, 'detail.notFound'));
+    await expect(clinic.locator('[data-detail] [data-code]')).toHaveCount(0);
+    expect(await bodies()).not.toMatch(new RegExp(`${ticket.shortCode}|${FREE_TEXT}`));
+  },
+
+  async 'staff-sign-in-says-not-saved'({ page, context, locale }) {
+    // This browser refuses to keep the staff session (full storage, a blocked-storage setting).
+    await context.addInitScript((key) => {
+      const original = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (name: string, value: string) {
+        if (name === key) throw new DOMException('the quota has been exceeded', 'QuotaExceededError');
+        return original.call(this, name, value);
+      };
+    }, SESSION_KEY);
+    const link = (await requestLink(CLINICIAN_A)).replace('/en/', `/${locale}/`);
+    await page.goto(link);
+    await page.getByRole('button', { name: cmsg(locale, 'signIn.action'), exact: true }).click();
+    const message = page.locator('[data-phase="not_saved"]');
+    await expect(message).toHaveText(cmsg(locale, 'signIn.notSaved'));
+    await expect(page.locator('[data-phase="signed_in"]')).toHaveCount(0);
+    await expect(page.getByText(cmsg(locale, 'signIn.signedIn'), { exact: true })).toHaveCount(0);
+    await expect(page.locator('[data-continue]')).toHaveCount(0);
+    expect(await page.evaluate((key) => sessionStorage.getItem(key), SESSION_KEY)).toBeNull();
+    // The link is spent, so the page offers a new one rather than the same button.
+    await expect(page.getByRole('button', { name: cmsg(locale, 'signIn.action'), exact: true })).toHaveCount(0);
+    await expect(page.locator('#staff-email')).toBeVisible();
+    const token = new URL(link).searchParams.get('token')!;
+    expect((await call('POST', '/auth/verify', { body: { token } })).status).toBe(401);
+    // Opening the home page does not pass as signed in either.
+    await page.goto(clinicUrl(locale));
+    await expect(page).toHaveURL(clinicUrl(locale, 'sign-in/'));
+  },
+
+  async 'sign-in-link-whole-path'({ page, browser, locale }) {
+    const verifies: string[] = [];
+    page.on('request', (request) => {
+      if (request.url() === `${API}/auth/verify`) verifies.push(request.postData() ?? '');
+    });
+    // 1. Request the link on the page.
+    await page.goto(clinicUrl(locale, 'sign-in/'));
+    await expect(page.locator('[data-phase="missing_token"]')).toHaveText(cmsg(locale, 'signIn.missingToken'));
+    await page.locator('#staff-email').fill(CLINICIAN_A);
+    await page.getByRole('button', { name: cmsg(locale, 'signIn.requestAction'), exact: true }).click();
+    await expect(page.locator('[data-phase="request_sent"]')).toHaveText(cmsg(locale, 'signIn.requestSent'));
+    // 2. The API logged it (it is never sent). It points at the clinician app, as a one-time link with a token.
+    const link = (await loggedLink(CLINICIAN_A))!;
+    expect(link).toMatch(new RegExp(`^${CLINIC}/en/sign-in/\\?token=[A-Za-z0-9_-]{43}$`));
+    const token = new URL(link).searchParams.get('token')!;
+    // 3. Open it. The page reads the token from the address but does not spend it on load.
+    await page.goto(link.replace('/en/', `/${locale}/`));
+    await expect(page.getByRole('button', { name: cmsg(locale, 'signIn.action'), exact: true })).toBeVisible();
+    expect(verifies).toEqual([]);
+    // 4. Sign in: the request carries the token from the link, and the session is kept for this tab.
+    await page.getByRole('button', { name: cmsg(locale, 'signIn.action'), exact: true }).click();
+    await expect(page.locator('[data-phase="signed_in"]')).toHaveText(cmsg(locale, 'signIn.signedIn'));
+    expect(verifies.map((body) => JSON.parse(body))).toEqual([{ token }]);
+    const kept = JSON.parse((await page.evaluate((key) => sessionStorage.getItem(key), SESSION_KEY))!) as { role: string; facilityId: string; sessionToken: string };
+    expect(kept).toMatchObject({ role: 'clinician', facilityId: FACILITY_A });
+    expect(kept.sessionToken.length).toBeGreaterThan(20);
+    // 5. The session works: Continue lands on the queue, and a reload stays signed in.
+    await page.locator('[data-continue]').click();
+    await expect(page).toHaveURL(clinicUrl(locale));
+    await expect(page.locator('[data-facility]')).toContainText('Khalifa City');
+    await expect(page.locator('[data-queue] tr[data-ticket]').first()).toBeVisible();
+    await page.reload();
+    await expect(page.locator('[data-queue] tr[data-ticket]').first()).toBeVisible();
+    await expect(page).toHaveURL(clinicUrl(locale));
+    // 6. The link worked once: a second browser using it is told so.
+    const other = await browser.newContext();
+    try {
+      const second = await other.newPage();
+      await second.goto(link.replace('/en/', `/${locale}/`));
+      await second.getByRole('button', { name: cmsg(locale, 'signIn.action'), exact: true }).click();
+      await expect(second.locator('[data-phase="failed"]')).toHaveText(cmsg(locale, 'signIn.failed'));
+      expect(await second.evaluate((key) => sessionStorage.getItem(key), SESSION_KEY)).toBeNull();
+    } finally {
+      await other.close();
+    }
+  },
+
+  async 'staff-homes-lead-to-sign-in'({ page, context, browser, locale }) {
+    const dataRequests: string[] = [];
+    context.on('request', (request) => {
+      if (request.url().startsWith(`${API}/tickets`)) dataRequests.push(request.url());
+    });
+    // No session: the clinician home goes to sign-in and asks for no tickets.
+    await page.goto(clinicUrl(locale), { waitUntil: 'commit' });
+    await expect(page).toHaveURL(clinicUrl(locale, 'sign-in/'));
+    expect(dataRequests).toEqual([]);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(cmsg(locale, 'signIn.heading'));
+
+    // An expired session, and a session for the other staff app, are not sessions either; the second is forgotten.
+    const fresh = await browser.newContext();
+    try {
+      fresh.on('request', (request) => {
+        if (request.url().startsWith(`${API}/tickets`)) dataRequests.push(request.url());
+      });
+      const expired = { ...(await staffSession(CLINICIAN_A)), expiresAt: new Date(Date.now() - 1000).toISOString() };
+      await keepSession(fresh, CLINIC, expired);
+      const expiredPage = await fresh.newPage();
+      await expiredPage.goto(clinicUrl(locale), { waitUntil: 'commit' });
+      await expect(expiredPage).toHaveURL(clinicUrl(locale, 'sign-in/'));
+    } finally {
+      await fresh.close();
+    }
+    const wrong = await browser.newContext();
+    try {
+      await keepSession(wrong, CLINIC, await staffSession(OPS_USER));
+      const wrongPage = await wrong.newPage();
+      await wrongPage.goto(clinicUrl(locale), { waitUntil: 'commit' });
+      await expect(wrongPage).toHaveURL(clinicUrl(locale, 'sign-in/'));
+      expect(await wrongPage.evaluate((key) => sessionStorage.getItem(key), SESSION_KEY)).toBeNull();
+    } finally {
+      await wrong.close();
+    }
+    expect(dataRequests).toEqual([]);
+
+    // The ops home does the same, and shows its page to an ops session.
+    await page.goto(`${OPS}/${locale}/`, { waitUntil: 'commit' });
+    await expect(page).toHaveURL(`${OPS}/${locale}/sign-in/`);
+    const ops = await browser.newContext();
+    try {
+      await keepSession(ops, OPS, await staffSession(OPS_USER));
+      const opsPage = await ops.newPage();
+      await opsPage.goto(`${OPS}/${locale}/`);
+      await expect(opsPage.getByRole('heading', { level: 1 })).toBeVisible();
+      await expect(opsPage).toHaveURL(`${OPS}/${locale}/`);
+    } finally {
+      await ops.close();
+    }
+  },
+
+  async 'staff-pages-and-api-carry-a-strict-policy'({ page, context, browser, locale }) {
+    const apiOrigin = new URL(API).origin;
+    const person = await newPerson();
+    const ticket = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A) });
+
+    // The page policy on both staff apps.
+    for (const url of [clinicUrl(locale), `${OPS}/${locale}/`]) {
+      const response = (await page.goto(url, { waitUntil: 'commit' }))!;
+      const headers = response.headers();
+      const csp = headers['content-security-policy']!;
+      expect(csp, url).toContain(`connect-src 'self' ${apiOrigin};`);
+      for (const rule of ["default-src 'self'", "frame-ancestors 'none'", "base-uri 'self'", "form-action 'self'", "object-src 'none'"]) expect(csp, `${url} ${rule}`).toContain(rule);
+      expect(csp).not.toContain('unsafe-eval'); // production build
+      expect(headers['x-frame-options']).toBe('DENY');
+      expect(headers['x-content-type-options']).toBe('nosniff');
+      expect(headers['referrer-policy']).toBe('no-referrer');
+    }
+
+    // Working normally under the policy: no violation, no console error, and the queue and a ticket load.
+    const problems: string[] = [];
+    const clinic = await clinicianPage(context);
+    clinic.on('console', (message) => {
+      if (message.type() === 'error') problems.push(message.text());
+    });
+    clinic.on('pageerror', (error) => problems.push(error.message));
+    await clinic.addInitScript(() => document.addEventListener('securitypolicyviolation', (event) => console.error(`policy violation: ${event.violatedDirective} ${event.blockedURI} at ${event.sourceFile}:${event.lineNumber}:${event.columnNumber} ${event.sample}`)));
+    await openTicket(clinic, locale, ticket.id);
+    await expect(row(clinic, ticket.shortCode)).toBeVisible();
+    expect(problems).toEqual([]);
+
+    // A script in the page cannot send anything to another origin; the API still answers.
+    const outcome = await clinic.evaluate(
+      async ([elsewhere, api]) => {
+        const violations: string[] = [];
+        document.addEventListener('securitypolicyviolation', (event) => violations.push(event.violatedDirective));
+        const fetched = await fetch(elsewhere!, { mode: 'no-cors' }).then(() => 'reached', () => 'blocked');
+        const imaged = await new Promise((resolve) => {
+          const image = new Image();
+          image.onload = () => resolve('reached');
+          image.onerror = () => resolve('blocked');
+          image.src = `${elsewhere}?stolen=1`;
+        });
+        navigator.sendBeacon(elsewhere!, 'x');
+        const toApi = await fetch(`${api}/health`).then((res) => res.status, () => 0);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return { fetched, imaged, toApi, violations };
+      },
+      [`${INSPECT}/inbound/counts`, API],
+    );
+    expect(outcome).toMatchObject({ fetched: 'blocked', imaged: 'blocked', toApi: 200 });
+    expect(outcome.violations).toEqual(expect.arrayContaining(['connect-src', 'img-src']));
+    problems.length = 0;
+
+    // The API's own answers are never stored, framed or sniffed.
+    const staff = bearer(await staffSession(CLINICIAN_A));
+    for (const res of [await call('GET', '/tickets', { headers: staff }), await call('GET', `/tickets/${ticket.id}/bundle`, { headers: staff }), await call('GET', '/tickets'), await call('GET', '/health')]) {
+      expect(res.headers.get('cache-control')).toBe('no-store');
+      expect(res.headers.get('content-security-policy')).toBe("default-src 'none'; frame-ancestors 'none'");
+      expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    }
+
+    // Neither staff app can be put in a frame by another site.
+    const outer = await browser.newContext();
+    try {
+      const host = await outer.newPage();
+      await host.goto(`${BASE}/${locale}/settings/`);
+      for (const target of [clinicUrl(locale, 'sign-in/'), `${OPS}/${locale}/sign-in/`]) {
+        const loaded = host.waitForEvent('framenavigated', (frame) => frame !== host.mainFrame());
+        await host.evaluate((src) => {
+          const frame = document.createElement('iframe');
+          frame.src = src;
+          frame.id = 'framed';
+          document.body.append(frame);
+        }, target);
+        await loaded;
+        await host.waitForTimeout(500);
+        const framed = host.frames().find((frame) => frame !== host.mainFrame());
+        expect(framed!.url(), target).not.toBe(target);
+        expect(framed!.url(), target).toMatch(/^chrome-error:/);
+        await host.evaluate(() => document.getElementById('framed')?.remove());
+      }
+    } finally {
+      await outer.close();
+    }
+  },
+
+  async 'queue-applies-the-share-ended-rule'({ context, locale }) {
+    const person = await newPerson();
+    const gp = await serviceAt(FACILITY_A);
+    const keep = await makeTicket(person, { serviceId: gp });
+    const ended = await makeTicket(person, { serviceId: gp });
+    const staff = bearer(await staffSession(CLINICIAN_A));
+    const queueOf = async (state: string) => (await call('GET', `/tickets?state=${state}&limit=200`, { headers: staff })).json() as { total: number; counts: Record<string, number>; items: { id: string }[] };
+    const withdrawnBefore = (await queueOf('withdrawn')).counts['withdrawn']!;
+    const openBefore = (await queueOf('open')).total;
+
+    const clinic = await clinicianPage(context);
+    await clinic.goto(clinicUrl(locale));
+    await expect(row(clinic, keep.shortCode)).toBeVisible();
+    await expect(row(clinic, ended.shortCode)).toBeVisible();
+    await expect(clinic.locator('[data-count="open"]')).toHaveText(String(openBefore));
+
+    expect((await revokeConsent(person, ended, 'ticket')).status).toBe(200);
+    await clinic.reload();
+    await expect(row(clinic, keep.shortCode)).toBeVisible();
+    await expect(row(clinic, ended.shortCode)).toHaveCount(0);
+    await expect(clinic.locator('[data-count="open"]')).toHaveText(String(openBefore - 1));
+    // It is not under "Withdrawn" either, and the withdrawn count did not take it in.
+    await clinic.locator('select[data-filter="state"]').selectOption('withdrawn');
+    await expect(clinic.locator('[data-queue] tr[data-ticket]').first()).toBeVisible();
+    await expect(row(clinic, ended.shortCode)).toHaveCount(0);
+    const afterWithdrawn = await queueOf('withdrawn');
+    expect(afterWithdrawn.counts['withdrawn']).toBe(withdrawnBefore);
+    expect(afterWithdrawn.items.map((item) => item.id)).not.toContain(ended.id);
+    const allStates = ['open', 'issued', 'acknowledged', 'overdue', 'seen', 'remeasured', 'closed', 'declined', 'rerouted', 'withdrawn'];
+    for (const state of allStates) expect((await queueOf(state)).items.map((item) => item.id), state).not.toContain(ended.id);
+    // The detail for it says 410, and its link shows the banner and nothing else.
+    expect((await call('GET', `/tickets/${ended.id}`, { headers: staff })).status).toBe(410);
+    expect((await call('GET', `/tickets/${keep.id}`, { headers: staff })).status).toBe(200);
+    await openWithdrawn(clinic, locale, ended.id);
+  },
+
+  async 'unable-reason-is-a-fixed-list'({ context, locale }) {
+    const person = await newPerson();
+    const gp = await serviceAt(FACILITY_A);
+    const ticket = await makeTicket(person, { serviceId: gp });
+    const clinic = await clinicianPage(context);
+    const posts: string[] = [];
+    clinic.on('request', (request) => {
+      if (request.method() === 'POST' && request.url() === `${API}/tickets/${ticket.id}/events`) posts.push(request.postData() ?? '');
+    });
+    await openTicket(clinic, locale, ticket.id);
+    const unable = clinic.getByRole('button', { name: cmsg(locale, 'detail.unable'), exact: true });
+    await unable.click();
+    const panel = clinic.locator('[data-panel="unable"]');
+    await expect(panel.getByRole('radio')).toHaveCount(5);
+    expect(await panel.getByRole('radio').evaluateAll((nodes) => nodes.map((node) => (node as HTMLInputElement).value))).toEqual(UNABLE_REASONS);
+    for (const code of UNABLE_REASONS) await expect(panel).toContainText(cmsg(locale, `detail.unableReason.${code}`));
+    await expect(panel.locator('textarea, input[type="text"]')).toHaveCount(0); // never free text
+    const confirm = panel.getByRole('button', { name: cmsg(locale, 'detail.unableConfirm'), exact: true });
+    await expect(confirm).toBeDisabled(); // a reason is required
+    await panel.getByRole('button', { name: cmsg(locale, 'detail.cancel'), exact: true }).click();
+    await expect(panel).toHaveCount(0);
+    expect(posts).toEqual([]);
+
+    await unable.click();
+    await panel.locator('input[value="could_not_reach"]').check();
+    await expect(confirm).toBeEnabled();
+    await confirm.click();
+    await expect(clinic.locator('[data-unable-standing]')).toContainText(cmsg(locale, 'detail.unableReason.could_not_reach'));
+    expect(posts.map((body) => JSON.parse(body))).toEqual([{ unable: true, reason: 'could_not_reach' }]);
+    expect((await stored(ticket.id)).events.at(-1)).toMatchObject({ fromState: 'issued', toState: 'issued', actor: 'clinic', reason: 'could_not_reach' });
+
+    // The API holds the same line: a reason outside the list, extra fields, a person, and a state that cannot be rerouted.
+    const staff = bearer(await staffSession(CLINICIAN_A));
+    const post = (headers: Record<string, string>, body: unknown, id = ticket.id) => call('POST', `/tickets/${id}/events`, { headers, body });
+    expect((await post(staff, { unable: true, reason: 'the patient was rude' })).status).toBe(400);
+    expect((await post(staff, { unable: true, reason: 'other', note: 'free text' })).status).toBe(400);
+    expect((await post(staff, { unable: true })).status).toBe(400);
+    expect((await call('POST', `/me/tickets/${ticket.id}/events`, { headers: person.headers, body: { unable: true, reason: 'other' } })).status).toBe(403);
+    const seen = await makeTicket(person, { serviceId: gp });
+    expect((await post(staff, { to: 'seen' }, seen.id)).status).toBe(200);
+    expect((await post(staff, { unable: true, reason: 'other' }, seen.id)).status).toBe(409);
+    // On screen: a seen ticket offers no action at all, an acknowledged one offers seen and unable but not acknowledge.
+    await openTicket(clinic, locale, seen.id);
+    await expect(clinic.locator('[data-no-actions]')).toHaveText(cmsg(locale, 'detail.noActions'));
+    await expect(clinic.locator('[data-detail] button', { hasText: cmsg(locale, 'detail.unable') })).toHaveCount(0);
+    const acknowledged = await makeTicket(person, { serviceId: gp });
+    expect((await post(staff, { to: 'acknowledged' }, acknowledged.id)).status).toBe(200);
+    await openTicket(clinic, locale, acknowledged.id);
+    await expect(clinic.getByRole('button', { name: cmsg(locale, 'detail.unable'), exact: true })).toBeVisible();
+    await expect(clinic.getByRole('button', { name: cmsg(locale, 'detail.markSeen'), exact: true })).toBeVisible();
+    await expect(clinic.getByRole('button', { name: cmsg(locale, 'detail.acknowledge'), exact: true })).toHaveCount(0);
+  },
+
+  async 'seeded-withdrawn-ticket-is-handled'({ context, locale }) {
+    const clinic = await clinicianPage(context);
+    await clinic.goto(clinicUrl(locale, '?state=withdrawn'));
+    const first = clinic.locator('[data-queue] tr[data-ticket]').first();
+    await expect(first).toBeVisible();
+    await expect(first).toHaveAttribute('data-state', 'withdrawn');
+    await first.getByRole('button').click();
+    await expect(clinic.locator('[data-detail] [data-code]')).toBeVisible();
+    const id = new URL(clinic.url()).searchParams.get('ticket')!;
+
+    // A ticket with nothing shared: its own fields, said plainly, and not the person's withdrawal.
+    await expect(clinic.locator('[data-detail] [data-state]')).toHaveText(cmsg(locale, 'state.withdrawn'));
+    await expect(clinic.locator('[data-nothing-shared]')).toHaveText(cmsg(locale, 'detail.nothingShared'));
+    await expect(clinic.locator('[data-detail-state="withdrawn"]')).toHaveCount(0);
+    await expect(clinic.locator('[data-detail]')).not.toContainText(cmsg(locale, 'detail.withdrawn'));
+    await expect(clinic.locator('[data-no-actions]')).toHaveText(cmsg(locale, 'detail.noActions'));
+    await expect(clinic.locator('[data-detail] button')).toHaveCount(0);
+    await expect(clinic.locator('[data-fhir], [data-export-label]')).toHaveCount(0);
+
+    // The API: 200 for the ticket, 404 (nothing shared) for the bundle and the export, never 410, because it has no consent rows.
+    const staff = bearer(await staffSession(CLINICIAN_A));
+    expect((await call('GET', `/tickets/${id}`, { headers: staff })).status).toBe(200);
+    expect((await call('GET', `/tickets/${id}/bundle`, { headers: staff })).status).toBe(404);
+    expect((await call('GET', `/tickets/${id}/fhir`, { headers: staff })).status).toBe(404);
+    expect((await stored(id)).consents).toEqual([]);
+    expect((await stored(id)).bundleReads).toBe(0);
+
+    // A seeded ticket that is still open behaves the same, and can be acted on.
+    await clinic.goto(clinicUrl(locale, '?state=overdue'));
+    await clinic.locator('[data-queue] tr[data-ticket]').first().getByRole('button').click();
+    await expect(clinic.locator('[data-nothing-shared]')).toBeVisible();
+    await expect(clinic.getByRole('button', { name: cmsg(locale, 'detail.markSeen'), exact: true })).toBeEnabled();
+    await expect(clinic.getByRole('button', { name: cmsg(locale, 'detail.unable'), exact: true })).toBeEnabled();
+    await expect(clinic.locator('[data-detail-state="withdrawn"]')).toHaveCount(0);
+  },
+
+  async 'summary-gone-while-ticket-live'({ context, locale }) {
+    const person = await newPerson();
+    const ticket = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A), consents: ['ticket', 'conditions'], approvedSummary: SUMMARY, summaryBuiltFrom: ['ticket', 'conditions'] });
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(CLINIC).origin });
+    const clinic = await clinicianPage(context);
+    await openTicket(clinic, locale, ticket.id);
+    await expect(clinic.locator('[data-summary]')).toHaveText(SUMMARY);
+    await expect(clinic.locator('[data-section="conditions"]')).toContainText(CONDITION);
+    await clinic.getByRole('button', { name: cmsg(locale, 'detail.copyFhir'), exact: true }).click();
+    await expect(clinic.locator('[data-fhir]')).toContainText(SUMMARY);
+
+    // The person stops the condition the summary was written from. The summary goes; the ticket stays.
+    const stopped = await revokeConsent(person, ticket, 'conditions');
+    expect(stopped.json()).toMatchObject({ summaryRemoved: true, ticketState: 'issued' });
+    await openTicket(clinic, locale, ticket.id);
+    await expect(clinic.locator('[data-no-summary]')).toHaveText(cmsg(locale, 'detail.noSummary'));
+    await expect(clinic.locator('[data-summary]')).toHaveCount(0);
+    await expect(clinic.locator('[data-section="conditions"] [data-not-shared]')).toHaveText(cmsg(locale, 'detail.notShared'));
+    // The ticket is live: not the withdrawal banner, and the clinic can still act on it.
+    await expect(clinic.locator('[data-detail-state="withdrawn"]')).toHaveCount(0);
+    await expect(clinic.getByRole('button', { name: cmsg(locale, 'detail.acknowledge'), exact: true })).toBeEnabled();
+    await expect(clinic.locator('body')).not.toContainText(SUMMARY);
+    // And the export leaves it out: no note at all, still a valid bundle.
+    await clinic.getByRole('button', { name: cmsg(locale, 'detail.copyFhir'), exact: true }).click();
+    await expect(clinic.locator('[data-fhir]')).toBeVisible();
+    const text = (await clinic.locator('[data-fhir]').textContent())!;
+    expect(await validateBundle(text)).toEqual({ valid: true });
+    expect(text).not.toContain(SUMMARY);
+    expect(text).not.toContain('"note"');
+    expect(text).not.toContain(CONDITION);
+    expect(JSON.parse(text).entry.map((entry: { resource: { resourceType: string } }) => entry.resource.resourceType)).toEqual(['ServiceRequest']);
+  },
+
+  async 'claim-by-link-and-by-code'({ page, context, browser, locale }) {
+    const byLink = await handOver('phc', locale);
+    await page.goto(`/${locale}/claim/?code=${byLink.code}`);
+    await expect(page.locator('#invite-code')).toHaveValue(byLink.code);
+    const claim = page.getByRole('button', { name: msg(locale, 'claim.claim'), exact: true });
+    await expect(claim).toBeEnabled();
+    expect((await invite(byLink.inviteId)).claimedBy).toBeNull(); // the link alone claims nothing
+    await claim.click();
+    await expect(page.locator('[data-claimed="phc"]')).toContainText(msg(locale, 'claim.source.phc'));
+    expect((await invite(byLink.inviteId)).claimedBy).not.toBeNull();
+    await expect(page.locator('[data-claimed] a.btn-primary')).toHaveAttribute('href', `/${locale}/check-in/?i=who5`);
+
+    // By code: nothing to press until the box holds a code, then any case and no dash will do.
+    const byCode = await handOver('school', locale);
+    await page.goto(`/${locale}/claim/`);
+    await expect(claim).toBeDisabled();
+    await page.locator('#invite-code').fill('abc');
+    await expect(claim).toBeDisabled();
+    await page.locator('#invite-code').fill('ABCD-EFG0'); // 0 is not in the alphabet
+    await expect(claim).toBeDisabled();
+    await page.locator('#invite-code').fill('ZZZZ-ZZZZ');
+    await claim.click();
+    await expect(page.locator('[data-problem="not_found"]')).toHaveText(msg(locale, 'claim.problem.not_found'));
+    await page.locator('#invite-code').fill(byCode.code.replace('-', '').toLowerCase());
+    await context.setOffline(true);
+    await claim.click();
+    await expect(page.locator('[data-problem="offline"]')).toHaveText(msg(locale, 'claim.problem.offline'));
+    expect((await invite(byCode.inviteId)).claimedBy).toBeNull();
+    await context.setOffline(false);
+    await claim.click();
+    await expect(page.locator('[data-claimed="school"]')).toBeVisible();
+    expect((await invite(byCode.inviteId)).claimedBy).not.toBeNull();
+
+    // Someone else's device cannot take a code that is taken, and is told the same as for a code that does not exist.
+    const other = await browser.newContext();
+    try {
+      const second = await other.newPage();
+      await second.goto(`${BASE}/${locale}/claim/?code=${byLink.code}`);
+      await second.getByRole('button', { name: msg(locale, 'claim.claim'), exact: true }).click();
+      await expect(second.locator('[data-problem="not_found"]')).toHaveText(msg(locale, 'claim.problem.not_found'));
+      expect((await invite(byLink.inviteId)).claimedBy).not.toBeNull();
+    } finally {
+      await other.close();
+    }
+  },
+
+  async 'tamm-mock-page-is-labelled'({ page, locale }) {
+    await page.goto(`/${locale}/tamm/?code=ABCD-EFGH`);
+    const banner = page.locator('[data-mock-banner]');
+    await expect(banner).toHaveText(msg(locale, 'tamm.mockBanner'));
+    expect(await computed(page, '[data-mock-banner]', ['background-color', 'color', 'font-weight'])).toMatchObject({ 'background-color': 'rgb(231, 228, 242)', color: 'rgb(62, 52, 112)', 'font-weight': '600' });
+    await expect(page.getByText(msg(locale, 'tamm.mockNote'))).toBeVisible();
+    await expect(page.locator('[data-continue-with-mawsool]')).toHaveText(msg(locale, 'tamm.continue'));
+    await expect(page.locator('[data-continue-with-mawsool]')).toHaveAttribute('href', `/${locale}/claim/?code=ABCD-EFGH`);
+    // Without a usable code there is no link to follow.
+    for (const query of ['', '?code=nonsense', '?code=ABCD-EFG0']) {
+      await page.goto(`/${locale}/tamm/${query}`);
+      await expect(page.locator('[data-mock-banner]')).toBeVisible();
+      await expect(page.locator('[data-continue-with-mawsool]')).toHaveCount(0);
+      await expect(page.locator('[data-no-code]')).toHaveText(msg(locale, 'tamm.noCode'));
+    }
+    // The page makes no call of its own to the API: it knows no key and holds no data.
+    const toApi: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().startsWith(API)) toApi.push(`${request.method()} ${new URL(request.url()).pathname} ${request.headers()['authorization'] ?? ''}`.trim());
+    });
+    await page.goto(`/${locale}/tamm/?code=ABCD-EFGH`);
+    await expect(page.locator('[data-continue-with-mawsool]')).toBeVisible();
+    // Only the app shell's public read of the sample directory: nothing signed, nothing with a credential, nothing written.
+    expect(toApi.every((entry) => entry === 'GET /services')).toBe(true);
+  },
+
+  async 'clinician-screen-holds-the-plan-tokens'({ context, locale }) {
+    const rgb = { ground: 'rgb(243, 246, 245)', white: 'rgb(255, 255, 255)', ink: 'rgb(16, 48, 45)', muted: 'rgb(74, 95, 92)', border: 'rgb(213, 223, 220)', accent: 'rgb(14, 107, 99)', tint: 'rgb(224, 240, 236)', warning: 'rgb(253, 243, 228)', warningInk: 'rgb(92, 58, 10)', chipWarning: 'rgb(246, 217, 168)', mock: 'rgb(231, 228, 242)', mockInk: 'rgb(62, 52, 112)' };
+    const person = await newPerson();
+    const ticket = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A), consents: ['ticket', 'scores', 'trajectory', 'conditions', 'preferences'], approvedSummary: SUMMARY, summaryBuiltFrom: ['ticket'] });
+    const clinic = await clinicianPage(context);
+    await clinic.setViewportSize({ width: 390, height: 844 });
+    await clinic.goto(clinicUrl(locale, '?state=overdue'));
+    await expect(clinic.locator('[data-queue] tr[data-ticket]').first()).toBeVisible();
+    const h1 = locale === 'ar' ? { 'font-size': '24px', 'font-weight': '600', 'line-height': '34px' } : { 'font-size': '24px', 'font-weight': '600', 'line-height': '30px' };
+    expect(await computed(clinic, 'main h1', ['font-size', 'font-weight', 'line-height', 'color'])).toMatchObject({ ...h1, color: rgb.ink });
+    expect(await computed(clinic, 'body', ['background-color', 'color'])).toMatchObject({ 'background-color': rgb.ground, color: rgb.ink });
+    expect(await clinic.evaluate(() => getComputedStyle(document.documentElement).direction)).toBe(locale === 'ar' ? 'rtl' : 'ltr');
+    expect(await clinic.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    // The queue: white, 14 radius, a rule in the border colour; the table scrolls inside it rather than the page.
+    expect(await computed(clinic, '[data-queue]', ['background-color', 'border-top-left-radius', 'border-top-color', 'overflow-x'])).toMatchObject({ 'background-color': rgb.white, 'border-top-left-radius': '14px', 'border-top-color': rgb.border, 'overflow-x': 'auto' });
+    // Overdue rows: the warning ground, the warning chip; ticket codes in Plex Mono 600.
+    expect(await computed(clinic, '[data-queue] tr[data-state="overdue"]', ['background-color'])).toMatchObject({ 'background-color': rgb.warning });
+    expect(await computed(clinic, '[data-queue] tr[data-state="overdue"] td:last-child span', ['background-color', 'color', 'border-top-left-radius', 'font-size', 'font-weight'])).toMatchObject({ 'background-color': rgb.chipWarning, color: rgb.warningInk, 'border-top-left-radius': '8px', 'font-size': '12px', 'font-weight': '600' });
+    expect(await computed(clinic, '[data-queue] tr[data-ticket] button', ['font-family', 'font-weight'])).toMatchObject({ 'font-family': expect.stringMatching(/IBM Plex Mono/), 'font-weight': '600' });
+    expect(await computed(clinic, '[data-queue] thead th', ['font-size', 'color', 'letter-spacing', 'text-transform'])).toMatchObject({ 'font-size': '12px', color: rgb.muted, 'letter-spacing': '0.5px', 'text-transform': 'uppercase' });
+    // Everything you can press or choose is at least 44 high.
+    for (const selector of ['nav button', 'main select', '[data-queue] tr[data-ticket] button']) {
+      for (const control of await clinic.locator(selector).all()) expect((await control.boundingBox())!.height, selector).toBeGreaterThanOrEqual(44);
+    }
+    expect(await computed(clinic, '[data-facility]', ['background-color', 'border-top-left-radius'])).toMatchObject({ 'background-color': 'rgb(27, 68, 64)', 'border-top-left-radius': '10px' });
+    expect(await computed(clinic, 'main .rounded-chip', ['background-color', 'color'])).toMatchObject({ 'background-color': rgb.mock, color: rgb.mockInk });
+
+    // The open ticket: 14 radius panel, 12 px section labels, 44 px pills.
+    await openTicket(clinic, locale, ticket.id);
+    expect(await computed(clinic, '[data-detail]', ['background-color', 'border-top-left-radius', 'border-top-color', 'padding-top'])).toMatchObject({ 'background-color': rgb.white, 'border-top-left-radius': '14px', 'border-top-color': rgb.border, 'padding-top': '18px' });
+    expect(await computed(clinic, '[data-detail] [data-code]', ['font-size', 'font-weight', 'font-family'])).toMatchObject({ 'font-size': '22px', 'font-weight': '600', 'font-family': expect.stringMatching(/IBM Plex Mono/) });
+    expect(await computed(clinic, '[data-detail] [data-state]', ['background-color', 'color', 'font-size'])).toMatchObject({ 'background-color': rgb.tint, color: 'rgb(10, 79, 73)', 'font-size': '12px' });
+    expect(await computed(clinic, '[data-section="scores"] > span', ['font-size', 'font-weight', 'color', 'letter-spacing', 'text-transform'])).toMatchObject({ 'font-size': '12px', 'font-weight': '600', color: rgb.muted, 'letter-spacing': '0.5px', 'text-transform': 'uppercase' });
+    for (const name of [cmsg(locale, 'detail.markSeen'), cmsg(locale, 'detail.unable'), cmsg(locale, 'detail.acknowledge')]) {
+      expect(await computed(clinic, `[data-detail] button:text-is("${name}")`, ['border-top-left-radius', 'font-size', 'font-weight'])).toMatchObject({ 'border-top-left-radius': '22px', 'font-size': '15px', 'font-weight': '600' });
+      expect((await clinic.locator(`[data-detail] button:text-is("${name}")`).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    }
+    expect((await clinic.getByRole('button', { name: cmsg(locale, 'detail.copyFhir'), exact: true }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    expect(await clinic.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  },
+
+  async 'snapshot-clinician'({ page, context, locale }) {
+    // A fixed queue and ticket, a fixed clock and a fixed session, so every date and every pixel is the same in every run.
+    await context.clock.setFixedTime(new Date('2026-11-02T08:00:00+04:00'));
+    const id = '5b5d2f6e-0a0e-4a45-9d2c-3c7e1a4e9a11';
+    const item = (code: string, tier: string, deadline: string, state: string, language: string, source: string, n: number) => ({
+      id: n === 3 ? id : `5b5d2f6e-0a0e-4a45-9d2c-3c7e1a4e9a${String(20 + n)}`, shortCode: code, tier, state, language, deadlineAt: deadline, source, serviceId: '6c6d2f6e-0a0e-4a45-9d2c-3c7e1a4e9a22', createdAt: '2026-10-29T08:00:00+04:00',
+    });
+    const queue = {
+      facility: { id: FACILITY_A, name: 'Sample PHC · Khalifa City' },
+      total: 6,
+      counts: { issued: 4, acknowledged: 1, overdue: 1, seen: 19 },
+      items: [
+        item('MW2HD8', 'specialist', '2026-10-31T23:59:59+04:00', 'overdue', 'ur', 'tamm', 1),
+        item('MW9TQ2', 'specialist', '2026-11-03T23:59:59+04:00', 'issued', 'en', 'phc', 2),
+        item('MW4K7Q', 'gp', '2026-11-05T23:59:59+04:00', 'acknowledged', 'ar', 'app', 3),
+        item('MW7PK4', 'tele', '2026-11-06T23:59:59+04:00', 'issued', 'ar', 'phc', 4),
+        item('MW5RX2', 'gp', '2026-11-07T23:59:59+04:00', 'issued', 'tl', 'app', 5),
+        item('MW8KC3', 'tele', '2026-11-08T23:59:59+04:00', 'issued', 'hi', 'app', 6),
+      ],
+    };
+    const detail = { ...queue.items[2]!, unable: null };
+    const bundle = {
+      ticketId: id,
+      shortCode: 'MW4K7Q',
+      content: {
+        scores: [
+          { instrument: 'gad7', total: 14, band: 'moderate', takenAt: '2026-10-29T08:00:00+04:00' },
+          { instrument: 'phq9', total: 7, band: 'mild', takenAt: '2026-10-29T08:05:00+04:00' },
+        ],
+        trajectory: [
+          { instrument: 'gad7', total: 9, band: 'mild', takenAt: '2026-10-08T08:00:00+04:00' },
+          { instrument: 'gad7', total: 14, band: 'moderate', takenAt: '2026-10-29T08:00:00+04:00' },
+        ],
+        conditions: ['Type 2 diabetes'],
+        preferences: { language: 'ar', clinicianGender: 'female', modality: 'in_person' },
+      },
+      notShared: ['free_text'],
+      approvedSummary: 'I would like a first appointment about my worry and low mood. I work long hours and mornings are best.',
+    };
+    await page.route(`${API}/tickets?**`, (route) => route.fulfill({ json: queue }));
+    await page.route(`${API}/tickets/${id}`, (route) => route.fulfill({ json: detail }));
+    await page.route(`${API}/tickets/${id}/bundle`, (route) => route.fulfill({ json: bundle }));
+    await keepSession(context, CLINIC, { sessionToken: 'snapshot-session', expiresAt: '2026-11-02T16:00:00.000Z', role: 'clinician', facilityId: FACILITY_A });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(clinicUrl(locale, `?ticket=${id}`));
+    await expect(page.locator('[data-detail] [data-code]')).toBeVisible();
+    await expect(page.locator('[data-queue] tr[data-ticket]')).toHaveCount(6);
+    await snapshot(page, `clinician-${locale}`);
+  },
+};
+
+/** Opens a ticket the person has ended the share of, from a link, and checks the clinic is shown the banner and nothing else. */
+async function openWithdrawn(clinic: Page, locale: Locale, id: string): Promise<void> {
+  await clinic.goto(clinicUrl(locale, `?ticket=${id}`));
+  const banner = clinic.locator('[data-detail-state="withdrawn"]');
+  await expect(banner).toBeVisible();
+  await expect(banner.getByRole('heading')).toHaveText(cmsg(locale, 'detail.withdrawn'));
+  await expect(clinic.locator('[data-detail] [data-code]')).toHaveCount(0);
+  await expect(clinic.locator('[data-detail] button')).toHaveCount(0);
+}
+
+const ids = acceptance.map((entry) => entry.id);
+if (JSON.stringify([...ids].sort()) !== JSON.stringify(Object.keys(CASES).sort())) {
+  throw new Error(`e2e/acceptance-phase4.json and the cases in this file differ: ${ids.join(', ')} vs ${Object.keys(CASES).join(', ')}`);
+}
+
+test.describe('Phase 4 exit acceptance', () => {
+  for (const entry of acceptance) {
+    for (const locale of LOCALES) {
+      test(`${entry.id} [${locale}]: ${entry.sentence}`, async ({ page, context, browser }) => {
+        await CASES[entry.id]!({ page, context, browser, locale });
+      });
+    }
+  }
+});

@@ -52,8 +52,8 @@ describe('RequireStaffSession', () => {
       <RequireStaffSession roles={roles} signInHref="/en/sign-in/" checkingLabel="Checking" navigate={navigate} now={() => NOW}>
         {(session, signOut) => (
           <div>
-            <span>queue for {session.facilityId}</span>
-            <button type="button" onClick={signOut}>Sign out</button>
+            <span>{`queue for ${session.facilityId}`}</span>
+            <button type="button" onClick={signOut}>{'Sign out'}</button>
           </div>
         )}
       </RequireStaffSession>,
@@ -94,7 +94,7 @@ describe('RequireStaffSession', () => {
   it('serves several roles when the screen lists them', () => {
     keep({ ...SESSION, role: 'admin', facilityId: null });
     show(vi.fn(), ['ops', 'admin']);
-    expect(screen.getByText('queue for')).toBeTruthy();
+    expect(screen.getByText('queue for null')).toBeTruthy();
   });
 
   it('signing out forgets the session and goes to sign-in', () => {
@@ -109,7 +109,7 @@ describe('RequireStaffSession', () => {
     keep(SESSION);
     render(
       <RequireStaffSession roles={['clinician']} signInHref="/en/sign-in/" checkingLabel="Checking" navigate={vi.fn()} now={() => NOW}>
-        <p>plain page</p>
+        {<p>{'plain page'}</p>}
       </RequireStaffSession>,
     );
     expect(screen.getByText('plain page')).toBeTruthy();
@@ -120,12 +120,12 @@ describe('RequireStaffSession', () => {
     const navigate = vi.fn();
     const view = render(
       <RequireStaffSession roles={['clinician']} signInHref="/en/sign-in/" checkingLabel="Checking" navigate={(href) => navigate(href)} now={() => NOW}>
-        <p>plain page</p>
+        {<p>{'plain page'}</p>}
       </RequireStaffSession>,
     );
     view.rerender(
       <RequireStaffSession roles={['clinician']} signInHref="/en/sign-in/" checkingLabel="Checking" navigate={(href) => navigate(href)} now={() => NOW}>
-        <p>plain page</p>
+        {<p>{'plain page'}</p>}
       </RequireStaffSession>,
     );
     expect(navigate).not.toHaveBeenCalled();
@@ -136,7 +136,7 @@ describe('RequireStaffSession', () => {
     vi.stubGlobal('location', { ...window.location, replace });
     render(
       <RequireStaffSession roles={['clinician']} signInHref="/en/sign-in/" checkingLabel="Checking">
-        <p>plain page</p>
+        {<p>{'plain page'}</p>}
       </RequireStaffSession>,
     );
     expect(replace).toHaveBeenCalledWith('/en/sign-in/');
@@ -179,5 +179,30 @@ describe('staffCall', () => {
 
   it('says unreachable when the network fails', async () => {
     expect(await call(vi.fn(async () => { throw new TypeError('Failed to fetch'); }))).toEqual({ status: 'unreachable' });
+  });
+});
+
+describe('the sign-out a screen is given', () => {
+  it('is the same function on every render, so a screen can depend on it without loading its data again', () => {
+    keep(SESSION);
+    const seen: (() => void)[] = [];
+    const view = render(
+      <RequireStaffSession roles={['clinician']} signInHref="/en/sign-in/" checkingLabel="Checking" navigate={vi.fn()} now={() => NOW}>
+        {(_session, signOut) => {
+          seen.push(signOut);
+          return <p>{'page'}</p>;
+        }}
+      </RequireStaffSession>,
+    );
+    view.rerender(
+      <RequireStaffSession roles={['clinician']} signInHref="/en/sign-in/" checkingLabel="Checking" navigate={vi.fn()} now={() => NOW}>
+        {(_session, signOut) => {
+          seen.push(signOut);
+          return <p>{'page'}</p>;
+        }}
+      </RequireStaffSession>,
+    );
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(seen).size).toBe(1);
   });
 });

@@ -12,7 +12,8 @@
  *  - Scripts: `'self'` plus `'unsafe-inline'`. Next.js writes the data a page needs to start as an inline script, and
  *    a nonce on it needs every page rendered per request, which these statically built pages are not. This is the
  *    known gap: the policy does not stop an injected inline script. The pages have no way to inject one (every value
- *    is rendered as text, nothing sets raw HTML), and the lint rules and tests hold that line. Development adds
+ *    is rendered as text; the `react/no-danger` lint rule fails any raw HTML), and nothing here uses `eval`: Zod's
+ *    compiled fast path would, so the staff builds turn it off (`NEXT_PUBLIC_ZOD_JITLESS`, see the types package). Development adds
  *    `'unsafe-eval'` and the dev server's socket, which the hot-reload tooling needs; a production build never does.
  */
 export function staffContentSecurityPolicy(options: { apiOrigin: string; development: boolean }): string {

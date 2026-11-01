@@ -4,11 +4,13 @@
 // A second, read-only listener lets a test look at what the API stored without going through the API: the rows of a
 // crisis event, the raw bundle of a ticket (as stored, and decrypted with this harness's own key), its events and
 // consents, a person's equity buckets and the number of registered devices. It is part of this harness, not of the
-// product API.
+// product API. It also returns the sign-in link the API logged for an address (the product never sends it), read from
+// the API's own log lines, and counts invites and nonces.
 //
-// Usage: tsx src/cli/serve-e2e.ts   (E2E_API_PORT, E2E_INSPECT_PORT, E2E_ORIGIN)
+// Usage: tsx src/cli/serve-e2e.ts   (E2E_API_PORT, E2E_INSPECT_PORT, E2E_ORIGIN, E2E_CLINICIAN_URL, E2E_OPS_URL)
 import { PGlite } from '@electric-sql/pglite';
 import { asc, eq } from 'drizzle-orm';
+import { validateFhir } from '@mawsool/fhir/validate';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { createServer } from 'node:http';
@@ -17,6 +19,7 @@ import { createCipher } from '../crypto';
 import { schema, type Db } from '../db/client';
 import { MIGRATIONS_FOLDER } from '../db/migrate';
 import { runSeed } from '../seed/run';
+import { E2E_INBOUND_KEYS } from './e2e-keys';
 import { FACILITY_A_ID, STAFF } from '../seed/fixtures';
 import { sha256Hex } from '../security';
 
@@ -26,6 +29,30 @@ const cipher = createCipher(E2E_ENCRYPTION_KEY);
 const apiPort = Number(process.env.E2E_API_PORT ?? 4450);
 const inspectPort = Number(process.env.E2E_INSPECT_PORT ?? 4451);
 const origin = process.env.E2E_ORIGIN ?? 'http://localhost:3450';
+const clinicianUrl = process.env.E2E_CLINICIAN_URL ?? 'http://localhost:3001';
+const opsUrl = process.env.E2E_OPS_URL ?? 'http://localhost:3002';
+
+/**
+ * The API's own log, kept in memory instead of printed: the staff sign-in link is "logged, not sent", so the end-to-end
+ * run reads it from the log line the real notifier writes. Errors are also printed.
+ */
+const logLines: string[] = [];
+const logStream = {
+  write(line: string) {
+    logLines.push(line);
+    if (/"level":(50|60)/.test(line)) process.stdout.write(line);
+  },
+};
+
+/** The newest link the API logged for an address, or null. */
+function loggedSignInLink(to: string): string | null {
+  for (const line of [...logLines].reverse()) {
+    if (!line.includes('staff sign-in link (logged, not sent)')) continue;
+    const entry = JSON.parse(line) as { to?: string; link?: string };
+    if (entry.to === to && entry.link) return entry.link;
+  }
+  return null;
+}
 
 const client = new PGlite();
 const db = drizzle(client, { schema }) as unknown as Db;
@@ -42,8 +69,16 @@ for (const staff of STAFF.filter((member) => member.role === 'clinician')) {
 
 const app = await buildApp({
   db,
-  config: { corsOrigins: [origin], clinicianAppUrl: 'http://localhost:3001', opsAppUrl: 'http://localhost:3002', encryptionKey: E2E_ENCRYPTION_KEY, summaryLlmEnabled: false },
-  logger: false,
+  config: {
+    corsOrigins: [origin, clinicianUrl, opsUrl],
+    clinicianAppUrl: clinicianUrl,
+    opsAppUrl: opsUrl,
+    personAppUrl: origin,
+    inboundKeys: E2E_INBOUND_KEYS,
+    encryptionKey: E2E_ENCRYPTION_KEY,
+    summaryLlmEnabled: false,
+  },
+  logger: { level: 'info', stream: logStream },
 });
 await app.listen({ port: apiPort, host: '127.0.0.1' });
 
@@ -51,7 +86,12 @@ const inspect = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', 'http://localhost');
   response.setHeader('content-type', 'application/json');
   const crisis = /^\/crisis-events\/([0-9a-f-]{36})$/.exec(url.pathname);
-  if (crisis) {
+  if (request.method === 'POST' && url.pathname === '/fhir/validate') {
+    // The official R4 schema check (the same one the package tests use), for a bundle the end-to-end run exported.
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(chunk as Buffer);
+    response.end(JSON.stringify(validateFhir(JSON.parse(Buffer.concat(chunks).toString('utf8')))));
+  } else if (crisis) {
     const rows = await db.select().from(schema.crisisEvents).where(eq(schema.crisisEvents.id, crisis[1]!));
     response.end(JSON.stringify(rows));
   } else if (/^\/tickets\/[0-9a-f-]{36}$/.test(url.pathname)) {
@@ -68,6 +108,7 @@ const inspect = createServer(async (request, response) => {
         events,
         consents,
         summaryLogs: logs.length,
+        bundleReads: (await db.select({ id: schema.bundleReads.id }).from(schema.bundleReads).where(eq(schema.bundleReads.ticketId, id))).length,
         children: children.map((child) => child.id),
         bundle: bundle && {
           contentCiphertext: bundle.contentCiphertext,
@@ -94,6 +135,14 @@ const inspect = createServer(async (request, response) => {
   } else if (/^\/persons\/[0-9a-f-]{36}$/.test(url.pathname)) {
     const [person] = await db.select().from(schema.persons).where(eq(schema.persons.id, url.pathname.split('/')[2]!));
     response.end(JSON.stringify(person && { equityOptIn: person.equityOptIn, ageBand: person.ageBand, gender: person.gender, language: person.language, region: person.region }));
+  } else if (url.pathname === '/logged-sign-in-link') {
+    response.end(JSON.stringify({ link: loggedSignInLink(url.searchParams.get('to') ?? '') }));
+  } else if (url.pathname === '/inbound/counts') {
+    const [invites, nonces] = await Promise.all([db.select().from(schema.inboundInvites), db.select().from(schema.inboundNonces)]);
+    response.end(JSON.stringify({ invites: invites.length, nonces: nonces.length }));
+  } else if (/^\/invites\/[0-9a-f-]{36}$/.test(url.pathname)) {
+    const [invite] = await db.select().from(schema.inboundInvites).where(eq(schema.inboundInvites.id, url.pathname.split('/')[2]!));
+    response.end(JSON.stringify(invite ?? null));
   } else if (url.pathname === '/persons/count') {
     response.end(JSON.stringify({ count: (await db.select({ id: schema.persons.id }).from(schema.persons)).length }));
   } else {
