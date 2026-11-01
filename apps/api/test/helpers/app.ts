@@ -3,6 +3,7 @@ import { buildApp } from '../../src/app';
 import { ManualClock } from '../../src/clock';
 import type { Db } from '../../src/db/client';
 import type { MagicLinkMessage, MagicLinkNotifier } from '../../src/notifier';
+import { TEST_CONFIG } from './config';
 
 export const TEST_START = new Date('2026-11-01T08:00:00+04:00');
 
@@ -37,7 +38,7 @@ export async function createTestApp(db: Db): Promise<TestApp> {
     db,
     clock,
     notifier,
-    config: { corsOrigins: ['http://localhost:3001'], clinicianAppUrl: 'http://localhost:3001', opsAppUrl: 'http://localhost:3002' },
+    config: TEST_CONFIG,
   });
   return { app, clock, notifier };
 }

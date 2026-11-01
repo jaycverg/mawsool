@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   CRISIS_NUMBERS_CONFIG,
+  HANDOFF_WINDOWS_DAYS,
+  SUPPRESSION_THRESHOLD,
   DEPLOYMENT_TIME_ZONE,
   INSURANCE_TABLE_IS_SAMPLE,
   RELIABLE_CHANGE,
@@ -11,6 +13,11 @@ describe('config', () => {
   it('holds the spec thresholds', () => {
     expect(RELIABLE_CHANGE).toEqual({ phq9: 6, gad7: 4 });
     expect(DEPLOYMENT_TIME_ZONE).toBe('Asia/Dubai');
+  });
+
+  it('offers the hand-off windows the rows use and the fallback, and suppresses groups under ten', () => {
+    expect(HANDOFF_WINDOWS_DAYS).toEqual([7, 14]);
+    expect(SUPPRESSION_THRESHOLD).toBe(10);
   });
 
   it('lists the three crisis numbers with no last_verified date until someone confirms them', () => {

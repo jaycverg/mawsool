@@ -4,6 +4,7 @@ import { buildApp } from '../src/app';
 import { runSeed } from '../src/seed/run';
 import { createTestApp, signIn, type TestApp } from './helpers/app';
 import { createTestDb, type TestDb } from './helpers/db';
+import { TEST_CONFIG } from './helpers/config';
 
 describe('route registry', () => {
   let testDb: TestDb;
@@ -25,7 +26,7 @@ describe('route registry', () => {
       db: testDb.db,
       clock: ctx.clock,
       notifier: ctx.notifier,
-      config: { corsOrigins: [], clinicianAppUrl: 'http://localhost:3001', opsAppUrl: 'http://localhost:3002' },
+      config: { ...TEST_CONFIG, corsOrigins: [] },
       extraRoutes,
     });
 

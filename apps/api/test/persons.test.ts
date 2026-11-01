@@ -5,6 +5,7 @@ import { schema } from '../src/db/client';
 import { sha256Hex } from '../src/security';
 import { createTestApp, TEST_START, type TestApp } from './helpers/app';
 import { createTestDb, type TestDb } from './helpers/db';
+import { TEST_CONFIG } from './helpers/config';
 
 const newSecret = () => randomBytes(32).toString('base64url');
 
@@ -122,7 +123,7 @@ describe('person bearer authentication', () => {
       db: testDb.db,
       clock: ctx.clock,
       notifier: ctx.notifier,
-      config: { corsOrigins: [], clinicianAppUrl: 'http://localhost:3001', opsAppUrl: 'http://localhost:3002' },
+      config: { ...TEST_CONFIG, corsOrigins: [] },
       extraRoutes: (app) => {
         app.get('/whoami', { config: { access: 'person' } }, async (request) => request.principal);
       },

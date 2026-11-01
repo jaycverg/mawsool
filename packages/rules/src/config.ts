@@ -80,6 +80,14 @@ export const MAX_FIRST_VIEW_CARDS = 3;
 /** Window for a ticket the person chooses outside the row's own hand-off (a more intensive tier than offered). */
 export const FALLBACK_HANDOFF_WINDOW_DAYS = 14;
 
+/** Every hand-off window, in days, that a ticket may be issued with: the rows' own windows and the fallback. */
+export const HANDOFF_WINDOWS_DAYS: readonly number[] = [
+  ...new Set([...STEP_ROWS.flatMap((row) => (row.handoffWindowDays === null ? [] : [row.handoffWindowDays])), FALLBACK_HANDOFF_WINDOW_DAYS]),
+].sort((a, b) => a - b);
+
+/** Aggregates over fewer people than this are never shown (k-anonymity). */
+export const SUPPRESSION_THRESHOLD = 10;
+
 /** What a number is for. The crisis screen shows the hotline as the large button and the other two as emergency numbers. */
 export type CrisisRole = 'hotline' | 'ambulance' | 'police';
 

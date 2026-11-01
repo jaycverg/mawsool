@@ -6,6 +6,7 @@ import { runSeed } from '../src/seed/run';
 import { STAFF_LINK_LOCALE, staffAppFor, staffSignInLink } from '../src/staff-links';
 import { createTestApp, type TestApp } from './helpers/app';
 import { createTestDb, type TestDb } from './helpers/db';
+import { TEST_CONFIG } from './helpers/config';
 
 const APPS = { clinician: 'http://clinic.test', ops: 'http://ops.test' };
 
@@ -78,7 +79,7 @@ describe('the link the API actually issues', () => {
     const app = await buildApp({
       db: testDb.db,
       clock: ctx.clock,
-      config: { corsOrigins: [], clinicianAppUrl: APPS.clinician, opsAppUrl: APPS.ops },
+      config: { ...TEST_CONFIG, corsOrigins: [], clinicianAppUrl: APPS.clinician, opsAppUrl: APPS.ops },
       logger: { level: 'info', stream },
     });
     try {

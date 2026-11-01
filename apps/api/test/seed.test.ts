@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { REGIONS, TICKET_SOURCES } from '@mawsool/types';
 import { generateSeed, LOOP_CLOSED_OTHER, LOOP_CLOSED_URDU, TICKET_COUNT, URDU_TICKET_COUNT } from '../src/seed/generate';
 import { FACILITY_A_ID, FACILITY_B_ID, SEED_ANCHOR } from '../src/seed/fixtures';
+import { ALL_TABLE_NAMES } from '../src/db/schema';
 import { runSeed } from '../src/seed/run';
 import { loopClosedByLanguage, urduGap } from '../src/seed/stats';
 import { createTestDb, dumpDatabase, type TestDb } from './helpers/db';
@@ -186,7 +187,8 @@ describe('seeded database', () => {
 
   it('holds the same data in two separate databases seeded at different times', async () => {
     const [a, b] = await Promise.all([dumpDatabase(first.db), dumpDatabase(second.db)]);
-    expect(Object.keys(a)).toHaveLength(12);
+    expect(Object.keys(a)).toHaveLength(ALL_TABLE_NAMES.length);
+    expect(ALL_TABLE_NAMES).toHaveLength(14);
     expect(a['tickets']).toHaveLength(TICKET_COUNT);
     expect(b).toEqual(a);
   });
