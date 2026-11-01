@@ -4,7 +4,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Clock } from '../clock';
 import type { Db } from '../db/client';
-import { claimInvite, createInvite, formatInviteCode } from '../inbound/service';
+import { acceptScreen, claimInvite, formatInviteCode } from '../inbound/service';
 import { INBOUND_HEADERS } from '../inbound/signing';
 import { personIdOf, sendError } from '../plugins/auth';
 
@@ -57,7 +57,8 @@ export function registerInboundRoutes(app: FastifyInstance, deps: InboundRouteDe
         },
       },
       async (request, reply) => {
-        const created = await createInvite(deps.db, deps.clock, request.inboundSource!, request.body);
+        const created = await acceptScreen(deps.db, deps.clock, request.inboundSource!, request.inboundNonce!, request.body);
+        if (created.kind === 'replayed') return sendError(reply, 401, 'replayed', 'That nonce was already used, so this request was not processed');
         return reply.code(201).send({
           inviteId: created.inviteId,
           code: formatInviteCode(created.code),

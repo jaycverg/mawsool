@@ -62,7 +62,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerRouteRegistry(app);
   registerSecurityHeaders(app);
   registerAuth(app, { db: deps.db, clock });
-  registerInboundAuth(app, { db: deps.db, clock, keys: deps.config.inboundKeys ?? {} });
+  registerInboundAuth(app, { clock, keys: deps.config.inboundKeys ?? {} });
 
   app.setErrorHandler((error: FastifyError, request, reply) => {
     if (hasZodFastifySchemaValidationErrors(error)) {

@@ -4,6 +4,7 @@ import { and, eq, gt, isNull, lt } from 'drizzle-orm';
 import type { Clock } from '../clock';
 import { schema, type Db } from '../db/client';
 import { sha256Hex } from '../security';
+import type { Executor } from '../tickets/events';
 
 /** An invite can be claimed for 30 days after the front door handed it over. */
 export const INVITE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -31,7 +32,7 @@ export function inviteCodeHash(code: string): string {
 export type NonceOutcome = 'accepted' | 'replayed';
 
 /** Records a nonce for a source. A nonce seen before inside the retention window is a replay. */
-export async function takeNonce(db: Db, clock: Clock, source: InboundSource, nonce: string): Promise<NonceOutcome> {
+export async function takeNonce(db: Executor, clock: Clock, source: InboundSource, nonce: string): Promise<NonceOutcome> {
   const taken = await db
     .insert(schema.inboundNonces)
     .values({ source, nonce, seenAt: clock.now() })
@@ -57,7 +58,7 @@ export interface CreatedInvite {
 }
 
 /** Stores an invite for a verified front door and returns its claim code. Never creates a ticket. */
-export async function createInvite(db: Db, clock: Clock, source: InboundSource, request: InboundScreenRequest): Promise<CreatedInvite> {
+export async function createInvite(db: Executor, clock: Clock, source: InboundSource, request: InboundScreenRequest): Promise<CreatedInvite> {
   const now = clock.now();
   const expiresAt = new Date(now.getTime() + INVITE_TTL_MS);
   for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -70,6 +71,20 @@ export async function createInvite(db: Db, clock: Clock, source: InboundSource, 
     if (row) return { inviteId: row.id, code, expiresAt };
   }
   throw new Error('could not find a free invite code');
+}
+
+export type ScreenOutcome = ({ kind: 'created' } & CreatedInvite) | { kind: 'replayed' };
+
+/**
+ * Takes a verified front door's screen: spends its nonce and stores the invite in one transaction. If the invite cannot
+ * be written, the nonce is not spent either, so the same signed request can be sent again and is not mistaken for a
+ * replay of something that never arrived. A nonce used before is `replayed` and nothing is written.
+ */
+export async function acceptScreen(db: Db, clock: Clock, source: InboundSource, nonce: string, request: InboundScreenRequest): Promise<ScreenOutcome> {
+  return db.transaction(async (tx) => {
+    if ((await takeNonce(tx, clock, source, nonce)) === 'replayed') return { kind: 'replayed' as const };
+    return { kind: 'created' as const, ...(await createInvite(tx, clock, source, request)) };
+  });
 }
 
 export type ClaimOutcome = { kind: 'claimed' | 'already'; invite: { id: string; source: InboundSource; screenedAt: Date } } | { kind: 'not_found' };

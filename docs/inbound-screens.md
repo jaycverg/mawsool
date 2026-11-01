@@ -48,8 +48,22 @@ separately from the documented scheme.
 ```
 
 The code is shown once (only its hash is kept) and lasts 30 days. Show the person `claimUrl`, or the code to type. A
-request with a missing or wrong signature, a time outside the window, or a source with no key gets the same `401`; a
-nonce that was used before gets `401` with `error: "replayed"`. Neither leaves an invite behind.
+request with a missing or wrong signature, a time outside the window, or a source with no key gets the same `401`;
+neither leaves an invite behind.
+
+### When the answer is lost or is an error
+
+The nonce is spent and the invite stored in one step, so they stand or fall together.
+
+- **A timeout, a dropped connection or a `5xx`:** you do not know whether the invite was made. Sign the request again
+  with a **fresh nonce** (and a fresh timestamp) and send it. If the first one did reach the API, this makes a second
+  invite and a second code; the first code stays valid but nobody has it, so it is harmless and expires in 30 days. Show the
+  person the code from the answer you receive.
+- **`401` with `error: "replayed"`:** that nonce was already used by a request that was processed, so do not send it
+  again. It does **not** prove an invite exists that you can use: if you never saw the `201`, you do not have the code, and
+  the code is never shown twice. Re-sign with a fresh nonce.
+- **`400`:** the body was refused and nothing was stored, nonce included, so a corrected body can be sent with the same
+  nonce.
 
 ## What the person sees
 

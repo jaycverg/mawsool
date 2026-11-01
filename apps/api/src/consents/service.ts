@@ -207,8 +207,8 @@ export interface EraseResult {
 /**
  * "Delete everything" on the server: revokes the `ticket` consent of every ticket the person holds that is still
  * shared (which revokes the rest and withdraws what is live), deletes every logged summary the person has, and
- * clears the equity buckets. The tickets themselves and their events remain, as pseudonymous timings with no data: an
- * event's reason is a code from a fixed list, never free text.
+ * clears the equity buckets. The invites the person claimed are deleted too (see below). The tickets themselves
+ * and their events remain, as pseudonymous timings with no data: an event's reason is a code from a fixed list, never free text.
  */
 export async function eraseEverything(deps: ConsentDeps, personId: string): Promise<EraseResult> {
   const { db } = deps;
@@ -226,6 +226,9 @@ export async function eraseEverything(deps: ConsentDeps, personId: string): Prom
     }
   }
   const deleted = await db.delete(schema.summaryLogs).where(eq(schema.summaryLogs.personId, personId)).returning({ id: schema.summaryLogs.id });
+  // The invites this person claimed tie their id to a positive screen, the front door and the time. They are deleted, not
+  // unclaimed: an unclaimed invite could be claimed again, and a used one cannot be unclaimed. A ticket keeps its own `source`.
+  await db.delete(schema.inboundInvites).where(eq(schema.inboundInvites.claimedBy, personId));
   await db
     .update(schema.persons)
     .set({ equityOptIn: false, ageBand: null, gender: null, language: null, region: null })
