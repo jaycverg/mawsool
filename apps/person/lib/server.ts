@@ -49,7 +49,13 @@ export function forgetRegistration(storage: StorageAdapter): void {
 
 /** One authenticated call to the Ticket API. The device registers first if it has not yet, and every call has a ten second limit. */
 export async function callServer<T>(deps: ServerDeps, method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<CallResult<T>> {
-  const identity = await loadOrCreateIdentity(deps.storage, deps.random);
+  let identity: DeviceIdentity;
+  try {
+    identity = await loadOrCreateIdentity(deps.storage, deps.random);
+  } catch {
+    // The phone's own store would not give up or keep the device secret: nothing can be asked of the server.
+    return { ok: false, reason: 'not_registered', status: null };
+  }
   if (!(await ensureRegistered(deps, identity))) return { ok: false, reason: 'not_registered', status: null };
   let response: Response;
   try {

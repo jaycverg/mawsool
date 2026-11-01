@@ -1,10 +1,11 @@
 import type { BundleContent, Screening } from '@mawsool/types';
 import { describe, expect, it, vi } from 'vitest';
+import { calendarDaysLeft } from '../lib/format';
 import { FOLLOW_UP_DAY, followUpAt, followUpDue } from '../lib/day7';
 import { currentTier, loadChoice, loadPendingChoice, pendingFrom, savePendingChoice, saveChoice } from '../lib/prefs';
 import { sendReferral, ticketRequest, type SendInput } from '../lib/send-referral';
 import { callServer, hasServerFootprint, markServerFootprint, forgetRegistration, type ServerDeps } from '../lib/server';
-import { buildContent, loadTickets, parseConditions, rememberTicket, EMPTY_SHARING } from '../lib/share';
+import { buildContent, loadEquity, loadTickets, saveEquity, parseConditions, rememberTicket, EMPTY_SHARING } from '../lib/share';
 import { memoryStorage } from './helpers/memory';
 
 const NOW = () => new Date('2026-11-02T08:00:00+04:00');
@@ -30,6 +31,30 @@ describe('the follow-up check (day 7)', () => {
       expect(followUpDue({ ...ticket, state }, at)).toBe(true);
     }
     for (const state of ['seen', 'rerouted', 'declined', 'withdrawn', 'closed', 'remeasured'] as const) expect(followUpDue({ ...ticket, state }, new Date(at.getTime() + 1e9))).toBe(false);
+  });
+});
+
+describe('days left', () => {
+  it('counts calendar days in Dubai: a 7-day promise issued today reads 7, the deadline day 0, and never below 0', () => {
+    const deadline = '2026-11-09T23:59:59+04:00';
+    expect(calendarDaysLeft(deadline, new Date('2026-11-02T00:05:00+04:00'))).toBe(7);
+    expect(calendarDaysLeft(deadline, new Date('2026-11-02T23:55:00+04:00'))).toBe(7);
+    expect(calendarDaysLeft(deadline, new Date('2026-11-03T00:00:00+04:00'))).toBe(6);
+    expect(calendarDaysLeft(deadline, new Date('2026-11-09T12:00:00+04:00'))).toBe(0);
+    expect(calendarDaysLeft(deadline, new Date('2026-11-12T12:00:00+04:00'))).toBe(0);
+    // Late evening in UTC is already the next day in Dubai.
+    expect(calendarDaysLeft(deadline, new Date('2026-11-02T21:00:00Z'))).toBe(6);
+  });
+});
+
+describe('the equity choice on the phone', () => {
+  it('reads as off with no buckets until it is saved, and as saved after', async () => {
+    const { storage, data } = memoryStorage();
+    expect(await loadEquity(storage)).toEqual({ optIn: false, buckets: {} });
+    await saveEquity(storage, { optIn: true, buckets: { ageBand: '25_34', region: null } });
+    expect(await loadEquity(storage)).toEqual({ optIn: true, buckets: { ageBand: '25_34', region: null } });
+    data.set('equity', { optIn: 'yes' });
+    expect(await loadEquity(storage)).toEqual({ optIn: false, buckets: {} });
   });
 });
 
@@ -171,12 +196,32 @@ describe('sending the referral', () => {
   it('on success makes the pick the current support, clears the waiting pick and remembers the ticket', async () => {
     const d = deps(() => new Response(JSON.stringify({ ...created, ticket: fullTicket() }), { status: 201 }));
     await savePendingChoice(d.store.storage, pending);
-    expect(await sendReferral(d.server, input())).toEqual({ status: 'sent', ticketId: TICKET_ID });
+    expect(await sendReferral(d.server, input())).toEqual({ status: 'sent', ticketId: TICKET_ID, saved: true });
     expect(d.bodies).toEqual(['POST /tickets']);
     expect(currentTier(await loadChoice(d.store.storage))).toBe('gp');
     expect(await loadPendingChoice(d.store.storage)).toBeNull();
     expect((await loadTickets(d.store.storage)).map((ticket) => ticket.id)).toEqual([TICKET_ID]);
     expect(await hasServerFootprint(d.store.storage)).toBe(true);
+  });
+
+  it('after the server has the ticket, a failed local write is a warning: the referral still stands and is reported as sent', async () => {
+    const d = deps(() => new Response(JSON.stringify({ ...created, ticket: fullTicket() }), { status: 201 }));
+    const post = d.server.fetch;
+    d.server.fetch = (async (url: string, init?: RequestInit) => {
+      const answer = await (post as typeof fetch)(url, init);
+      if (new URL(url).pathname === '/tickets') d.store.failures.write = true; // the phone's own store gives out after the commit
+      return answer;
+    }) as unknown as typeof fetch;
+    expect(await sendReferral(d.server, input())).toEqual({ status: 'sent', ticketId: TICKET_ID, saved: false });
+    expect(d.bodies).toEqual(['POST /tickets']);
+    expect(await loadTickets(d.store.storage).catch(() => [])).toEqual([]);
+  });
+
+  it('sends nothing when the phone cannot note the footprint first, and says so', async () => {
+    const d = deps(() => new Response('{}', { status: 201 }));
+    d.store.failures.write = true;
+    expect(await sendReferral(d.server, input())).toEqual({ status: 'not_saved' });
+    expect(d.bodies).toEqual([]);
   });
 
   it('sends a reroute to the stalled ticket’s own route with the reason', async () => {

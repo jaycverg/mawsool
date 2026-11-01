@@ -60,6 +60,8 @@ export async function eraseEverything(deps: EraseDeps): Promise<EraseOutcome> {
   }
 
   if (footprint) {
+    // Any failure on the way to the server stops the run with nothing deleted: `callServer` reports a phone that cannot
+    // read its own device secret the same way as a network that is down.
     const revoked = await callServer(deps.server, 'DELETE', '/me/data');
     if (!revoked.ok) return { status: 'blocked' };
   }
