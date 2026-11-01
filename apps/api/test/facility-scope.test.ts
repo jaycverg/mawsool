@@ -73,7 +73,7 @@ describe('clinician facility scoping', () => {
   it('returns ticket fields only: no person id, no bundle, no free text', async () => {
     const body = (await get(ticketA, tokenA)).json();
     expect(Object.keys(body).sort()).toEqual(
-      ['createdAt', 'deadlineAt', 'id', 'language', 'serviceId', 'shortCode', 'source', 'state', 'tier'],
+      ['createdAt', 'deadlineAt', 'id', 'language', 'serviceId', 'shortCode', 'source', 'state', 'tier', 'unable'],
     );
   });
 

@@ -57,6 +57,7 @@ export function deriveEnv(source) {
     CORS_ORIGINS:
       source.CORS_ORIGINS ??
       [personPort, clinicianPort, opsPort].map((p) => `http://localhost:${p}`).join(','),
+    PERSON_APP_URL: source.PERSON_APP_URL ?? `http://localhost:${personPort}`,
     CLINICIAN_APP_URL: source.CLINICIAN_APP_URL ?? `http://localhost:${clinicianPort}`,
     OPS_APP_URL: source.OPS_APP_URL ?? `http://localhost:${opsPort}`,
     COMPOSE_PROJECT_NAME: source.COMPOSE_PROJECT_NAME ?? `mawsool-${offset}`,

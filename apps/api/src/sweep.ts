@@ -1,6 +1,7 @@
 import { and, inArray, isNull, lt, lte } from 'drizzle-orm';
 import type { Clock } from './clock';
 import { schema, type Db } from './db/client';
+import { deleteStaleNonces } from './inbound/service';
 import { appendEvent, lastEvent } from './tickets/events';
 import { evaluate } from './tickets/transitions';
 
@@ -32,6 +33,8 @@ export interface SweepResult {
   skipped: number;
   /** Logged drafts that no ticket claimed within the retention window and were deleted. */
   draftsDeleted: number;
+  /** Signed-request nonces older than the retention window, deleted. */
+  noncesDeleted: number;
 }
 
 /** How long a logged summary draft may wait for its ticket before it is deleted: a pick that was abandoned. */
@@ -51,7 +54,7 @@ export async function deleteStaleDrafts(db: Db, clock: Clock): Promise<number> {
 }
 
 /**
- * Also removes stale unclaimed drafts (`deleteStaleDrafts`). Finds every ticket past its deadline that has not been seen and appends one `overdue` event to each. Safe to run
+ * Also removes stale unclaimed drafts (`deleteStaleDrafts`) and spent request nonces (`deleteStaleNonces`). Finds every ticket past its deadline that has not been seen and appends one `overdue` event to each. Safe to run
  * from several places at once and every minute: a ticket that is already overdue, or that another sweep got to first,
  * is left alone, so there is never a second `overdue` event.
  */
@@ -60,7 +63,7 @@ export async function sweep(db: Db, clock: Clock, hooks: SweepHooks = {}): Promi
     .select({ id: schema.tickets.id })
     .from(schema.tickets)
     .where(and(inArray(schema.tickets.state, ['issued', 'acknowledged']), lte(schema.tickets.deadlineAt, clock.now())));
-  const result: SweepResult = { marked: 0, lostRace: 0, skipped: 0, draftsDeleted: 0 };
+  const result: SweepResult = { marked: 0, lostRace: 0, skipped: 0, draftsDeleted: 0, noncesDeleted: 0 };
   for (const { id } of due) {
     const outcome = await markOverdue(db, clock, id, hooks);
     if (outcome === 'marked') result.marked += 1;
@@ -68,5 +71,6 @@ export async function sweep(db: Db, clock: Clock, hooks: SweepHooks = {}): Promi
     else result.skipped += 1;
   }
   result.draftsDeleted = await deleteStaleDrafts(db, clock);
+  result.noncesDeleted = await deleteStaleNonces(db, clock);
   return result;
 }

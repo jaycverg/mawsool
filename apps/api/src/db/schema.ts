@@ -7,6 +7,7 @@ import {
   integer,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -276,6 +277,44 @@ export const summaryLogs = pgTable(
   (t) => [index('summary_logs_person_idx').on(t.personId), index('summary_logs_ticket_idx').on(t.ticketId), check('summary_logs_kind', sql`${t.kind} IN ('draft', 'approved')`)],
 );
 
+/**
+ * A positive screen handed over by a front door. It is an invite, never a ticket: it holds no name, no scores and no
+ * answers, only where it came from, when the screen was taken and the language used. Only the hash of the claim code
+ * is stored. Claiming binds it to a person; the ticket that person then sends carries its source and is recorded here.
+ */
+export const inboundInvites = pgTable(
+  'inbound_invites',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    source: ticketSourceEnum('source').notNull(),
+    codeHash: text('code_hash').notNull().unique(),
+    screenedAt: at('screened_at').notNull(),
+    locale: localeEnum('locale').notNull(),
+    createdAt: at('created_at').notNull(),
+    expiresAt: at('expires_at').notNull(),
+    claimedBy: uuid('claimed_by').references(() => persons.id),
+    claimedAt: at('claimed_at'),
+    ticketId: uuid('ticket_id').references(() => tickets.id),
+  },
+  (t) => [
+    check('inbound_invites_not_app', sql`${t.source} <> 'app'`),
+    check('inbound_invites_claim_pair', sql`(${t.claimedBy} IS NULL) = (${t.claimedAt} IS NULL)`),
+    check('inbound_invites_ticket_needs_claim', sql`${t.ticketId} IS NULL OR ${t.claimedBy} IS NOT NULL`),
+    index('inbound_invites_claimed_by_idx').on(t.claimedBy),
+  ],
+);
+
+/** Nonces of accepted signed requests, so a captured request cannot be sent again inside the time window. */
+export const inboundNonces = pgTable(
+  'inbound_nonces',
+  {
+    source: ticketSourceEnum('source').notNull(),
+    nonce: text('nonce').notNull(),
+    seenAt: at('seen_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.source, t.nonce] })],
+);
+
 /** Carries no person id and no item answers, so a crisis can never be traced to a ticket. */
 export const crisisEvents = pgTable(
   'crisis_events',
@@ -312,6 +351,8 @@ export const adverseEvents = pgTable('adverse_events', {
 /** Names of every table, in an order that is safe to truncate in one statement. */
 export const ALL_TABLE_NAMES = [
   'adverse_events',
+  'inbound_invites',
+  'inbound_nonces',
   'bundle_reads',
   'summary_logs',
   'crisis_events',

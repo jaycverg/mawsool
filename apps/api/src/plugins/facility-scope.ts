@@ -12,6 +12,30 @@ declare module 'fastify' {
   }
 }
 
+declare module 'fastify' {
+  interface FastifyRequest {
+    /** Set by `facilityScopedQueue`: the staff member's own facility. */
+    scopedFacility?: { id: string; name: string };
+  }
+}
+
+/**
+ * Facility-scoping preHandler for a staff route that lists tickets and so has no `:id` to scope by. It resolves the
+ * staff member's own facility; the route then lists only tickets addressed to it. A staff member with no facility
+ * (ops, admin) gets 403, the same as on the single-ticket routes.
+ */
+export function facilityScopedQueue(db: Db) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    const principal = request.principal;
+    if (principal?.kind !== 'staff' || principal.facilityId === null) {
+      return sendError(reply, 403, 'forbidden', 'This role may not use this route');
+    }
+    const [facility] = await db.select({ id: schema.facilities.id, name: schema.facilities.name }).from(schema.facilities).where(eq(schema.facilities.id, principal.facilityId)).limit(1);
+    if (!facility) return sendError(reply, 403, 'forbidden', 'This role may not use this route');
+    request.scopedFacility = facility;
+  };
+}
+
 /**
  * Facility-scoping preHandler for every staff route that takes a ticket id in `:id`.
  *

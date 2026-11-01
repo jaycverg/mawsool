@@ -68,14 +68,14 @@ async function authenticateStaff(db: Db, clock: Clock, token: string): Promise<P
  * - `public`: nothing required.
  * - `person`: a device credential. A staff token is not one, and fails with 401.
  * - `clinician`, `ops`, `admin`: a live staff session whose role equals the declared one, else 403.
- * - `inbound`: signed requests from connectors arrive with the receiving side; until then they fail closed.
+ * - `inbound`: a signed request from a connector. It is checked later, once the body has been read (see
+ *   `registerInboundAuth`), because the signature covers the body; a bearer token is never accepted on it.
  */
 export function registerAuth(app: FastifyInstance, deps: { db: Db; clock: Clock }): void {
   app.decorateRequest('principal', null);
   app.addHook('onRequest', async (request, reply) => {
     const access = request.routeOptions?.config?.access;
-    if (access === undefined || access === 'public') return;
-    if (access === 'inbound') return sendError(reply, 401, 'unauthorized', 'Signed inbound requests are not accepted yet');
+    if (access === undefined || access === 'public' || access === 'inbound') return;
 
     const token = bearerToken(request.headers.authorization);
     if (token === null) return sendError(reply, 401, 'unauthorized', 'Authentication required');

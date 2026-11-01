@@ -1,8 +1,8 @@
 import { randomInt } from 'node:crypto';
 import { redact, withinWordLimit } from '@mawsool/consent';
 import { HANDOFF_WINDOWS_DAYS, computeDeadline } from '@mawsool/rules';
-import { SHORT_CODE_ALPHABET, type CreateTicketRequest, type PersonTicketView, type TicketState } from '@mawsool/types';
-import { and, asc, eq } from 'drizzle-orm';
+import { SHORT_CODE_ALPHABET, type CreateTicketRequest, type PersonTicketView, type TicketSource, type TicketState } from '@mawsool/types';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import type { Clock } from '../clock';
 import type { Cipher } from '../crypto';
 import { schema, type Db } from '../db/client';
@@ -58,6 +58,21 @@ export type IssueResult =
   /** The request id belongs to someone else, or the parent can no longer be rerouted. */
   | { kind: 'conflict'; message: string }
   | { kind: 'not_found' };
+
+/**
+ * The invite a new ticket takes its source from: one the person claimed and no ticket has used yet. The row is locked
+ * for the rest of the transaction, so two tickets sent at once cannot both take it. Anything else (no invite, someone
+ * else's, one already used) is null and the ticket's source stays the app: a stale invite on a phone must never stop a referral.
+ */
+async function usableInvite(executor: Executor, personId: string, inviteId: string | null): Promise<{ id: string; source: TicketSource } | null> {
+  if (inviteId === null) return null;
+  const [invite] = await executor
+    .select({ id: schema.inboundInvites.id, source: schema.inboundInvites.source })
+    .from(schema.inboundInvites)
+    .where(and(eq(schema.inboundInvites.id, inviteId), eq(schema.inboundInvites.claimedBy, personId), isNull(schema.inboundInvites.ticketId)))
+    .for('update');
+  return invite ?? null;
+}
 
 /** Thrown inside the transaction to abandon it when another request with the same id won. */
 class ReplayRace extends Error {}
@@ -129,6 +144,7 @@ export async function issueTicket(deps: TicketDeps, personId: string, request: C
         });
         if (!moved) throw new StateRace();
       }
+      const invite = options.parent ? null : await usableInvite(tx, personId, request.inviteId);
       const shortCode = await freeShortCode(tx);
       const [ticket] = await tx
         .insert(schema.tickets)
@@ -140,7 +156,7 @@ export async function issueTicket(deps: TicketDeps, personId: string, request: C
           state: 'issued',
           language: request.language,
           deadlineAt: computeDeadline(now, request.windowDays),
-          source: 'app',
+          source: invite?.source ?? 'app',
           parentTicketId: options.parent?.ticketId ?? null,
           clientRequestId: request.clientRequestId,
           createdAt: now,
@@ -148,6 +164,7 @@ export async function issueTicket(deps: TicketDeps, personId: string, request: C
         .onConflictDoNothing({ target: schema.tickets.clientRequestId })
         .returning({ id: schema.tickets.id });
       if (!ticket) throw new ReplayRace();
+      if (invite) await tx.update(schema.inboundInvites).set({ ticketId: ticket.id }).where(eq(schema.inboundInvites.id, invite.id));
 
       await appendEvent(tx, { ticketId: ticket.id, seq: 1, from: null, to: 'issued', actor: 'person', channel: 'app', at: now });
       await tx.insert(schema.consents).values(request.consents.map((element) => ({ personId, ticketId: ticket.id, recipient: service.id, element, grantedAt: now })));

@@ -54,6 +54,7 @@ export function ticketRequest(serviceId: string, overrides: Partial<CreateTicket
     approvedSummary: null,
     summaryRequestId: null,
     summaryBuiltFrom: [],
+    inviteId: null,
     ...overrides,
   };
 }
@@ -61,7 +62,7 @@ export function ticketRequest(serviceId: string, overrides: Partial<CreateTicket
 export async function issue(ctx: Pick<TestApp, 'app'>, person: TestPerson, request: CreateTicketRequest) {
   const res = await ctx.app.inject({ method: 'POST', url: '/tickets', headers: person.headers, payload: request });
   if (res.statusCode !== 201) throw new Error(`issue failed: ${res.statusCode} ${res.body}`);
-  return res.json().ticket as { id: string; shortCode: string; state: string; consents: { id: string; element: string }[] };
+  return res.json().ticket as { id: string; shortCode: string; state: string; source: string; consents: { id: string; element: string }[] };
 }
 
 /** The raw ciphertext row, as the database holds it. */

@@ -2,6 +2,7 @@ import {
   BundleReadViewSchema,
   CreateTicketRequestSchema,
   CreatedTicketSchema,
+  FhirBundleSchema,
   ErrorResponseSchema,
   PersonTicketListSchema,
   PersonTicketViewSchema,
@@ -13,6 +14,7 @@ import {
   type TicketEventRequest,
   type TicketEventResult,
 } from '@mawsool/types';
+import { buildFhirBundle } from '@mawsool/fhir';
 import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
@@ -207,6 +209,35 @@ export function registerTicketFlowRoutes(app: FastifyInstance, deps: ConsentDeps
       if (read.kind === 'withdrawn') return sendError(reply, 410, 'withdrawn', 'Withdrawn by the person');
       if (read.kind === 'none') return sendError(reply, 404, 'not_found', 'Nothing was shared for this ticket');
       return read.view;
+    },
+  );
+
+  // The FHIR export is a read of the bundle like any other: it goes through `readBundle`, so it checks live consent,
+  // redacts to what is consented now and writes the audit row the person can see. Nothing is built from a second path.
+  typed.get(
+    '/tickets/:id/fhir',
+    {
+      config: { access: 'clinician', facilityScoped: true },
+      preHandler: facilityScopedTicket(deps.db),
+      schema: { params: Params, response: { 200: FhirBundleSchema, ...Errors } },
+    },
+    async (request, reply) => {
+      const principal = request.principal!;
+      const ticket = request.scopedTicket!;
+      const read = await readBundle(deps, ticket.id, {
+        staffUserId: principal.kind === 'staff' ? principal.staffUserId : '',
+        facilityId: principal.kind === 'staff' ? principal.facilityId! : '',
+      });
+      if (read.kind === 'withdrawn') return sendError(reply, 410, 'withdrawn', 'Withdrawn by the person');
+      if (read.kind === 'none') return sendError(reply, 404, 'not_found', 'Nothing was shared for this ticket');
+      const bundle = buildFhirBundle({
+        ticket: { shortCode: ticket.shortCode, tier: ticket.tier, state: ticket.state, language: ticket.language, createdAt: ticket.createdAt.toISOString(), deadlineAt: ticket.deadlineAt.toISOString() },
+        content: read.view.content,
+        approvedSummary: read.view.approvedSummary,
+        granted: read.granted,
+        exportedAt: deps.clock.now().toISOString(),
+      });
+      return reply.type('application/fhir+json').send(bundle);
     },
   );
 }

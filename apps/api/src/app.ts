@@ -14,10 +14,13 @@ import { createCipher } from './crypto';
 import type { Db } from './db/client';
 import { LogMagicLinkNotifier, type MagicLinkNotifier } from './notifier';
 import { registerAuth } from './plugins/auth';
+import { registerInboundAuth } from './plugins/inbound-auth';
 import { registerRouteRegistry } from './plugins/route-registry';
+import { registerSecurityHeaders } from './plugins/security-headers';
 import { registerAuthRoutes } from './routes/auth';
 import { registerCrisisEventRoutes } from './routes/crisis-events';
 import { registerHealthRoutes } from './routes/health';
+import { registerInboundRoutes } from './routes/inbound';
 import { registerPersonDataRoutes } from './routes/person-data';
 import { registerPersonRoutes } from './routes/persons';
 import { registerServiceRoutes } from './routes/services';
@@ -26,7 +29,7 @@ import { registerTicketRoutes } from './routes/tickets';
 
 export interface AppDeps {
   db: Db;
-  config: Pick<AppConfig, 'corsOrigins' | 'clinicianAppUrl' | 'opsAppUrl' | 'encryptionKey' | 'summaryLlmEnabled'>;
+  config: Pick<AppConfig, 'corsOrigins' | 'clinicianAppUrl' | 'opsAppUrl' | 'encryptionKey' | 'summaryLlmEnabled'> & Partial<Pick<AppConfig, 'personAppUrl' | 'inboundKeys'>>;
   /** The summary provider. Null (or the flag off) means no text ever leaves the API. */
   summaryProvider?: SummaryProvider | null;
   clock?: Clock;
@@ -57,7 +60,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     transform: jsonSchemaTransform,
   });
   registerRouteRegistry(app);
+  registerSecurityHeaders(app);
   registerAuth(app, { db: deps.db, clock });
+  registerInboundAuth(app, { db: deps.db, clock, keys: deps.config.inboundKeys ?? {} });
 
   app.setErrorHandler((error: FastifyError, request, reply) => {
     if (hasZodFastifySchemaValidationErrors(error)) {
@@ -81,6 +86,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerServiceRoutes(app, { db: deps.db });
   registerCrisisEventRoutes(app, { db: deps.db });
   registerTicketRoutes(app, { db: deps.db });
+  registerInboundRoutes(app, { db: deps.db, clock, personAppUrl: deps.config.personAppUrl ?? 'http://localhost:3000' });
   const consentDeps = { db: deps.db, cipher, clock };
   registerTicketFlowRoutes(app, consentDeps);
   registerPersonDataRoutes(app, { ...consentDeps, summary: { enabled: deps.config.summaryLlmEnabled, provider: deps.summaryProvider ?? null } });
