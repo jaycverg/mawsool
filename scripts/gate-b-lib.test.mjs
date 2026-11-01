@@ -39,6 +39,10 @@ test('a browser sentence needs its test in the browser gate registry', () => {
   assert.match(String(evaluateRegistry([{ id: 'b', sentence: 's', browser: 'redirect' }], {}, ['other'])[0]), /not in the browser gate/);
 });
 
+test('a browser test that no sentence claims is a problem, so a new one cannot sit unregistered', () => {
+  assert.match(String(evaluateRegistry([], {}, ['orphan'])[0]), /no sentence in this registry claims/);
+});
+
 test('a run with no tests, or any test not passed, is a problem', () => {
   assert.equal(runProblem([]), 'ran no tests');
   assert.match(String(runProblem([pass('f', 'a'), { file: 'f', fullName: 'b', status: 'skipped' }])), /skipped/);
