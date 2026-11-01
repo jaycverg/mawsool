@@ -119,8 +119,12 @@ function windowFor(tier: Tier, row: StepRow): number | null {
  * - Otherwise the latest PHQ-9 and GAD-7 totals pick one row of the stepped-care table, most intensive first.
  *   With neither score the "below 5" row applies.
  * - The row's tiers come first, in the table's order, one best service each; a tier with no service is skipped.
+ *   The table lists the best fit first (a trained GP before tele), so that order is kept for the cards.
  * - The person's current tier stays as a card; then the remaining tiers follow as "other options", least
- *   intensive first.
+ *   intensive first. This is how the spec's "least intensive first" is read: it orders the options beyond the
+ *   row's own recommendation, and the row's recommendation is never reshuffled by intensity, because the demo
+ *   and the board put the GP ahead of tele and the stepped-care table puts the specialist first for the top row.
+ *   `splitCards` turns the list into the first-view cards and the rest.
  * - Within a tier, services are ordered by how few of the person's needs need checking (insurance, region,
  *   language, gender, modality), then by indicative wait. `timeOfDay` is accepted but has no service field to
  *   match against.
