@@ -14,7 +14,8 @@
     "test:seed": "vitest run test/seed.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/cli/migrate.ts",
-    "db:seed": "tsx src/cli/seed.ts"
+    "db:seed": "tsx src/cli/seed.ts",
+    "serve:e2e": "tsx src/cli/serve-e2e.ts"
   },
   "dependencies": {
     "@fastify/cors": "11.3.1",
