@@ -9,6 +9,29 @@ const noHardCodedText = {
   'react/jsx-no-literals': ['error', { noStrings: false, allowedStrings: ['·', '/', '|', '—', '–', '•'], ignoreProps: true }],
 };
 
+/**
+ * Packages that call a language model. The product allows an LLM in one place only, the referral summary in
+ * `packages/summary`, so importing any of these anywhere else is an error.
+ */
+export const LLM_SDK_PATTERNS = [
+  '@anthropic-ai/*',
+  'anthropic',
+  'openai',
+  '@openai/*',
+  '@azure/openai',
+  '@google/generative-ai',
+  '@google/genai',
+  '@google-cloud/vertexai',
+  '@aws-sdk/client-bedrock-runtime',
+  '@mistralai/*',
+  'cohere-ai',
+  'ollama',
+  'langchain',
+  '@langchain/*',
+  'ai',
+  '@ai-sdk/*',
+];
+
 export default tseslint.config(
   {
     ignores: [
@@ -66,6 +89,17 @@ export default tseslint.config(
           selector: "NewExpression[callee.name='Date'][arguments.length=0]",
           message: 'Read the time from clock.ts, not new Date().',
         },
+      ],
+    },
+  },
+  {
+    // Nothing outside packages/summary may import an LLM SDK. `files` is explicit so a new folder is covered by default.
+    files: ['**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts}'],
+    ignores: ['packages/summary/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [{ group: LLM_SDK_PATTERNS, message: 'An LLM SDK may only be imported inside packages/summary.' }] },
       ],
     },
   },
