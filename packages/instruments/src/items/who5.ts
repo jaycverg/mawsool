@@ -6,7 +6,7 @@ export const WHO5_ITEM_COUNT = 5;
 export const WHO5_WORDING: InstrumentWording = {
     "en": {
       "locale": "en",
-      "wordingStatus": "verified",
+      "wordingStatus": "unverified",
       "sourceId": "who5-en",
       "stem": "Please indicate for each of the five statements which is closest to how you have been feeling over the last two weeks. Notice that higher numbers mean better well-being.",
       "options": [

@@ -80,8 +80,9 @@ export const WORDING_SOURCES: Record<string, WordingSource> = {
     extraction: 'Text extracted locally from the PDF (its text layer is doubled); compared with the render.',
     licence: 'CC BY-NC-SA 3.0 IGO (WHO 2024). The NonCommercial and ShareAlike terms need a legal read before any use beyond a demo.',
     validationStatement: 'English original. The English version is stated to be binding.',
-    statusBasis: 'Original English form published by WHO; the published review below reports the validity of this instrument.',
-    validationSource: { citation: 'Topp CW, Østergaard SD, Søndergaard S, Bech P. The WHO-5 Well-Being Index: a systematic review of the literature. Psychother Psychosom 2015;84(3):167-176.', url: 'https://pubmed.ncbi.nlm.nih.gov/25831962/' },
+    statusBasis:
+      'WHO English original, copied from the source. The one review found pools studies of translated versions of the instrument and does not establish this English form, so no validation study is cited.',
+    validationSource: null,
     caveat: 'The 0-100 score is the raw 0-25 total times four, as the document states.',
   },
   'who5-ar': {
@@ -100,7 +101,7 @@ export const WORDING_SOURCES: Record<string, WordingSource> = {
     statusBasis: 'Hand transcription of a scan with no text layer, and no validation study of this Arabic text was obtained.',
     validationSource: null,
     caveat:
-      'UNVERIFIED. Hand transcription of a 1999 scan: check every string against page 3 of the PDF before treating it as verified.',
+      'UNVERIFIED. Hand transcription of a 1999 scan: check every string against page 3 of the PDF before relying on it.',
   },
   'cssrs-en': {
     id: 'cssrs-en',

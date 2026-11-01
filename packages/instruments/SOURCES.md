@@ -8,7 +8,7 @@ and a published validation study of that same instrument and language form is ci
 Text that is only copied from a source, with no validation evidence for that form, stays `unverified`.
 
 Validation studies were checked at abstract level through PubMed (title, authors, journal, year and the abstract's
-conclusion); the papers were not read in full.
+conclusion); the papers were not read in full. Only the English PHQ-9 and GAD-7 have one cited.
 
 The table is kept in step with `src/sources.ts` and the wording data by `test/wording.test.ts`.
 
@@ -18,7 +18,7 @@ The table is kept in step with `src/sources.ts` and the wording data by `test/wo
 | ---------- | ---------- | ------ | ---------- | -------------------- |
 | `phq9-en`  | PHQ-9      | en     | verified   | Original English form from the developers' distributor; validation: [Kroenke, Spitzer and Williams, J Gen Intern Med 2001](https://pubmed.ncbi.nlm.nih.gov/11556941/), which concludes the PHQ-9 is a reliable and valid measure of depression severity. |
 | `gad7-en`  | GAD-7      | en     | verified   | Original English form from the developers' distributor; validation: [Spitzer, Kroenke, Williams and Löwe, Arch Intern Med 2006](https://pubmed.ncbi.nlm.nih.gov/16717171/), which concludes the GAD-7 is a valid tool for screening for GAD and assessing its severity. |
-| `who5-en`  | WHO-5      | en     | verified   | Original English form published by WHO; validation: [Topp, Østergaard, Søndergaard and Bech, Psychother Psychosom 2015](https://pubmed.ncbi.nlm.nih.gov/25831962/), a systematic review concluding the WHO-5 has adequate validity as a screening tool for depression and as an outcome measure. |
+| `who5-en`  | WHO-5      | en     | unverified | WHO English original, text copied from the source. The one review found (Topp et al., Psychother Psychosom 2015) pools studies of translated versions of the instrument and does not establish this English form, so no validation study is cited. The text is kept. |
 | `cssrs-en` | C-SSRS     | en     | unverified | This is the patient-facing self-report screener form. A validation study of the C-SSRS exists (Posner et al., Am J Psychiatry 2011;168:1266-1277, found by search, not read), but that it covers this form was not established. |
 | `phq9-ar`  | PHQ-9      | ar     | unverified | Tunisian-Arabic edition. The form prints no validation statement and no validation study of this Arabic text was obtained. The text is kept. |
 | `gad7-ar`  | GAD-7      | ar     | unverified | Tunisian-Arabic edition. The form prints no validation statement and no validation study of this Arabic text was obtained. The text is kept. |
@@ -42,6 +42,7 @@ The table is kept in step with `src/sources.ts` and the wording data by `test/wo
 
 - Obtain the Arabic C-SSRS screener from the Columbia Lighthouse Project, and confirm its terms for use in this app.
 - Obtain an Arabic PHQ-9 and GAD-7 with a published validation for Gulf populations, or accept the Tunisian editions with their label.
+- Establish a published validation of the English WHO-5 form, or keep it unverified.
 - Check the `who5-ar` strings against the WHO scan, or obtain a validated Arabic text.
 - Establish whether a validation study covers the C-SSRS self-report screener form used here.
 - Read the WHO-5 CC BY-NC-SA terms before any use beyond a demo.

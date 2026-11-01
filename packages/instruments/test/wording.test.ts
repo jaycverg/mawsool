@@ -43,13 +43,13 @@ describe('wording data', () => {
 describe('wordingStatus', () => {
   const status = (i: (typeof INSTRUMENTS)[number], l: (typeof LOCALES)[number]) => wordingFor(i, l).wordingStatus;
 
-  it('marks only the English forms with a cited published validation study as verified', () => {
+  it('marks only the English PHQ-9 and GAD-7, which have a cited published validation study, as verified', () => {
     expect(status('phq9', 'en')).toBe('verified');
     expect(status('gad7', 'en')).toBe('verified');
-    expect(status('who5', 'en')).toBe('verified');
   });
 
-  it('keeps every other instrument and locale unverified, including copied Arabic text with no validation statement', () => {
+  it('keeps every other instrument and locale unverified, including copied text with no validation of that form', () => {
+    expect(status('who5', 'en')).toBe('unverified');
     expect(status('cssrs', 'en')).toBe('unverified');
     for (const instrument of INSTRUMENTS) expect(status(instrument, 'ar'), `${instrument} ar`).toBe('unverified');
   });
@@ -60,6 +60,20 @@ describe('wordingStatus', () => {
       expect(wording.sourceId).toBe(`${instrument}-ar`);
       expect(wording.items.every((item) => item.text !== null && item.text.length > 0), instrument).toBe(true);
     }
+  });
+
+  it('keeps the English WHO-5 text and source while marking it unverified, and the label fires', () => {
+    const wording = wordingFor('who5', 'en');
+    expect(wording.sourceId).toBe('who5-en');
+    expect(wording.items.map((item) => item.text)).toEqual([
+      'I have felt cheerful and in good spirits',
+      'I have felt calm and relaxed',
+      'I have felt active and vigorous',
+      'I woke up feeling fresh and rested',
+      'My daily life has been filled with things that interest me',
+    ]);
+    expect(sourceFor('who5', 'en')?.validationSource).toBeNull();
+    for (const item of wording.items) expect(needsUnverifiedLabel('who5', 'en', item)).toBe(true);
   });
 
   it('has no item text at all for the Arabic C-SSRS, because none was obtained', () => {
