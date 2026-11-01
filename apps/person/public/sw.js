@@ -1,19 +1,21 @@
 /*
- * Service worker baseline. It precaches the shell so the app opens offline, caches built assets, and falls back
- * to the cache for pages when the network is gone. Requests to other origins, including the API, are never
- * touched. The crisis, check-in and result screens are added to the precache list with the person flow.
- * Bump VERSION whenever the precache list changes.
+ * Service worker. It precaches the app shell so the app opens offline after one online visit, and serves
+ * anything it has cached before touching the network. Requests to other origins, including the API, are never
+ * touched.
+ *
+ * The list between the markers is replaced after every build by scripts/build-precache.mjs: the pages, the built
+ * CSS and JS, the fonts, the manifest and the icons, with a version derived from them. A copy of this file that
+ * has not been through that step (development) precaches nothing.
  */
-const VERSION = 'v1';
-const SHELL_CACHE = `mawsool-shell-${VERSION}`;
-const RUNTIME_CACHE = `mawsool-runtime-${VERSION}`;
-const PRECACHE_URLS = ['/', '/en/', '/ar/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
+const PRECACHE = /*PRECACHE_START*/ { "version": "dev", "urls": [] } /*PRECACHE_END*/;
+const SHELL_CACHE = `mawsool-shell-${PRECACHE.version}`;
+const RUNTIME_CACHE = `mawsool-runtime-${PRECACHE.version}`;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(SHELL_CACHE)
-      .then((cache) => cache.addAll(PRECACHE_URLS))
+      .then((cache) => cache.addAll(PRECACHE.urls))
       .then(() => self.skipWaiting()),
   );
 });
@@ -44,6 +46,11 @@ self.addEventListener('fetch', (event) => {
   }
 });
 
+/** Any cache this worker owns, shell or runtime. A page's query string (?id=) does not change which page it is. */
+function cached(request) {
+  return caches.match(request, { ignoreSearch: true });
+}
+
 async function networkFirst(request) {
   const cache = await caches.open(RUNTIME_CACHE);
   try {
@@ -51,28 +58,27 @@ async function networkFirst(request) {
     if (response.ok) cache.put(request, response.clone());
     return response;
   } catch (error) {
-    const cached = (await caches.match(request)) || (await caches.match(new URL(request.url).pathname));
-    if (cached) return cached;
+    const hit = await cached(request);
+    if (hit) return hit;
     throw error;
   }
 }
 
 async function cacheFirst(request) {
-  const cached = await caches.match(request);
-  if (cached) return cached;
+  const hit = await cached(request);
+  if (hit) return hit;
   const response = await fetch(request);
   if (response.ok) (await caches.open(RUNTIME_CACHE)).put(request, response.clone());
   return response;
 }
 
 async function staleWhileRevalidate(request) {
-  const cache = await caches.open(RUNTIME_CACHE);
-  const cached = await cache.match(request);
+  const hit = await cached(request);
   const refresh = fetch(request)
-    .then((response) => {
-      if (response.ok) cache.put(request, response.clone());
+    .then(async (response) => {
+      if (response.ok) (await caches.open(RUNTIME_CACHE)).put(request, response.clone());
       return response;
     })
     .catch(() => undefined);
-  return cached || (await refresh) || Response.error();
+  return hit || (await refresh) || Response.error();
 }

@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p ${PERSON_PORT:-3000}",
-    "build": "next build && node scripts/check-export.mjs",
+    "build": "next build && node scripts/build-precache.mjs && node scripts/check-export.mjs",
     "start": "next start -p ${PERSON_PORT:-3000}",
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",
