@@ -391,6 +391,39 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page.locator('[data-score]')).toHaveText('1');
   },
 
+  async 'help-now-after-resolved-crisis-logs-nothing'({ page, locale }) {
+    const posts: { body: Record<string, unknown>; status: number }[] = [];
+    page.on('response', (response) => {
+      const request = response.request();
+      if (request.url() === `${API}/crisis-events` && request.method() === 'POST') posts.push({ body: JSON.parse(request.postData() ?? '{}'), status: response.status() });
+    });
+    const row = async (id: unknown) => (await (await fetch(`${INSPECT}/crisis-events/${id}`)).json()) as Record<string, unknown>[];
+
+    await visitOnline(page, locale);
+    await triggerCrisis(page, locale);
+    await page.getByRole('button', { name: msg(locale, 'crisis.safeNow'), exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/${locale}/result/\\?id=`));
+    // The resolved event reaches the API: one row, with its resolution.
+    await expect.poll(() => posts.some((post) => post.body['resolvedAt'] !== null && post.status < 300), { timeout: 15_000 }).toBe(true);
+    const id = posts[0]!.body['id'];
+    await expect.poll(async () => (await row(id))[0]?.['resolvedAt'] ?? null, { timeout: 15_000 }).not.toBeNull();
+    const settled = { posts: posts.length, row: await row(id) };
+
+    // "Help now" from the result screen: the screen opens, a number can be tapped, nothing is asked or logged.
+    await page.getByRole('link', { name: msg(locale, 'common.helpNow') }).click();
+    await expect(page).toHaveURL(crisisUrl(locale));
+    await page.getByRole('button', { name: msg(locale, 'crisis.callNow'), exact: true }).click();
+    await page.locator('a[href="tel:998"]').click();
+    await expect(page.getByRole('heading', { name: msg(locale, 'crisis.reachedTitle') })).toHaveCount(0);
+    await expect(page.locator('[data-screen="crisis"]')).not.toHaveAttribute('data-last-call', /.+/);
+    // Reload it too: the old event is not brought back, with its prompt.
+    await page.reload();
+    await expect(page.getByRole('heading', { name: msg(locale, 'crisis.reachedTitle') })).toHaveCount(0);
+    await page.waitForTimeout(1500); // long enough for a stray send to show up
+    expect(posts.length).toBe(settled.posts);
+    expect(await row(id)).toEqual(settled.row);
+  },
+
   async 'console-clean-and-favicon'({ page, locale }) {
     const problems: string[] = [];
     const requested: string[] = [];

@@ -105,7 +105,8 @@ export function createCrisisStore(storage: StorageAdapter, deps: CrisisDeps) {
       const next = change(current);
       if (!next) return null;
       const status = await write(next);
-      if (next.event) await queue(next.event);
+      // Only an event that actually changed is queued, so touching a resolved crisis re-sends nothing.
+      if (next.event && JSON.stringify(next.event) !== JSON.stringify(current.event)) await queue(next.event);
       return { record: next, status };
     });
   }
@@ -141,13 +142,14 @@ export function createCrisisStore(storage: StorageAdapter, deps: CrisisDeps) {
 
     /** "Call now" or a number was tapped: logs which one. The block stays on. */
     recordCall(number: CrisisNumber): Promise<CrisisRecord | null> {
-      return update((current) => (current.event ? { ...current, event: { ...current.event, callTapped: number } } : null)).then((result) => result?.record ?? null);
+      // Only an open crisis may change its event: a call from "Help now" after a resolved crisis logs nothing.
+      return update((current) => (current.blocked && current.event ? { ...current, event: { ...current.event, callTapped: number } } : null)).then((result) => result?.record ?? null);
     },
 
     /** The person says they reached someone. Self-report only; the block stays on. */
     confirmContact(): Promise<CrisisRecord | null> {
       return update((current) =>
-        current.event && !current.event.humanContactConfirmed
+        current.blocked && current.event && !current.event.humanContactConfirmed
           ? { ...current, event: { ...current.event, humanContactConfirmed: true, contactSource: 'self_report', contactAt: deps.now().toISOString() } }
           : null,
       ).then((result) => result?.record ?? null);
@@ -161,6 +163,7 @@ export function createCrisisStore(storage: StorageAdapter, deps: CrisisDeps) {
           ...current,
           blocked: false,
           resolvedAt,
+          resumeScreeningId: null,
           event: current.event && !current.event.resolvedAt ? { ...current.event, resolvedAt } : current.event,
         };
       });

@@ -54,5 +54,9 @@
   {
     "id": "edit-after-last-answer",
     "sentence": "An answer changed after the last one rescores the same check-in, and item 9 moving to above zero then blocks"
+  },
+  {
+    "id": "help-now-after-resolved-crisis-logs-nothing",
+    "sentence": "\"Help now\" after a resolved crisis logs nothing: no extra event reaches the API and the stored row is unchanged"
   }
 ]
