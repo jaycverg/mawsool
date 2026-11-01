@@ -2,7 +2,7 @@
 
 import { QUEUE_STATE_FILTERS, StaffQueueSchema, type QueueStateFilter, type Session, type StaffQueue, type StaffTicketView, type Tier } from '@mawsool/types';
 import { calendarDaysUntil, formatDate, isLocale, staffCall } from '@mawsool/ui';
-import { RequireStaffSession } from '@mawsool/ui/components';
+import { BrandMark, LanguageToggle, RequireStaffSession } from '@mawsool/ui/components';
 import { useLocale, useTranslations } from 'next-intl';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
@@ -67,8 +67,13 @@ function Queue({ session, signOut }: { session: Session; signOut: () => void }) 
   ];
 
   return (
-    <div className="flex min-h-[calc(100dvh-73px)] flex-wrap">
+    <div className="flex min-h-dvh flex-wrap">
       <nav aria-label={nav('label')} className="flex flex-[1_1_220px] flex-col gap-5 bg-ink px-4 py-6 text-surface md:max-w-[260px]">
+        <div className="flex items-center gap-2" data-brand>
+          <BrandMark className="shrink-0 text-[#7FD1C2]" />
+          <span className="wordmark">{root('common.appName')}</span>
+          <span className="text-[13px] text-[#B9CFCB]">{nav('label')}</span>
+        </div>
         <div className="rounded-input bg-[#1B4440] px-3 py-2.5" data-facility>
           <div className="text-[12px] text-[#B9CFCB]">{nav('facility')}</div>
           <div className="text-[14px] font-semibold" dir="auto">{load.k === 'ready' ? load.queue.facility.name : '…'}</div>
@@ -115,6 +120,7 @@ function Queue({ session, signOut }: { session: Session; signOut: () => void }) 
             </select>
           </label>
           <span className="t-label rounded-chip bg-mock px-2.5 py-1 font-semibold text-mock-ink">{root('home.simulated')}</span>
+          <LanguageToggle locale={lang} ariaLabel={root('common.language')} />
         </div>
 
         <div className="flex flex-wrap items-start gap-4">
@@ -177,8 +183,15 @@ function Row({ item, lang, selected, onOpen }: { item: StaffTicketView; lang: 'a
       <td className={cell}>{root(`language.${item.language}`)}</td>
       <td className={cell}>{root(`source.${item.source}`)}</td>
       <td className={cell}>
-        <span className={`whitespace-nowrap rounded-chip px-2 py-[3px] text-[12px] font-semibold ${late ? 'bg-[#F6D9A8] text-warning-ink' : 'bg-[#EEF2F1]'}`}>{root(`state.${item.state}`)}</span>
+        <span className={`whitespace-nowrap rounded-chip px-2 py-[3px] text-[12px] font-semibold ${chipClass(item.state, selected)}`}>{root(`state.${item.state}`)}</span>
       </td>
     </tr>
   );
+}
+
+/** The status chip of a row, from the board: overdue in the warning amber, acknowledged in white on the selected row (the same tint as the detail's chip elsewhere), every other state in the plain grey. */
+function chipClass(state: string, selected: boolean): string {
+  if (state === 'overdue') return 'bg-[#F6D9A8] text-warning-ink';
+  if (state === 'acknowledged') return `${selected ? 'bg-surface' : 'bg-accent-tint'} text-accent-dark`;
+  return 'bg-[#EEF2F1]';
 }

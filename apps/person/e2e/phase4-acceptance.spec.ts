@@ -244,6 +244,30 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
       expect(res.json()).toEqual({ error: 'withdrawn', message: 'Withdrawn by the person' });
     }
     expect((await stored(ticket.id)).bundle).toMatchObject({ contentCiphertext: null });
+
+    // A stale row: the queue is already on screen with the ticket in it when the person ends the sharing. Opening the
+    // row finds out (410 at opening), and the row, with its code, tier and deadline, goes with it.
+    const stale = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A) });
+    await clinic.goto(clinicUrl(locale));
+    await expect(row(clinic, stale.shortCode)).toBeVisible();
+    expect((await revokeConsent(person, stale, 'ticket')).status).toBe(200);
+    await row(clinic, stale.shortCode).getByRole('button').click();
+    await expect(clinic.locator('[data-detail-state="withdrawn"]')).toBeVisible();
+    await expect(row(clinic, stale.shortCode)).toHaveCount(0);
+    await expect(clinic.locator('[data-queue]')).not.toContainText(displayCode(stale.shortCode));
+
+    // The same for the export: the ticket is open and shown when the sharing ends, and the export call finds out.
+    const exporting = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A) });
+    await clinic.goto(clinicUrl(locale));
+    await row(clinic, exporting.shortCode).getByRole('button').click();
+    await expect(clinic.locator('[data-detail] [data-code]')).toHaveText(displayCode(exporting.shortCode));
+    await expect(row(clinic, exporting.shortCode)).toBeVisible();
+    expect((await revokeConsent(person, exporting, 'ticket')).status).toBe(200);
+    await clinic.getByRole('button', { name: cmsg(locale, 'detail.copyFhir'), exact: true }).click();
+    await expect(clinic.locator('[data-detail-state="withdrawn"]')).toBeVisible();
+    await expect(clinic.locator('[data-detail] [data-code]')).toHaveCount(0);
+    await expect(row(clinic, exporting.shortCode)).toHaveCount(0);
+    await expect(clinic.locator('[data-queue]')).not.toContainText(displayCode(exporting.shortCode));
   },
 
   async 'unable-to-see-prompts-person-to-reroute'({ page, context, locale }) {
@@ -265,6 +289,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     const prompt = page.locator('[data-prompt="unable"]');
     await expect(prompt).toBeVisible();
     await expect(prompt).toContainText(msg(locale, 'ticket.unablePrompt'));
+    expect(await computed(page, '[data-prompt="unable"] p', ['font-size', 'font-weight', 'line-height'])).toMatchObject({ 'font-size': '14px', 'font-weight': '600', 'line-height': '20px' });
     await prompt.getByRole('button', { name: msg(locale, 'ticket.findAnother'), exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/${locale}/options/\\?reroute=${parent}&reason=unable_to_see`));
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(msg(locale, 'options.rerouteHeading'));
@@ -852,6 +877,17 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect(await computed(clinic, '[data-queue] tr[data-state="overdue"] td:last-child span', ['background-color', 'color', 'border-top-left-radius', 'font-size', 'font-weight'])).toMatchObject({ 'background-color': rgb.chipWarning, color: rgb.warningInk, 'border-top-left-radius': '8px', 'font-size': '12px', 'font-weight': '600' });
     expect(await computed(clinic, '[data-queue] tr[data-ticket] button', ['font-family', 'font-weight'])).toMatchObject({ 'font-family': expect.stringMatching(/IBM Plex Mono/), 'font-weight': '600' });
     expect(await computed(clinic, '[data-queue] thead th', ['font-size', 'color', 'letter-spacing', 'text-transform'])).toMatchObject({ 'font-size': '12px', color: rgb.muted, 'letter-spacing': '0.5px', 'text-transform': 'uppercase' });
+    // Body text sits on the plan's line box (15/22, Arabic 15/24) as a length, in the nav, the queue and every line of the detail.
+    const body = locale === 'ar' ? '24px' : '22px';
+    for (const selector of ['body', 'nav button', '[data-queue] td', '[data-brand]']) expect((await computed(clinic, selector, ['line-height']))['line-height'], selector).toBe(body);
+    // The sidebar opens with the mark, the wordmark and the 13 px muted "Clinician" label, as on the board; the language toggle is in the page and reachable.
+    await expect(clinic.locator('nav [data-brand] svg')).toBeVisible();
+    expect(await computed(clinic, 'nav [data-brand] .wordmark', ['font-weight', 'color'])).toMatchObject({ 'font-weight': '700', color: 'rgb(255, 255, 255)' });
+    expect(await computed(clinic, 'nav [data-brand] span:last-child', ['font-size', 'color'])).toMatchObject({ 'font-size': '13px', color: 'rgb(185, 207, 203)' });
+    await expect(clinic.locator('nav [data-brand] span:last-child')).toHaveText(cmsg(locale, 'nav.label'));
+    const toggle = clinic.locator('main .lang-toggle');
+    await expect(toggle).toBeVisible();
+    expect((await toggle.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     // Everything you can press or choose is at least 44 high.
     for (const selector of ['nav button', 'main select', '[data-queue] tr[data-ticket] button']) {
       for (const control of await clinic.locator(selector).all()) expect((await control.boundingBox())!.height, selector).toBeGreaterThanOrEqual(44);
@@ -870,6 +906,24 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
       expect((await clinic.locator(`[data-detail] button:text-is("${name}")`).boundingBox())!.height).toBeGreaterThanOrEqual(44);
     }
     expect((await clinic.getByRole('button', { name: cmsg(locale, 'detail.copyFhir'), exact: true }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    // Detail details from the board: the "Referred" line is 14 px pulled 8 px up, the action row sits 4 px lower, the export block's gap is 10.
+    expect(await computed(clinic, '[data-detail] [data-code] ~ p, [data-detail] > p', ['font-size', 'margin-top', 'color'])).toMatchObject({ 'font-size': '14px', 'margin-top': '-8px', color: rgb.muted });
+    expect(await computed(clinic, '[data-detail] button:text-is("' + cmsg(locale, 'detail.markSeen') + '")', ['line-height'])).toMatchObject({ 'line-height': body });
+    expect(await computed(clinic, '[data-detail] button:text-is("' + cmsg(locale, 'detail.markSeen') + '") >> xpath=../..', ['margin-top'])).toMatchObject({ 'margin-top': '4px' });
+    expect(await computed(clinic, '[data-export-label] >> xpath=../..', ['row-gap', 'border-top-color'])).toMatchObject({ 'row-gap': '10px', 'border-top-color': 'rgb(230, 236, 234)' });
+    for (const selector of ['[data-section="scores"] li', '[data-section="conditions"] li', '[data-section="preferences"] p', '[data-summary]']) expect((await computed(clinic, selector, ['line-height']))['line-height'], selector).toBe(body);
+    // The status chips of a row, from the board: acknowledged is white on the selected row, in the dark teal; issued is the plain grey.
+    await clinic.goto(clinicUrl(locale, `?ticket=${ticket.id}`));
+    await expect(clinic.locator('[data-queue] tr[data-ticket]').first()).toBeVisible();
+    const acknowledged = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A) });
+    expect((await call('POST', `/tickets/${acknowledged.id}/events`, { headers: bearer(await staffSession(CLINICIAN_A)), body: { to: 'acknowledged' } })).status).toBe(200);
+    await clinic.goto(clinicUrl(locale, `?ticket=${acknowledged.id}`));
+    await expect(row(clinic, acknowledged.shortCode)).toHaveAttribute('data-selected', 'true');
+    expect(await computed(clinic, `[data-queue] tr[data-ticket="${acknowledged.shortCode}"] td:last-child span`, ['background-color', 'color'])).toMatchObject({ 'background-color': rgb.white, color: 'rgb(10, 79, 73)' });
+    expect(await computed(clinic, `[data-queue] tr[data-ticket="${ticket.shortCode}"] td:last-child span`, ['background-color'])).toMatchObject({ 'background-color': 'rgb(238, 242, 241)' });
+    // The sign-in forms' address field has the board's input border.
+    await clinic.goto(clinicUrl(locale, 'sign-in/'));
+    expect(await computed(clinic, '#staff-email', ['border-top-color', 'border-top-width'])).toMatchObject({ 'border-top-color': 'rgb(154, 170, 167)', 'border-top-width': '1px' });
     expect(await clinic.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   },
 

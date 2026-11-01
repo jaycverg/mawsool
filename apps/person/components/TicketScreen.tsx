@@ -209,13 +209,13 @@ function Ready({ t, lang, ticket, reads, all, savedWarning, notice, panel, setPa
       )}
       {clinicCouldNotSee(ticket) && (
         <section role="alert" className="flex flex-col gap-2 rounded-staff bg-warning px-3.5 py-3 text-warning-ink" data-prompt="unable">
-          <p className="text-[14px] font-semibold">{t('unablePrompt')}</p>
+          <p className="text-[14px] font-semibold leading-5">{t('unablePrompt')}</p>
           <button type="button" className="btn-primary" onClick={() => onReroute('unable_to_see')}>{t('findAnother')}</button>
         </section>
       )}
       {ticket.state === 'overdue' && (
         <section role="alert" className="flex flex-col gap-2 rounded-staff bg-warning px-3.5 py-3 text-warning-ink" data-prompt="overdue">
-          <p className="text-[14px] font-semibold">{t('overduePrompt')}</p>
+          <p className="text-[14px] font-semibold leading-5">{t('overduePrompt')}</p>
           <button type="button" className="btn-primary" onClick={() => onReroute('wait_too_long')}>{t('findAnother')}</button>
         </section>
       )}

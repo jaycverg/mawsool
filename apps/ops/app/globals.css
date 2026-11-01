@@ -7,4 +7,7 @@ body {
   background: var(--color-ground);
   color: var(--color-ink);
   font-family: var(--font-sans);
+  /* The plan's body size and line box (15/22, Arabic 15/24), set once here so every line inherits a length, not a ratio. */
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
 }
