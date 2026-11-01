@@ -113,6 +113,37 @@ describe('selectRow', () => {
     expect(selectRow([screening('phq9', 25, T1, [])]).row.id).toBe('below_5');
   });
 
+  describe('a check-in in progress, with empty answer slots', () => {
+    const complete = phq9(18, T1);
+    const inProgress = (answers: unknown[], total = 3) =>
+      ({ ...screening('phq9', total, T2, Array(9).fill(0)), answers }) as unknown as ReturnType<typeof phq9>;
+
+    it.each([
+      ['a fixed-length list that is all holes', () => new Array(9)],
+      ['holes after the answered items', () => Object.assign(new Array(9), { 0: 1, 1: 2, 2: 1 })],
+      ['undefined after the answered items', () => [1, 2, 1, undefined, undefined, undefined, undefined, undefined, undefined]],
+      ['null after the answered items, as a saved copy reads back', () => [1, 2, 1, null, null, null, null, null, null]],
+      ['a NaN in the middle', () => [1, 2, 1, Number.NaN, 0, 0, 0, 0, 0]],
+      ['an answer above the instrument maximum', () => [1, 2, 1, 4, 0, 0, 0, 0, 0]],
+    ])('is not complete with %s, even though the length and the total look right', (_name, build) => {
+      const draft = inProgress(build());
+      expect(draft.answers).toHaveLength(9);
+      expect(Number.isInteger(draft.total)).toBe(true);
+      expect(isCompleteScreening(draft)).toBe(false);
+    });
+
+    it('never replaces a finished check-in in row selection, whichever comes later', () => {
+      const draft = inProgress(Object.assign(new Array(9), { 0: 3, 1: 3, 2: 3 }), 27);
+      expect(selectRow([complete, draft])).toMatchObject({ row: { id: 'specialist_or_gp' }, phq9Total: 18 });
+      expect(selectRow([draft, complete])).toMatchObject({ row: { id: 'specialist_or_gp' }, phq9Total: 18 });
+      expect(selectRow([draft])).toMatchObject({ row: { id: 'below_5' }, phq9Total: null });
+    });
+
+    it('is complete once every slot holds an answer', () => {
+      expect(isCompleteScreening(inProgress([1, 2, 1, 0, 0, 0, 0, 0, 0], 4))).toBe(true);
+    });
+  });
+
   it('counts an over-complete answer list as incomplete too', () => {
     expect(isCompleteScreening(screening('phq9', 3, T1, Array(10).fill(0)))).toBe(false);
     expect(isCompleteScreening(phq9(3))).toBe(true);
