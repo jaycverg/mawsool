@@ -154,6 +154,12 @@ describe('crisis takes precedence', () => {
     expect(run([item9, again], { crisisResolvedAt: '2026-10-01T08:10:00+04:00' })[0]?.kind).toBe('crisis');
   });
 
+  it('returns the crisis option for a flagged screening that lost its answers', () => {
+    const flagged = { ...screening('phq9', 0, '2026-10-01T08:00:00+04:00', []), item9Flag: true };
+    expect(run([flagged])[0]?.kind).toBe('crisis');
+    expect(run([flagged], { crisisResolvedAt: '2026-10-01T09:00:00+04:00' })[0]?.kind).toBe('recommended');
+  });
+
   it('is not triggered by a later check-in that answers item 9 with 0 once the earlier one is resolved', () => {
     const clean = phq9(8, '2026-10-15T08:00:00+04:00', 0);
     expect(run([item9, clean], { crisisResolvedAt: '2026-10-01T08:10:00+04:00' })[0]?.kind).toBe('recommended');
