@@ -12,6 +12,7 @@ import {
   finishButton,
   goOffline,
   installFailingIndexedDb,
+  rawStoreDump,
   rawStoreKeys,
   setIdbMode,
   type IdbMode,
@@ -554,6 +555,63 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(detail).toHaveCSS('line-height', '19px');
     await expect(detail).toContainText('800 725462');
     await expect(detail).toContainText('·');
+  },
+
+  async 'data-is-encrypted-at-rest'({ page, locale }) {
+    await visitOnline(page, locale);
+    // Real data through the real screens: a PHQ-9, a health plan and every preference.
+    await takeCheckIn(page, locale, 'phq9', [3, 2, 1, 0, 1, 2, 3, 1, 0]);
+    await expect(page.locator('[data-score]')).toHaveText('13');
+    await page.getByRole('link', { name: msg(locale, 'result.options'), exact: true }).click();
+    await page.locator('#plan').selectOption('thiqa');
+    await page.locator('details[data-panel="preferences"] summary').click();
+    await page.locator('#pref-language').selectOption('ur');
+    await page.locator('#pref-region').selectOption('al_ain');
+    await expect(page.locator('[data-tier]').first()).toBeVisible();
+    // Guided self-help stays on the phone: a choice is saved without leaving the screen.
+    await page.getByRole('button', { name: msg(locale, 'options.showOther'), exact: true }).click();
+    await page.locator('[data-tier="self_help"] button').click();
+    await expect(page.getByRole('status').filter({ hasText: msg(locale, 'options.savedTitle') })).toBeVisible();
+
+    await expect.poll(async () => (await rawStoreDump(page)).map((entry) => entry.key).sort(), { timeout: 10_000 }).toEqual(
+      expect.arrayContaining(['__device-key', 'choice', 'directory', 'insurance', 'preferences', 'screenings']),
+    );
+    const dump = await rawStoreDump(page);
+    const key = dump.find((entry) => entry.key === '__device-key')!;
+    expect(key).toMatchObject({ kind: 'crypto-key', extractable: false, exportRejected: true, algorithm: { name: 'AES-GCM', length: 256 } });
+    expect(key.usages).toEqual(expect.arrayContaining(['encrypt', 'decrypt']));
+
+    const rows = dump.filter((entry) => entry.key !== '__device-key');
+    expect(rows.length).toBeGreaterThanOrEqual(5);
+    for (const row of rows) {
+      // Each row is an IV and AES-GCM ciphertext, never the data.
+      expect(row, row.key).toMatchObject({ kind: 'envelope', envelopeFields: ['ct', 'iv', 'v'], ivLength: 12 });
+      expect(row.text, `${row.key} leaks`).not.toMatch(/answers|instrument|phq9|gad7|thiqa|al_ain|takenAt|item9|"ur"|secret|services|Sample/i);
+    }
+  },
+
+  async 'settings-download-and-delete'({ page, locale }) {
+    await visitOnline(page, locale);
+    await takeCheckIn(page, locale, 'phq9', [3, 2, 1, 0, 1, 2, 3, 1, 0]);
+    await expect(page.locator('[data-score]')).toHaveText('13');
+
+    await page.goto(`/${locale}/settings/`);
+    await page.getByRole('button', { name: msg(locale, 'settings.download'), exact: true }).click();
+    const exported = JSON.parse(await page.getByLabel(msg(locale, 'settings.dataLabel')).inputValue()) as Record<string, any>;
+    expect(Object.keys(exported).sort()).toEqual(['choice', 'crisis', 'exportedAt', 'insurance', 'preferences', 'screenings']);
+    expect(exported['screenings']).toHaveLength(1);
+    expect(exported['screenings'][0]).toMatchObject({ instrument: 'phq9', answers: [3, 2, 1, 0, 1, 2, 3, 1, 0], total: 13, band: 'moderate', item9Flag: false });
+    expect(JSON.stringify(exported)).not.toMatch(/secret/i); // the device credential is not the person's data
+
+    expect((await rawStoreDump(page)).length).toBeGreaterThan(0);
+    await page.getByRole('button', { name: msg(locale, 'settings.delete'), exact: true }).click();
+    await page.getByRole('button', { name: msg(locale, 'settings.deleteYes'), exact: true }).click();
+    await expect(page.getByText(msg(locale, 'settings.deleted'))).toBeVisible();
+    // Nothing is left in the raw store, key included.
+    await expect.poll(() => rawStoreKeys(page), { timeout: 10_000 }).toEqual([]);
+
+    await page.goto(`/${locale}/check-ins/`);
+    await expect(page.getByText(msg(locale, 'checkIns.empty'))).toBeVisible();
   },
 
   async 'console-clean-and-favicon'({ page, locale }) {
