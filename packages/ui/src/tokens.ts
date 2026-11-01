@@ -18,6 +18,9 @@ export const COLORS = {
 
 export const RADII_PX = { card: 16, ticket: 18, staff: 14, input: 10, chip: 8 } as const;
 
+/** Pill radii from the boards: 44 px controls and the 52 px call to action. */
+export const PILL_RADII_PX = { control: 22, cta: 26 } as const;
+
 export const TYPE = {
   h1: { sizePx: 24, lineHeightPx: { en: 30, ar: 34 }, weight: 600 },
   body: { sizePx: 15, lineHeightPx: { en: 22, ar: 24 } },
