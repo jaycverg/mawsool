@@ -50,8 +50,9 @@ export function CrisisScreen() {
     if (device === null || device === 'unavailable') return;
     void device.crisis.read().then((state) => {
       setRecord(state.record);
-      if (state.record?.event?.humanContactConfirmed) setReached('yes');
-      else if (state.record?.event?.callTapped) setReached('asking');
+      // The prompt belongs to an open crisis. After a resolution, "Help now" is only a way to reach a number.
+      if (state.record?.blocked && state.record.event?.humanContactConfirmed) setReached('yes');
+      else if (state.record?.blocked && state.record.event?.callTapped) setReached('asking');
     });
   }, [device]);
 
@@ -61,7 +62,7 @@ export function CrisisScreen() {
 
   function call(number: CrisisNumber) {
     dialler.dial(number);
-    if (reached === 'unasked' || reached === 'later') setReached('asking');
+    if (record?.blocked && (reached === 'unasked' || reached === 'later')) setReached('asking');
     if (device && device !== 'unavailable') {
       void device.crisis.recordCall(number).then((next) => {
         if (next) setRecord(next);

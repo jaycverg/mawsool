@@ -234,3 +234,41 @@ describe('releasing the block lets matching run (the old item 9 answer does not 
     expect(second.id).not.toBe(first.id);
   });
 });
+
+describe('Help now after a resolved crisis', () => {
+  async function resolved() {
+    const ctx = setup();
+    await ctx.crisis.raise(RAISE);
+    await ctx.crisis.recordCall('999');
+    ctx.clock.advance(5);
+    await ctx.crisis.resolve();
+    const event = (await ctx.crisis.read()).record!.event;
+    const queued = JSON.stringify(await pendingEvents(ctx.storage));
+    return { ...ctx, event, queued };
+  }
+
+  it('does not change the event or touch the outbox when a number is tapped or contact is claimed', async () => {
+    const { crisis, storage, event, queued, clock } = await resolved();
+    clock.advance(30);
+    expect(await crisis.recordCall('800725462')).toBeNull();
+    expect(await crisis.confirmContact()).toBeNull();
+    expect((await crisis.read()).record!.event).toEqual(event);
+    expect(event).toMatchObject({ callTapped: '999', humanContactConfirmed: false });
+    expect(JSON.stringify(await pendingEvents(storage))).toBe(queued);
+  });
+
+  it('forgets which check-in the resolved crisis belonged to', async () => {
+    const { crisis } = await resolved();
+    expect((await crisis.read()).record).toMatchObject({ blocked: false, resumeScreeningId: null });
+  });
+
+  it('queues nothing when it is resolved again with the event unchanged, and can still be resolved from a clear state', async () => {
+    const { crisis, storage, queued, clock } = await resolved();
+    clock.advance(10);
+    const again = await crisis.resolve();
+    expect(again!.record.blocked).toBe(false);
+    expect(JSON.stringify(await pendingEvents(storage))).toBe(queued);
+    const fresh = setup();
+    expect((await fresh.crisis.resolve())!.record).toMatchObject({ blocked: false, event: null });
+  });
+});
