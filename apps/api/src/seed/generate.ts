@@ -11,6 +11,7 @@ import {
 } from '@mawsool/types';
 import type { schema } from '../db/client';
 import { sha256Hex } from '../security';
+import { INVITE_TTL_MS } from '../inbound/service';
 import {
   FACILITIES,
   FACILITY_A_ID,
@@ -33,6 +34,7 @@ export interface SeedData {
   tickets: Insert<typeof schema.tickets>[];
   ticketEvents: Insert<typeof schema.ticketEvents>[];
   crisisEvents: Insert<typeof schema.crisisEvents>[];
+  inboundInvites: Insert<typeof schema.inboundInvites>[];
 }
 
 /** Sizes the spec and plan fix. */
@@ -233,6 +235,53 @@ function buildTimeline(
     }
   }
   return t.events;
+}
+
+/** Unclaimed invites the seed leaves open, by front door. Each is unexpired at the seed's own reference time (the anchor). */
+export const SEED_OPEN_INVITES = { phc: 5, tamm: 5, school: 4 } as const;
+/** Unclaimed invites that had already expired by the anchor, so they must not be counted as positive screens. */
+export const SEED_EXPIRED_INVITES = 4;
+/** Invites claimed by the person of a seeded front-door ticket, so a claimed invite and its ticket are in the data once each. */
+export const SEED_CLAIMED_INVITES = 12;
+
+type InviteRow = Insert<typeof schema.inboundInvites>;
+
+/**
+ * The seed's invites. Their codes are not known to anyone (only a hash of a throwaway value is stored), so none of them
+ * can be claimed; they exist to be counted. Dates are relative to the anchor, never to the wall clock: open ones were
+ * created between 1 and 25 days before it, so they expire between 5 and 29 days after it, and expired ones expired
+ * between 5 and 30 days before it.
+ */
+function buildInvites(rng: Rng, anchorMs: number, tickets: SeedData['tickets'], persons: SeedData['persons']): InviteRow[] {
+  const rows: InviteRow[] = [];
+  const add = (source: InviteRow['source'], createdAt: number, locale: 'ar' | 'en', claim?: { personId: string; claimedAt: number; ticketId: string }): void => {
+    const id = rng.uuid();
+    rows.push({
+      id,
+      source,
+      codeHash: sha256Hex(`seed-invite-${id}`),
+      screenedAt: new Date(createdAt - between(rng, HOUR, 12 * HOUR)),
+      locale,
+      createdAt: new Date(createdAt),
+      expiresAt: new Date(createdAt + INVITE_TTL_MS),
+      claimedBy: claim?.personId ?? null,
+      claimedAt: claim ? new Date(claim.claimedAt) : null,
+      ticketId: claim?.ticketId ?? null,
+    });
+  };
+  for (const [source, count] of Object.entries(SEED_OPEN_INVITES) as [keyof typeof SEED_OPEN_INVITES, number][]) {
+    for (let i = 0; i < count; i += 1) add(source, anchorMs - between(rng, DAY, 25 * DAY), rng.weighted<'ar' | 'en'>([['ar', 0.6], ['en', 0.4]]));
+  }
+  for (let i = 0; i < SEED_EXPIRED_INVITES; i += 1) {
+    add(rng.pick(['phc', 'tamm', 'school'] as const), anchorMs - INVITE_TTL_MS - between(rng, 5 * DAY, 30 * DAY), 'ar');
+  }
+  const localeOf = new Map(persons.map((person) => [person.id, person.locale]));
+  const frontDoorTickets = tickets.filter((ticket) => ticket.parentTicketId === null && ticket.source !== 'app').sort((a, b) => a.createdAt!.getTime() - b.createdAt!.getTime() || a.id.localeCompare(b.id));
+  for (const ticket of frontDoorTickets.slice(0, SEED_CLAIMED_INVITES)) {
+    const claimedAt = ticket.createdAt!.getTime() - HOUR;
+    add(ticket.source, claimedAt - between(rng, HOUR, 2 * DAY), localeOf.get(ticket.personId) ?? 'en', { personId: ticket.personId, claimedAt, ticketId: ticket.id });
+  }
+  return rows;
 }
 
 /**
@@ -436,6 +485,9 @@ export function generateSeed(anchor: Date = SEED_ANCHOR): SeedData {
     };
   });
 
+  // Invites, drawn after everything above so the rows above stay exactly as they were.
+  const inboundInvites = buildInvites(rng, anchorMs, tickets, persons);
+
   const byTime = <T extends { createdAt?: Date | null; shownAt?: Date }>(rows: T[]): T[] =>
     [...rows].sort((a, b) => (a.createdAt ?? a.shownAt!).getTime() - (b.createdAt ?? b.shownAt!).getTime());
 
@@ -447,5 +499,6 @@ export function generateSeed(anchor: Date = SEED_ANCHOR): SeedData {
     tickets: byTime(tickets),
     ticketEvents: [...ticketEvents].sort((a, b) => a.ticketId.localeCompare(b.ticketId) || a.seq - b.seq),
     crisisEvents: byTime(crisisEvents),
+    inboundInvites: inboundInvites.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id)),
   };
 }

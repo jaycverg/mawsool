@@ -15,8 +15,9 @@ import { CONDITION, FREE_TEXT, issue, registerPerson, serviceAt, ticketRequest, 
  *  - clinician-scoped: a ticket's data, behind a staff session, a clinician role and the facility scope
  *  - inbound-signed:   a front door's hand-over: no bearer token works on it, only a valid per-source signature
  *                      (`inbound.test.ts` holds the signature cases); it returns a claim code and no wellbeing data
+ *  - ops-aggregate:    the dashboard's numbers, behind an ops session; every figure is suppressed under ten (`metrics.test.ts` holds the cases)
  */
-type Kind = 'open' | 'person-own' | 'clinician-scoped' | 'inbound-signed';
+type Kind = 'open' | 'person-own' | 'clinician-scoped' | 'inbound-signed' | 'ops-aggregate';
 
 const REVIEWED: Record<string, { access: RouteAccess; kind: Kind }> = {
   'GET /health': { access: 'public', kind: 'open' },
@@ -25,6 +26,12 @@ const REVIEWED: Record<string, { access: RouteAccess; kind: Kind }> = {
   'POST /auth/verify': { access: 'public', kind: 'open' },
   'GET /services': { access: 'public', kind: 'open' },
   'GET /docs': { access: 'public', kind: 'open' },
+  // Opens to anyone because a browser logs a console error for a 404; it holds the demo clock's offset and no person data.
+  'GET /clock': { access: 'public', kind: 'open' },
+  'GET /metrics/funnel': { access: 'ops', kind: 'ops-aggregate' },
+  'GET /metrics/timeliness': { access: 'ops', kind: 'ops-aggregate' },
+  'GET /metrics/crisis': { access: 'ops', kind: 'ops-aggregate' },
+  'GET /metrics/equity': { access: 'ops', kind: 'ops-aggregate' },
   'POST /crisis-events': { access: 'person', kind: 'person-own' },
   'POST /tickets': { access: 'person', kind: 'person-own' },
   'GET /me/tickets': { access: 'person', kind: 'person-own' },
@@ -96,6 +103,7 @@ describe('no employer or insurer access (MW-505)', () => {
       if (kind === 'person-own') expect(route.access).toBe('person');
       if (kind === 'clinician-scoped') expect(route.access).toBe('clinician');
       if (kind === 'inbound-signed') expect(route.access).toBe('inbound');
+      if (kind === 'ops-aggregate') expect(route.access).toBe('ops');
       if (kind === 'open') expect(route.access).toBe('public');
     }
   });
@@ -131,7 +139,14 @@ describe('no employer or insurer access (MW-505)', () => {
         { name: 'a clinician at another facility', headers: { authorization: `Bearer ${tokens['clinician B']}` } },
       ],
       public: [],
-      ops: [],
+      // The dashboard is for the ops role alone: a clinician, a person, an anonymous caller (and an admin, whose panel is separate) are refused.
+      ops: [
+        { name: 'no credential', headers: {} },
+        { name: 'the owner', headers: owner.headers },
+        { name: 'a clinician', headers: { authorization: `Bearer ${tokens['clinician A']}` } },
+        { name: 'a clinician at another facility', headers: { authorization: `Bearer ${tokens['clinician B']}` } },
+        { name: 'admin', headers: { authorization: `Bearer ${tokens['admin']}` } },
+      ],
       admin: [],
       // A bearer token of any kind is no substitute for a signature. Unsigned and mis-signed requests are in inbound.test.ts.
       inbound: [
@@ -172,5 +187,73 @@ describe('no employer or insurer access (MW-505)', () => {
     expect(queue.json().items.map((item: { id: string }) => item.id)).toContain(ticketId);
     const asOwner = await ctx.app.inject({ method: 'GET', url: `/me/tickets/${ticketId}`, headers: owner.headers });
     expect(asOwner.statusCode).toBe(200);
+    for (const path of ['funnel', 'timeliness', 'crisis', 'equity']) {
+      const asOps = await ctx.app.inject({ method: 'GET', url: `/metrics/${path}`, headers: { authorization: `Bearer ${tokens['ops']}` } });
+      expect(asOps.statusCode, path).toBe(200);
+    }
+  });
+});
+
+describe('the demo routes (clock and reset)', () => {
+  let testDb: TestDb;
+
+  beforeAll(async () => {
+    testDb = await createTestDb();
+    await runSeed(testDb.db);
+  });
+
+  afterAll(async () => {
+    await testDb.close();
+  });
+
+  const demoRoutes = ['POST /demo/clock/advance', 'POST /demo/reset'];
+
+  it('are not registered at all with DEMO_MODE unset: the paths are 404 for every principal, the admin included', async () => {
+    const ctx = await createTestApp(testDb.db);
+    try {
+      const live = ctx.app.routeRegistry.map((route) => `${route.method} ${route.url}`);
+      for (const route of demoRoutes) expect(live).not.toContain(route);
+      const admin = await signIn(ctx, 'admin@demo.mawsool.test');
+      for (const [method, url] of [['POST', '/demo/clock/advance'], ['POST', '/demo/reset']] as const) {
+        for (const headers of [{}, { authorization: `Bearer ${admin}` }]) {
+          const res = await ctx.app.inject({ method, url, headers, payload: url.endsWith('advance') ? { by: '7d' } : undefined });
+          expect(res.statusCode, `${url} ${JSON.stringify(Object.keys(headers))}`).toBe(404);
+        }
+      }
+    } finally {
+      await ctx.app.close();
+    }
+  });
+
+  it('are admin access with DEMO_MODE set: nobody else may move the clock or reset, and the admin may', async () => {
+    const ctx = await createTestApp(testDb.db, { demoMode: true });
+    try {
+      for (const route of demoRoutes) expect(ctx.app.routeRegistry.find((entry) => `${entry.method} ${entry.url}` === route)?.access, route).toBe('admin');
+      const tokens = {
+        clinician: await signIn(ctx, 'clinician.a@demo.mawsool.test'),
+        ops: await signIn(ctx, 'ops@demo.mawsool.test'),
+        admin: await signIn(ctx, 'admin@demo.mawsool.test'),
+      };
+      const person = await registerPerson(ctx);
+      const refused: Record<string, Record<string, string>> = {
+        'no credential': {},
+        person: person.headers,
+        clinician: { authorization: `Bearer ${tokens.clinician}` },
+        ops: { authorization: `Bearer ${tokens.ops}` },
+      };
+      for (const [name, headers] of Object.entries(refused)) {
+        const advance = await ctx.app.inject({ method: 'POST', url: '/demo/clock/advance', headers, payload: { by: '7d' } });
+        expect([401, 403], `advance as ${name}`).toContain(advance.statusCode);
+        const reset = await ctx.app.inject({ method: 'POST', url: '/demo/reset', headers });
+        expect([401, 403], `reset as ${name}`).toContain(reset.statusCode);
+      }
+      const clock = await ctx.app.inject({ method: 'GET', url: '/clock' });
+      expect(clock.json()).toEqual({ demoMode: true, offsetMs: 0 });
+      const advanced = await ctx.app.inject({ method: 'POST', url: '/demo/clock/advance', headers: { authorization: `Bearer ${tokens.admin}` }, payload: { by: '7d' } });
+      expect(advanced.statusCode).toBe(200);
+      expect(advanced.json().offsetMs).toBe(7 * 86_400_000);
+    } finally {
+      await ctx.app.close();
+    }
   });
 });

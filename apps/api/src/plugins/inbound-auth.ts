@@ -16,6 +16,7 @@ declare module 'fastify' {
 }
 
 export interface InboundAuthDeps {
+  /** The wall clock. A front door signs with real time, so the window never follows the demo clock. */
   clock: Clock;
   /** The signing key of each front door. A source with no key here is refused. */
   keys: Partial<Record<InboundSource, string>>;

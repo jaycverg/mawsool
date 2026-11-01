@@ -1,0 +1,46 @@
+import { CrisisResponseSchema, EquityResponseSchema, FunnelQuerySchema, FunnelResponseSchema, PeriodQuerySchema, TimelinessResponseSchema } from '@mawsool/types';
+import type { FastifyInstance } from 'fastify';
+import type { ZodTypeProvider } from 'fastify-type-provider-zod';
+import type { Clock } from '../clock';
+import type { Db } from '../db/client';
+import { loadCrisisFacts, loadOpenInvites, loadTicketFacts, periodStart } from '../metrics/facts';
+import { buildCrisis } from '../metrics/crisis';
+import { buildEquity } from '../metrics/equity';
+import { buildFunnel, journeysOf } from '../metrics/funnel';
+import { buildTimeliness } from '../metrics/timeliness';
+
+export interface MetricsRouteDeps {
+  db: Db;
+  /** The care clock: the period, the invite expiry and the overdue list read the demo clock, as the sweep does. */
+  clock: Clock;
+  /** Keys the pseudonymous ids on the overdue list. */
+  encryptionKey: string;
+}
+
+/**
+ * The ops dashboard's numbers. Every route is `ops` access (a clinician, a person and an anonymous caller are refused)
+ * and every number it returns has gone through `suppress`: a count under ten is `{ suppressed: true }`, and so is a cell
+ * that would let a hidden one be worked out from its row total. Responses name no person and carry no free text.
+ */
+export function registerMetricsRoutes(app: FastifyInstance, deps: MetricsRouteDeps): void {
+  const typed = app.withTypeProvider<ZodTypeProvider>();
+
+  typed.get('/metrics/funnel', { config: { access: 'ops' }, schema: { querystring: FunnelQuerySchema, response: { 200: FunnelResponseSchema } } }, async (request) => {
+    const now = deps.clock.now();
+    const [tickets, openInvites, crisis] = await Promise.all([loadTicketFacts(deps.db), loadOpenInvites(deps.db, now), loadCrisisFacts(deps.db)]);
+    return buildFunnel(request.query, { journeys: journeysOf(tickets), openInvites, crisis, since: periodStart(request.query.period, now) });
+  });
+
+  typed.get('/metrics/timeliness', { config: { access: 'ops' }, schema: { querystring: PeriodQuerySchema, response: { 200: TimelinessResponseSchema } } }, async (request) => {
+    const now = deps.clock.now();
+    return buildTimeliness(deps.db, request.query.period, { tickets: await loadTicketFacts(deps.db), since: periodStart(request.query.period, now), now, encryptionKey: deps.encryptionKey });
+  });
+
+  typed.get('/metrics/crisis', { config: { access: 'ops' }, schema: { querystring: PeriodQuerySchema, response: { 200: CrisisResponseSchema } } }, async (request) =>
+    buildCrisis(request.query.period, await loadCrisisFacts(deps.db), periodStart(request.query.period, deps.clock.now())),
+  );
+
+  typed.get('/metrics/equity', { config: { access: 'ops' }, schema: { querystring: PeriodQuerySchema, response: { 200: EquityResponseSchema } } }, async (request) =>
+    buildEquity(request.query.period, await loadTicketFacts(deps.db), periodStart(request.query.period, deps.clock.now())),
+  );
+}

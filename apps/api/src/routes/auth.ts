@@ -22,6 +22,7 @@ export const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 
 export interface AuthRouteDeps {
   db: Db;
+  /** The wall clock: a sign-in link and a session live in real time, never the demo clock. */
   clock: Clock;
   notifier: MagicLinkNotifier;
   /** Where each role's sign-in link points. */

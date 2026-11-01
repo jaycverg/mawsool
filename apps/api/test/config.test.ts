@@ -17,6 +17,24 @@ describe('loadConfig', () => {
       summaryLlmEnabled: false,
       summaryModel: 'claude-sonnet-5-5',
       anthropicApiKey: undefined,
+      demoMode: false,
+    });
+  });
+
+  describe('DEMO_MODE', () => {
+    const demo = (value: string | undefined) => loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, ...(value === undefined ? {} : { DEMO_MODE: value }) }).demoMode;
+
+    it('is on only for true or 1', () => {
+      expect(demo('true')).toBe(true);
+      expect(demo('1')).toBe(true);
+    });
+
+    it('is off when unset, empty, false or 0: DEMO_MODE=false is not a truthy string', () => {
+      for (const value of [undefined, '', 'false', '0']) expect(demo(value), String(value)).toBe(false);
+    });
+
+    it('refuses anything else, so a typo can neither switch the demo on nor leave it silently off', () => {
+      for (const value of ['yes', 'TRUE', 'ture', 'on', ' true']) expect(() => demo(value), value).toThrow(/DEMO_MODE/);
     });
   });
 
