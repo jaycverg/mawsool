@@ -47,8 +47,22 @@ export function forgetRegistration(storage: StorageAdapter): void {
   registered.delete(storage);
 }
 
-/** One authenticated call to the Ticket API. The device registers first if it has not yet, and every call has a ten second limit. */
+/**
+ * One authenticated call to the Ticket API. The device registers first if it has not yet, and every call has a ten second limit.
+ *
+ * A 401 on a registered phone means the server no longer knows this person (a demo reset, or a database that was
+ * rebuilt), not that the phone did anything wrong. The phone then registers itself again with the same id and secret,
+ * which the server accepts for an id it does not hold, and repeats the call once. Asking again is safe: the call was
+ * refused before it did anything. A second 401 is reported as it is, so a refusal that is real cannot loop.
+ */
 export async function callServer<T>(deps: ServerDeps, method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<CallResult<T>> {
+  const first = await callOnce<T>(deps, method, path, body);
+  if (first.ok || first.reason !== 'rejected' || first.status !== 401) return first;
+  forgetRegistration(deps.storage);
+  return callOnce<T>(deps, method, path, body);
+}
+
+async function callOnce<T>(deps: ServerDeps, method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<CallResult<T>> {
   let identity: DeviceIdentity;
   try {
     identity = await loadOrCreateIdentity(deps.storage, deps.random);

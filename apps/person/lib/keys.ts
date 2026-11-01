@@ -13,4 +13,5 @@ export const KEYS = {
   directory: 'directory',
   crisisBlock: 'crisis:block',
   crisisOutbox: 'crisis:outbox',
+  demoOffset: 'demo:offset',
 } as const;

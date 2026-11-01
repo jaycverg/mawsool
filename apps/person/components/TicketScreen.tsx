@@ -2,6 +2,7 @@
 
 import { PersonTicketListSchema, PersonTicketViewSchema, REROUTE_REASONS, type ConsentElement, type PersonTicketView, type RerouteReason, type TicketEventView } from '@mawsool/types';
 import { isLocale } from '@mawsool/ui';
+import { useDemoOffsetMs } from '@mawsool/ui/components';
 import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
@@ -12,7 +13,7 @@ import { clinicCouldNotSee, followUpAt, followUpDue } from '../lib/day7';
 import { calendarDaysLeft, formatDate } from '../lib/format';
 import { href } from '../lib/routes';
 import { callServer, type ServerDeps } from '../lib/server';
-import { loadTickets } from '../lib/share';
+import { forgetTicket, loadTickets } from '../lib/share';
 import { hasServerFootprint } from '../lib/server';
 import { useDevice, type Device } from '../lib/use-device';
 import { BottomNav } from './BottomNav';
@@ -70,6 +71,12 @@ export function TicketScreen() {
       callServer<unknown>(deps, 'GET', `/me/tickets/${id}/reads`),
       callServer<unknown>(deps, 'GET', '/me/tickets'),
     ]);
+    // The server does not know a ticket this phone has noted (the demo was reset): forget the note and show the screen
+    // as one with no ticket, rather than a failure that asking again cannot clear.
+    if (!ticket.ok && ticket.reason === 'rejected' && ticket.status === 404) {
+      await forgetTicket(device.storage, id).catch(() => undefined);
+      return setLoad({ status: 'none' });
+    }
     const parsed = ticket.ok ? PersonTicketViewSchema.safeParse(ticket.body) : null;
     if (!parsed?.success) return setLoad({ status: 'failed' });
     // A reads call that failed is not "nobody opened it": it is shown as unknown.
@@ -164,6 +171,8 @@ interface ReadyProps {
 }
 
 function Ready({ t, lang, ticket, reads, all, savedWarning, notice, panel, setPanel, busy, failed, onSeen, onDecline, onWithdraw, onStop, onReroute }: ReadyProps) {
+  // Re-render when the demo clock moves, so the countdown and the day-7 prompt follow it.
+  useDemoOffsetMs();
   const now = deviceNow();
   const live = ['issued', 'acknowledged', 'overdue'].includes(ticket.state);
   const daysLeft = calendarDaysLeft(ticket.deadlineAt, now);
