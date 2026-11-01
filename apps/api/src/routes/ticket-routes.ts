@@ -24,7 +24,7 @@ import { facilityScopedTicket } from '../plugins/facility-scope';
 import { ownedTicket } from '../plugins/ownership';
 import { lastEvent, moveTicket } from '../tickets/events';
 import { issueTicket, personTicketView, type IssueResult, type TicketDeps } from '../tickets/service';
-import { evaluate } from '../tickets/transitions';
+import { evaluate, evaluateUnable } from '../tickets/transitions';
 
 const Params = z.object({ id: z.uuid() });
 const Errors = { 400: ErrorResponseSchema, 403: ErrorResponseSchema, 404: ErrorResponseSchema, 409: ErrorResponseSchema, 410: ErrorResponseSchema };
@@ -44,7 +44,14 @@ async function applyEvent(deps: ConsentDeps, reply: FastifyReply, ticket: { id: 
   const last = await lastEvent(deps.db, ticket.id);
   if (!last) return sendError(reply, 409, 'conflict', 'This ticket has no history');
   const unable = body.to === last.state;
-  if (unable && !body.reason) return sendError(reply, 400, 'invalid_request', 'A reason is required');
+  if (unable) {
+    const verdict = evaluateUnable(last.state, actor);
+    if (verdict !== 'ok') {
+      const { status, error, message } = statusOf(verdict);
+      return sendError(reply, status, error, message);
+    }
+    if (!body.reason) return sendError(reply, 400, 'invalid_request', 'A reason is required');
+  }
 
   // A person withdrawing is a revoke: the share ends and the data goes, through the one path that does both.
   if (actor === 'person' && body.to === 'withdrawn' && !unable) {
