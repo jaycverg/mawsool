@@ -141,9 +141,10 @@ describe('what cannot be worked out from the funnel, the crisis figures and the 
       const read = async (source: string) => (await app.app.inject({ method: 'GET', url: `/metrics/funnel?source=${source}`, headers: opsHeaders })).json() as FunnelResponse;
       for (const [source, truth] of Object.entries(few)) {
         const funnel = await read(source);
-        const [first, second] = [stageCount(funnel, 'positive_screen'), stageCount(funnel, 'ticket_issued')];
-        expect(second, `${source}: the ticket stage stays readable`).toBe(48);
-        if (first !== null) expect(first - second!, `${source}: first stage minus second`).not.toBe(truth);
+        // On this fixture the door's first stage is hidden outright (its invites are a small number the table protects), while
+        // the ticket stage stays readable; so stage 1 minus stage 2 has nothing to subtract, whatever the invite count is.
+        expect(funnel.stages.find((entry) => entry.stage === 'positive_screen')!.count, `${source} (${truth} open invites): the first stage`).toEqual({ suppressed: true });
+        expect(stageCount(funnel, 'ticket_issued'), `${source}: the ticket stage stays readable`).toBe(48);
       }
       await app.app.close();
     } finally {

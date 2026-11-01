@@ -408,10 +408,14 @@ describe('GET /metrics/equity', () => {
   });
 
   it('serves one period only: any other is refused with no figures, so a group cannot be worked out by comparing two periods', async () => {
-    // Five older tickets of a group that has forty inside the last 90 days: all time less 90 days would be those five.
+    // A group with forty tickets inside the last 90 days (20 closed, 20 open, so every figure of it clears the rules) and five
+    // older ones, all closed: all time less 90 days would be those five, and 25 closed less 20 would be five closed.
     const shared = { optIn: true as const, ageBand: '25_34' as const, gender: 'female' as const, region: 'al_ain' as const, language: 'ur' as const };
-    await world.addMany(40, { issuedAt: issued(24 * 20), path: ['seen'] }, shared);
+    for (let i = 0; i < 40; i += 1) await world.addTicket({ person: await world.addPerson(shared), issuedAt: issued(24 * 20), path: i < 20 ? ['seen'] : [] });
     await world.addMany(5, { issuedAt: issued(24 * 120), path: ['seen'] }, shared);
+    const allTime = await loadTicketFacts(testDb.db);
+    expect(allTime).toHaveLength(45);
+    expect(allTime.filter((ticket) => ticket.seen)).toHaveLength(25);
     const asked = (query: string) => ctx.app.inject({ method: 'GET', url: `/metrics/equity${query}`, headers });
     for (const period of ['all', '30d', '7d', '365d', '']) {
       const res = await asked(`?period=${period}`);
@@ -423,6 +427,19 @@ describe('GET /metrics/equity', () => {
     expect(defaulted.statusCode).toBe(200);
     expect(named.json()).toEqual(defaulted.json());
     expect(defaulted.json().period).toBe('90d');
+    // The answer holds real figures (not two empty answers that agree), and they are the window's: 40 tickets, 20 closed.
+    const published = defaulted.json() as EquityResponse;
+    expect(published.overall).toEqual({ tickets: 40, loopClosed: 20, ratePercent: 50 });
+    const urdu = published.dimensions.find((entry) => entry.dimension === 'language')!.rows.find((row) => row.value === 'ur')!.cell;
+    expect(urdu).toMatchObject({ tickets: 40, loopClosed: 20 });
+    // Subtracting the published figures from the true all-time counts gives the older five (and their five closed)... which
+    // appear in no response: the published count is 40 and never 45, and no published number is an all-time figure.
+    expect(allTime.length - (published.overall as { tickets: number }).tickets).toBe(5);
+    expect(allTime.filter((ticket) => ticket.seen).length - (published.overall as { loopClosed: number }).loopClosed).toBe(5);
+    const numbers = (value: unknown): number[] => (typeof value === 'number' ? [value] : value && typeof value === 'object' ? Object.values(value).flatMap(numbers) : []);
+    const everyNumber = numbers(published);
+    expect(everyNumber, 'no all-time count in the equity answer').not.toContain(45);
+    expect(everyNumber, 'no all-time closed count in the equity answer').not.toContain(25);
     // Nothing else in the response set gives a second window of an equity group.
     for (const path of ['funnel', 'timeliness', 'crisis']) {
       for (const period of ['all', '90d', '30d']) {

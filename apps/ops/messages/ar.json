@@ -44,7 +44,7 @@
     "tiles": {
       "label": "المؤشرات الرئيسية",
       "loopClosed": "الحلقة المغلقة (تمت المقابلة)",
-      "loopClosedOf": "{count} من {of} تذكرة",
+      "loopClosedOf": "{count} من {of} تذكرة، آخر 90 يومًا",
       "withinTarget": "تمت المقابلة ضمن الهدف",
       "withinTargetOf": "{count} من {of} تذكرة، الهدف 7 أو 14 يومًا",
       "medianSeen": "الوسيط الزمني للمقابلة",

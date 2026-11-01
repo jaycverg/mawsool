@@ -19,7 +19,10 @@ import { staffCall } from '@mawsool/ui';
 /** Base URL of the Ticket API, fixed at build time. */
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
-/** What the dashboard filters on. Period applies to every figure; source and tier narrow the funnel. */
+/**
+ * What the dashboard filters on. Period applies to every figure except the equity section and the loop-closed tile, which
+ * read equity and so always show the last 90 days (the tile says so); source and tier narrow the funnel.
+ */
 export interface Filters {
   period: MetricPeriod;
   source: TicketSource | null;
