@@ -10,7 +10,10 @@ import { personIdOf, sendError } from '../plugins/auth';
 
 export interface InboundRouteDeps {
   db: Db;
+  /** The care clock: an invite is created and expires by it. */
   clock: Clock;
+  /** The wall clock: a nonce is spent and purged by real time, like the request window. */
+  securityClock: Clock;
   /** Where a person opens the claim link. */
   personAppUrl: string;
 }
@@ -57,7 +60,7 @@ export function registerInboundRoutes(app: FastifyInstance, deps: InboundRouteDe
         },
       },
       async (request, reply) => {
-        const created = await acceptScreen(deps.db, deps.clock, request.inboundSource!, request.inboundNonce!, request.body);
+        const created = await acceptScreen(deps.db, deps.clock, request.inboundSource!, request.inboundNonce!, request.body, deps.securityClock);
         if (created.kind === 'replayed') return sendError(reply, 401, 'replayed', 'That nonce was already used, so this request was not processed');
         return reply.code(201).send({
           inviteId: created.inviteId,

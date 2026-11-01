@@ -71,7 +71,7 @@ async function authenticateStaff(db: Db, clock: Clock, token: string): Promise<P
  * - `inbound`: a signed request from a connector. It is checked later, once the body has been read (see
  *   `registerInboundAuth`), because the signature covers the body; a bearer token is never accepted on it.
  */
-export function registerAuth(app: FastifyInstance, deps: { db: Db; clock: Clock }): void {
+export function registerAuth(app: FastifyInstance, deps: { db: Db; /** The wall clock: a staff session lives in real time, so a demo clock jump never signs anyone out. */ clock: Clock }): void {
   app.decorateRequest('principal', null);
   app.addHook('onRequest', async (request, reply) => {
     const access = request.routeOptions?.config?.access;

@@ -10,7 +10,7 @@ const config = loadConfig();
 const { db, close } = connect(config.databaseUrl);
 const summaryProvider = config.summaryLlmEnabled ? createAnthropicProvider({ apiKey: config.anthropicApiKey!, model: config.summaryModel }) : null;
 const app = await buildApp({ db, config, logger: true, summaryProvider });
-const jobs = await startJobs({ databaseUrl: config.databaseUrl, db, clock: systemClock, log: app.log });
+const jobs = await startJobs({ databaseUrl: config.databaseUrl, db, clock: app.careClock, securityClock: systemClock, log: app.log });
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {

@@ -72,3 +72,41 @@ describe('GET /docs for the front-door hand-over', () => {
     }
   });
 });
+
+describe('GET /docs for the dashboard and the demo', () => {
+  type Doc = { paths: Record<string, Record<string, { parameters?: { name: string; in: string }[]; requestBody?: unknown; responses: Record<string, unknown> }>> };
+
+  it('describes the metrics routes with their filters and the suppressed answer, and the open clock read', async () => {
+    const testDb = await createTestDb();
+    const ctx = await createTestApp(testDb.db);
+    try {
+      const doc = (await ctx.app.inject({ method: 'GET', url: '/docs' })).json() as Doc;
+      const funnel = doc.paths['/metrics/funnel']!['get']!;
+      expect(funnel.parameters!.filter((parameter) => parameter.in === 'query').map((parameter) => parameter.name).sort()).toEqual(['period', 'source', 'tier']);
+      for (const path of ['/metrics/timeliness', '/metrics/crisis', '/metrics/equity']) {
+        expect(doc.paths[path]!['get']!.parameters!.map((parameter) => parameter.name), path).toEqual(['period']);
+      }
+      for (const path of ['/metrics/funnel', '/metrics/timeliness', '/metrics/crisis', '/metrics/equity']) expect(JSON.stringify(doc.paths[path]), path).toContain('suppressed');
+      expect(JSON.stringify(doc.paths['/clock']!['get'])).toContain('offsetMs');
+      // With DEMO_MODE unset the write controls are not part of the API at all, so they are not in its document either.
+      expect(doc.paths['/demo/reset']).toBeUndefined();
+      expect(doc.paths['/demo/clock/advance']).toBeUndefined();
+    } finally {
+      await ctx.app.close();
+      await testDb.close();
+    }
+  });
+
+  it('describes the demo controls when DEMO_MODE is set', async () => {
+    const testDb = await createTestDb();
+    const ctx = await createTestApp(testDb.db, { demoMode: true });
+    try {
+      const doc = (await ctx.app.inject({ method: 'GET', url: '/docs' })).json() as Doc;
+      expect(JSON.stringify(doc.paths['/demo/clock/advance']!['post']!.requestBody)).toContain('7d');
+      expect(JSON.stringify(doc.paths['/demo/reset']!['post']!.responses)).toContain('tammUrl');
+    } finally {
+      await ctx.app.close();
+      await testDb.close();
+    }
+  });
+});

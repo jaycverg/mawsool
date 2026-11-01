@@ -33,6 +33,8 @@ export interface TestApp {
 }
 
 export interface TestAppOptions {
+  /** Registers the demo routes, as `DEMO_MODE` does. */
+  demoMode?: boolean;
   summaryLlmEnabled?: boolean;
   summaryProvider?: SummaryProvider | null;
 }
@@ -44,7 +46,7 @@ export async function createTestApp(db: Db, options: TestAppOptions = {}): Promi
     db,
     clock,
     notifier,
-    config: { ...TEST_CONFIG, summaryLlmEnabled: options.summaryLlmEnabled ?? false },
+    config: { ...TEST_CONFIG, summaryLlmEnabled: options.summaryLlmEnabled ?? false, demoMode: options.demoMode ?? false },
     summaryProvider: options.summaryProvider ?? null,
   });
   return { app, clock, notifier };

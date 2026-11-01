@@ -77,6 +77,8 @@ const app = await buildApp({
     inboundKeys: E2E_INBOUND_KEYS,
     encryptionKey: E2E_ENCRYPTION_KEY,
     summaryLlmEnabled: false,
+    // Only the demo gate sets this; every other end-to-end run keeps the demo routes unregistered.
+    demoMode: process.env.E2E_DEMO_MODE === '1',
   },
   logger: { level: 'info', stream: logStream },
 });

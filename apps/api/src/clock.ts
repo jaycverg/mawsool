@@ -35,3 +35,36 @@ export class ManualClock implements Clock {
     this.current = new Date(this.current.getTime() + ms);
   }
 }
+
+/**
+ * The demo clock: another clock's time plus a movable offset. It is the only way the API's idea of "care time"
+ * (deadlines, the sweep, the day-7 check, ticket events, invite expiry) can differ from the wall, and it exists only
+ * when `DEMO_MODE` is set; with the flag unset nothing builds one and the offset the API reports is always zero.
+ * Security windows (staff sessions, sign-in links, the signed-request timestamp window and nonce retention) never
+ * read this clock, because a front door signs with real time and a three-week jump must not sign staff out.
+ */
+export class OffsetClock implements Clock {
+  private offsetMs = 0;
+
+  constructor(private readonly base: Clock) {}
+
+  now(): Date {
+    return new Date(this.base.now().getTime() + this.offsetMs);
+  }
+
+  /** How far ahead of the base clock this one is, in milliseconds. */
+  get offset(): number {
+    return this.offsetMs;
+  }
+
+  /** Moves time forward. A negative step is refused: the demo only ever goes forward until it is reset. */
+  advance(ms: number): void {
+    if (!Number.isFinite(ms) || ms < 0) throw new Error('the demo clock only moves forward');
+    this.offsetMs += ms;
+  }
+
+  /** Back to the base clock's time. */
+  reset(): void {
+    this.offsetMs = 0;
+  }
+}

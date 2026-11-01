@@ -17,8 +17,18 @@ const Flag = z
   .default('false')
   .transform((value) => value === 'true' || value === '1');
 
+/**
+ * `DEMO_MODE` turns on the demo routes (clock and reset). It is read strictly: only `true` or `1` turns it on; unset,
+ * empty, `false` and `0` are off; anything else (`yes`, `TRUE`, `ture`) stops the API from starting, so a typo can neither
+ * switch the demo on by accident nor leave a presenter wondering why it is off.
+ */
+const DemoFlag = z
+  .preprocess((value) => (value === '' ? undefined : value), z.enum(['true', 'false', '1', '0'], { error: 'DEMO_MODE must be true or false (or be left unset)' }).default('false'))
+  .transform((value) => value === 'true' || value === '1');
+
 const EnvSchema = z
   .object({
+    DEMO_MODE: DemoFlag,
     API_PORT: z.coerce.number().int().min(1).max(65535).default(4000),
     API_HOST: z.string().default('127.0.0.1'),
     DATABASE_URL: z.string().default('postgres://mawsool:mawsool@localhost:54329/mawsool'),
@@ -56,6 +66,8 @@ export interface AppConfig {
   summaryLlmEnabled: boolean;
   summaryModel: string;
   anthropicApiKey: string | undefined;
+  /** Registers the demo routes (clock and reset). Off unless `DEMO_MODE` is `true` or `1`. */
+  demoMode: boolean;
 }
 
 /** Reads and validates the environment. Throws with a readable message on a bad or missing value, the key included. */
@@ -78,5 +90,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     summaryLlmEnabled: parsed.SUMMARY_LLM_ENABLED,
     summaryModel: parsed.SUMMARY_MODEL,
     anthropicApiKey: parsed.ANTHROPIC_API_KEY,
+    demoMode: parsed.DEMO_MODE,
   };
 }

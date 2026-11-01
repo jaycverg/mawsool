@@ -80,9 +80,9 @@ export type ScreenOutcome = ({ kind: 'created' } & CreatedInvite) | { kind: 'rep
  * be written, the nonce is not spent either, so the same signed request can be sent again and is not mistaken for a
  * replay of something that never arrived. A nonce used before is `replayed` and nothing is written.
  */
-export async function acceptScreen(db: Db, clock: Clock, source: InboundSource, nonce: string, request: InboundScreenRequest): Promise<ScreenOutcome> {
+export async function acceptScreen(db: Db, clock: Clock, source: InboundSource, nonce: string, request: InboundScreenRequest, securityClock: Clock = clock): Promise<ScreenOutcome> {
   return db.transaction(async (tx) => {
-    if ((await takeNonce(tx, clock, source, nonce)) === 'replayed') return { kind: 'replayed' as const };
+    if ((await takeNonce(tx, securityClock, source, nonce)) === 'replayed') return { kind: 'replayed' as const };
     return { kind: 'created' as const, ...(await createInvite(tx, clock, source, request)) };
   });
 }
