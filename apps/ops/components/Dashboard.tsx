@@ -200,7 +200,7 @@ function Equity({ equity, t, format }: { equity: EquityResponse; t: Translate; f
           ))}
         </div>
       </div>
-      <div className="grid items-center gap-x-3 gap-y-2.5 text-[14px] [grid-template-columns:110px_1fr_76px]" data-equity-rows={dimension}>
+      <div className="grid items-center gap-x-3 gap-y-2.5 text-[14px] [grid-template-columns:110px_1fr_minmax(76px,auto)]" data-equity-rows={dimension}>
         {rows.map((row) => {
           const cell = row.cell;
           if (isSuppressed(cell)) {
@@ -219,7 +219,7 @@ function Equity({ equity, t, format }: { equity: EquityResponse; t: Translate; f
                 <div className="h-[18px] rounded" style={{ width: `${cell.ratePercent}%`, background: cell.flagged ? FLAG_BAR : BAR }} />
                 {overall !== null && <div className="absolute -top-1 h-[26px] w-0.5 bg-ink" style={{ insetInlineStart: `${overall}%` }} />}
               </div>
-              <span><b>{`${format(cell.ratePercent)}%`}</b> {t('equity.n', { count: format(cell.tickets) })}</span>
+              <span className="whitespace-nowrap"><b>{`${format(cell.ratePercent)}%`}</b> {t('equity.n', { count: format(cell.tickets) })}</span>
             </div>
           );
         })}

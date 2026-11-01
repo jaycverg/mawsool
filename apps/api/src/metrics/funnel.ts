@@ -169,10 +169,9 @@ export function crisisHiddenInFunnel(inputs: FunnelInputs): boolean {
  * the first stage holds that the second does not (open invites and crisis events), and those are cells that must stay
  * hidden when they are small.
  *
- * The one exception, stated precisely: the difference between two LATER adjacent stages (issued to acknowledged,
- * acknowledged to seen, seen to re-measured) is published whatever its size, because the funnel is asked to give counts
- * and the share between stages and a drop-off is not a cell of its own. The first stage minus the second is not covered
- * by that exception.
+ * Not covered, stated precisely: any two published counts of the later stages (issued, acknowledged, seen, re-measured)
+ * subtract, and so do the same cell in two periods, because the funnel is asked for counts and the share between stages and
+ * a drop-off is not a cell of its own. The first stage minus the second is not in that group: it is protected.
  */
 export function buildFunnel(query: FunnelQuery, inputs: FunnelInputs): FunnelResponse {
   const key = cellKeyOf(query.source ?? null, query.tier ?? null);

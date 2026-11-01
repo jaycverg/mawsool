@@ -10,6 +10,7 @@ import {
   type EquityResponse,
   type MetricPeriod,
 } from '@mawsool/types';
+import { SUPPRESSION_THRESHOLD } from '@mawsool/rules';
 import type { Suppressed } from '../suppress';
 import { cellOrSuppressed, hiddenCells, percentOf, percentile } from './protect';
 import type { TicketFact } from './facts';
@@ -48,6 +49,35 @@ function groupOf(tickets: readonly TicketFact[]): Group {
 const countsOf = (group: Group): number[] => [group.tickets, group.closed, group.tickets - group.closed];
 
 /**
+ * How the "no bucket given" groups of the dimensions relate, from the ticket ids in each (`dimension -> ids`).
+ * - Identical sets are the same number published twice: they are tied (`equal`), shown or hidden together.
+ * - Sets that differ by 1 to 9 tickets (the symmetric difference is under the threshold) are hidden, in every dimension
+ *   they touch: published together they subtract to that small difference.
+ * - Sets that differ by ten or more are independent.
+ * Both cells of a pair that is hidden for being close are named in `forceHidden`; the table protection does the rest.
+ */
+export function relateNotGivenGroups(sets: ReadonlyMap<string, ReadonlySet<string>>, threshold: number = SUPPRESSION_THRESHOLD): { equal: [string, string][]; forceHidden: Set<string> } {
+  const equal: [string, string][] = [];
+  const forceHidden = new Set<string>();
+  const dimensions = [...sets.keys()];
+  for (const [index, a] of dimensions.entries()) {
+    for (const b of dimensions.slice(index + 1)) {
+      const first = sets.get(a)!;
+      const second = sets.get(b)!;
+      let apart = 0;
+      for (const id of first) if (!second.has(id)) apart += 1;
+      for (const id of second) if (!first.has(id)) apart += 1;
+      if (apart === 0) equal.push([`${a}:${NOT_GIVEN}`, `${b}:${NOT_GIVEN}`]);
+      else if (apart < threshold) {
+        forceHidden.add(`${a}:${NOT_GIVEN}`);
+        forceHidden.add(`${b}:${NOT_GIVEN}`);
+      }
+    }
+  }
+  return { equal, forceHidden };
+}
+
+/**
  * Loop-closed rate and time to seen by age band, gender, language and region.
  *
  * The rate counts every ticket, per ticket, the way the seed's planted Urdu gap is measured: closed means the ticket
@@ -65,13 +95,13 @@ export function buildEquity(period: MetricPeriod, tickets: readonly TicketFact[]
   const inPeriod = tickets.filter((ticket) => since === null || ticket.createdAt >= since);
   const overall = groupOf(inPeriod);
 
-  // One table for every dimension: a group is named `${dimension}:${value}`. "No bucket given" is the same tickets in
-  // several dimensions, so those cells are tied together (when they hold the same tickets) and shown or hidden as one;
-  // protected one dimension at a time, a hidden group comes back as the total minus the other dimensions' shared cell.
+  // One table for every dimension: a group is named `${dimension}:${value}`. "No bucket given" is mostly the same tickets in
+  // several dimensions (a person opts in to buckets, though the API allows some and not others), so those cells are related
+  // by what their tickets have in common (`relateNotGivenGroups`).
   const cells = new Map<string, number[]>([['overall', countsOf(overall)]]);
   const relations: { total: string; parts: string[] }[] = [];
   const groups = new Map<string, Group>();
-  const notGivenTickets = new Map<string, string>();
+  const notGivenTickets = new Map<string, ReadonlySet<string>>();
   const tables = DIMENSIONS.map((spec) => {
     const rows: [string, Group][] = [];
     for (const value of spec.values) {
@@ -80,19 +110,13 @@ export function buildEquity(period: MetricPeriod, tickets: readonly TicketFact[]
       rows.push([value, group]);
       groups.set(`${spec.dimension}:${value}`, group);
       cells.set(`${spec.dimension}:${value}`, countsOf(group));
-      if (value === NOT_GIVEN) notGivenTickets.set(spec.dimension, members.map((ticket) => ticket.id).sort().join(','));
+      if (value === NOT_GIVEN) notGivenTickets.set(spec.dimension, new Set(members.map((ticket) => ticket.id)));
     }
     relations.push({ total: 'overall', parts: rows.map(([value]) => `${spec.dimension}:${value}`) });
     return { spec, rows };
   });
-  const equal: [string, string][] = [];
-  const firstWithSet = new Map<string, string>();
-  for (const [dimension, ids] of notGivenTickets) {
-    const first = firstWithSet.get(ids);
-    if (first === undefined) firstWithSet.set(ids, dimension);
-    else equal.push([`${first}:${NOT_GIVEN}`, `${dimension}:${NOT_GIVEN}`]);
-  }
-  const hidden = hiddenCells({ cells, relations, equal });
+  const { equal, forceHidden } = relateNotGivenGroups(notGivenTickets);
+  const hidden = hiddenCells({ cells, relations, equal, forceHidden });
   const overallHidden = hidden.has('overall');
   const overallRate = percentOf(overall.closed, overall.tickets);
 
