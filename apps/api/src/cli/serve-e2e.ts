@@ -17,6 +17,8 @@ import { createCipher } from '../crypto';
 import { schema, type Db } from '../db/client';
 import { MIGRATIONS_FOLDER } from '../db/migrate';
 import { runSeed } from '../seed/run';
+import { FACILITY_A_ID, STAFF } from '../seed/fixtures';
+import { sha256Hex } from '../security';
 
 // A fixed key for the throwaway end-to-end database; it protects nothing.
 const E2E_ENCRYPTION_KEY = Buffer.alloc(32, 9).toString('base64');
@@ -29,6 +31,14 @@ const client = new PGlite();
 const db = drizzle(client, { schema }) as unknown as Db;
 await migrate(drizzle(client, { schema }), { migrationsFolder: MIGRATIONS_FOLDER });
 await runSeed(db);
+
+// One staff session per seeded clinician, so a test can ask what the clinic at a ticket's facility would be told.
+const clinicTokens = new Map<string, string>();
+for (const staff of STAFF.filter((member) => member.role === 'clinician')) {
+  const token = `e2e-clinic-${staff.facilityId}`;
+  clinicTokens.set(staff.facilityId!, token);
+  await db.insert(schema.staffSessions).values({ staffUserId: staff.id, tokenHash: sha256Hex(token), createdAt: new Date(0), expiresAt: new Date('2100-01-01T00:00:00Z') });
+}
 
 const app = await buildApp({
   db,
@@ -67,6 +77,19 @@ const inspect = createServer(async (request, response) => {
         },
       }),
     );
+  } else if (/^\/clinic-read\/[0-9a-f-]{36}$/.test(url.pathname)) {
+    const id = url.pathname.split('/')[2]!;
+    const [row] = await db
+      .select({ facilityId: schema.services.facilityId })
+      .from(schema.tickets)
+      .innerJoin(schema.services, eq(schema.services.id, schema.tickets.serviceId))
+      .where(eq(schema.tickets.id, id));
+    const headers = { authorization: `Bearer ${clinicTokens.get(row?.facilityId ?? FACILITY_A_ID)}` };
+    const [bundle, ticket] = await Promise.all([
+      app.inject({ method: 'GET', url: `/tickets/${id}/bundle`, headers }),
+      app.inject({ method: 'GET', url: `/tickets/${id}`, headers }),
+    ]);
+    response.end(JSON.stringify({ bundle: bundle.statusCode, ticket: ticket.statusCode, body: bundle.body }));
   } else if (/^\/persons\/[0-9a-f-]{36}$/.test(url.pathname)) {
     const [person] = await db.select().from(schema.persons).where(eq(schema.persons.id, url.pathname.split('/')[2]!));
     response.end(JSON.stringify(person && { equityOptIn: person.equityOptIn, ageBand: person.ageBand, gender: person.gender, language: person.language, region: person.region }));
