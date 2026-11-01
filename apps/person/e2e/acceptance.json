@@ -74,5 +74,13 @@
   {
     "id": "board-measurements-at-390",
     "sentence": "The screens match the plan's tokens and the boards' measured values at 390 px in both languages"
+  },
+  {
+    "id": "data-is-encrypted-at-rest",
+    "sentence": "Everything the app keeps in IndexedDB is ciphertext under a non-extractable key, with no answer, score or choice in the clear"
+  },
+  {
+    "id": "settings-download-and-delete",
+    "sentence": "Settings download yields the person's own data, and Delete everything leaves the raw stores empty"
   }
 ]

@@ -197,3 +197,62 @@ export async function seedTrend(page: Page, context: BrowserContext, locale: Loc
   await takeCheckIn(page, locale, 'gad7', [2, 2, 2, 2, 2, 2, 2]);
   await expect(page.locator('[data-score]')).toHaveText('14');
 }
+
+export interface RawEntry {
+  key: string;
+  /** What the browser holds under the key: a CryptoKey, an `{v, iv, ct}` envelope, or something else (plain data). */
+  kind: 'crypto-key' | 'envelope' | 'plain';
+  extractable?: boolean;
+  algorithm?: { name?: string; length?: number };
+  usages?: string[];
+  exportRejected?: boolean;
+  envelopeFields?: string[];
+  ivLength?: number;
+  /** The ciphertext (or, for plain data, the whole value) read as Latin-1 text, to search for anything in the clear. */
+  text: string;
+}
+
+/** Every row of the person app's IndexedDB store, read raw, below the app's own storage code. */
+export async function rawStoreDump(page: Page): Promise<RawEntry[]> {
+  return page.evaluate(
+    () =>
+      new Promise<RawEntry[]>((resolve, reject) => {
+        const opening = indexedDB.open('mawsool');
+        opening.onerror = () => reject(opening.error);
+        opening.onsuccess = () => {
+          const db = opening.result;
+          if (!db.objectStoreNames.contains('kv')) return resolve([]);
+          const store = db.transaction('kv').objectStore('kv');
+          const keysRequest = store.getAllKeys();
+          const valuesRequest = store.getAll();
+          valuesRequest.onerror = () => reject(valuesRequest.error);
+          valuesRequest.onsuccess = async () => {
+            const keys = keysRequest.result.map(String);
+            const entries: RawEntry[] = [];
+            for (const [index, value] of valuesRequest.result.entries()) {
+              const key = keys[index]!;
+              if (value instanceof CryptoKey) {
+                const exportRejected = await crypto.subtle.exportKey('raw', value).then(
+                  () => false,
+                  () => true,
+                );
+                entries.push({ key, kind: 'crypto-key', extractable: value.extractable, algorithm: value.algorithm as { name?: string; length?: number }, usages: value.usages, exportRejected, text: '' });
+              } else if (value && typeof value === 'object' && value.ct instanceof ArrayBuffer && value.iv instanceof Uint8Array) {
+                entries.push({
+                  key,
+                  kind: 'envelope',
+                  envelopeFields: Object.keys(value).sort(),
+                  ivLength: value.iv.length,
+                  text: new TextDecoder('latin1').decode(new Uint8Array(value.ct)),
+                });
+              } else {
+                entries.push({ key, kind: 'plain', text: JSON.stringify(value) });
+              }
+            }
+            db.close();
+            resolve(entries);
+          };
+        };
+      }),
+  );
+}
