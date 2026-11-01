@@ -1,6 +1,6 @@
 'use client';
 
-import type { StorageAdapter } from '@mawsool/ui';
+import { createTabFlag, safeSessionStorage, type StorageAdapter, type TabFlagAdapter } from '@mawsool/ui';
 import { useEffect, useState } from 'react';
 import { deviceNow } from './clock';
 import { createCrisisStore, type CrisisStore } from './crisis';
@@ -9,6 +9,8 @@ import { deviceStorage } from './device';
 export interface Device {
   storage: StorageAdapter;
   crisis: CrisisStore;
+  /** The tab's own copy of the crisis block. Deleting everything clears it with the store. */
+  tabFlag: TabFlagAdapter;
 }
 
 let device: Device | null = null;
@@ -17,7 +19,8 @@ let device: Device | null = null;
 export function getDevice(): Device {
   if (!device) {
     const storage = deviceStorage();
-    device = { storage, crisis: createCrisisStore(storage, { now: deviceNow, newId: () => crypto.randomUUID() }) };
+    const tabFlag = createTabFlag(safeSessionStorage(), 'mawsool.crisis-block');
+    device = { storage, tabFlag, crisis: createCrisisStore(storage, { now: deviceNow, newId: () => crypto.randomUUID(), fallback: tabFlag }) };
   }
   return device;
 }

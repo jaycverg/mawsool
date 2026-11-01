@@ -13,6 +13,7 @@ import { href } from '../lib/routes';
 import { loadScreenings } from '../lib/screening-store';
 import { useDevice } from '../lib/use-device';
 import { syncNow } from '../lib/sync';
+import { within } from '../lib/within';
 
 type Reached = 'unasked' | 'asking' | 'yes' | 'later';
 
@@ -84,12 +85,14 @@ export function CrisisScreen() {
     let destination = href(lang, '');
     let saved = true;
     if (device && device !== 'unavailable') {
-      const resumeId = (await device.crisis.read()).record?.resumeScreeningId;
-      const result = await device.crisis.resolve();
-      saved = result?.status !== 'failed';
+      // Releasing never waits long on storage: the tab flag is cleared first thing, and a store that hangs must
+      // not keep a person on this screen.
+      const resumeId = (await within(device.crisis.read(), 500, null))?.record?.resumeScreeningId;
+      const result = await within(device.crisis.resolve(), 1500, null);
+      saved = result?.status === 'saved';
       syncNow(lang);
       if (resumeId) {
-        const finished = (await loadScreenings(device.storage).catch(() => [])).find((screening) => screening.id === resumeId && isCompleteScreening(screening));
+        const finished = (await within(loadScreenings(device.storage), 1000, [])).find((screening) => screening.id === resumeId && isCompleteScreening(screening));
         if (finished) destination = href(lang, 'result', { id: resumeId });
       }
     }

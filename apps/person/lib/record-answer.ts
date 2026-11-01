@@ -3,6 +3,7 @@ import type { StorageAdapter } from '@mawsool/ui';
 import type { NewId, Now } from './clock';
 import { answerFiresCrisis, type CrisisStore } from './crisis';
 import { saveAnswer } from './screening-store';
+import { within } from './within';
 
 export type AnswerOutcome =
   /** The answer is saved. The check-in carries on. */
@@ -25,34 +26,20 @@ export interface RecordAnswerDeps {
   patienceMs?: number;
 }
 
-/** Resolves with `fallback` if `promise` has not settled within `ms`, or if it rejects. Never rejects. */
-function within<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  return new Promise<T>((resolve) => {
-    const timer = setTimeout(() => resolve(fallback), ms);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      () => {
-        clearTimeout(timer);
-        resolve(fallback);
-      },
-    );
-  });
-}
-
 /**
  * Records one answer, and takes the crisis path if the answer fires it.
  *
- * The trigger is decided first, by `packages/instruments`, from the answer alone: it never depends on storage.
- * If the answer fires, saving the answer and setting the persisted block are both attempted, each within a short
+ * The trigger is decided first, by `packages/instruments`, from the answer alone: it never depends on storage, and
+ * the tab's crisis flag is set at once. If the answer fires, saving the answer and setting the persisted block are both attempted, each within a short
  * patience, and the outcome is `crisis` however they turn out: a full disk, a blocked database or a slow one must
  * not stand between a person and the help screen. Any other answer that cannot be saved is a plain failure.
  */
 export async function recordAnswer(input: { instrument: Instrument; index: number; value: number; screeningId?: string | null }, deps: RecordAnswerDeps): Promise<AnswerOutcome> {
   const { instrument, index, value, screeningId } = input;
   const trigger = answerFiresCrisis(instrument, index, value);
+  // Before anything asynchronous: the tab's crisis flag is set at once, so whatever storage does next, Back and a
+  // direct visit to a guarded screen in this tab still land on the crisis screen.
+  if (trigger) deps.crisis.markBlocked();
   const save = saveAnswer(deps.storage, { instrument, index, value, screeningId }, { now: deps.now, newId: deps.newId });
 
   if (!trigger) {
@@ -63,8 +50,10 @@ export async function recordAnswer(input: { instrument: Instrument; index: numbe
     }
   }
 
-  const patience = deps.patienceMs ?? 2000;
+  const patience = deps.patienceMs ?? 1500;
   const screening = await within<Screening | null>(save, patience, null);
-  const status = await within(deps.crisis.raise({ trigger, screeningId: screening?.id ?? null, locale: deps.locale }), patience, 'failed' as const);
+  // Setting the persisted block is best effort now: the flag above already holds it, and a hung save may be
+  // holding the store's lock, so this waits only briefly.
+  const status = await within(deps.crisis.raise({ trigger, screeningId: screening?.id ?? null, locale: deps.locale }), Math.min(patience, 300), 'failed' as const);
   return { kind: 'crisis', screening, blockSaved: status === 'saved' };
 }
