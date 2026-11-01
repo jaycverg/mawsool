@@ -3,11 +3,23 @@ import { cellOrSuppressed, hiddenCells, percentile, rateOrSuppressed, type Prote
 
 const table = (cells: Record<string, number[]>, relations: ProtectedTable['relations']): ProtectedTable => ({ cells: new Map(Object.entries(cells)), relations });
 
-/** True when some relation has exactly one hidden member: the hidden one is then the total minus the others, or the sum of the others. */
-function derivable(t: ProtectedTable, hidden: ReadonlySet<string>): boolean {
+/**
+ * True when some relation lets a reader work a small number out: for some count, what is hidden holds a single non-empty
+ * cell (it is then the total minus the others, or the sum of the others), or, with the total shown, the hidden cells add up
+ * to under ten. Hidden cells that are all empty hold no small number. Written apart from the code under test.
+ */
+function derivable(t: ProtectedTable, hidden: ReadonlySet<string>, threshold = 10): boolean {
   return t.relations.some((relation) => {
     const members = [relation.total, ...relation.parts].filter((key) => t.cells.has(key));
-    return members.length >= 2 && members.filter((key) => hidden.has(key)).length === 1;
+    const covered = members.filter((key) => hidden.has(key));
+    const width = Math.max(...members.map((key) => t.cells.get(key)!.length));
+    for (let index = 0; index < width; index += 1) {
+      const values = covered.map((key) => t.cells.get(key)![index] ?? 0);
+      const present = values.filter((value) => value > 0).length;
+      if (present === 1) return true;
+      if (present >= 2 && !hidden.has(relation.total) && values.reduce((a, b) => a + b, 0) < threshold) return true;
+    }
+    return false;
   });
 }
 
@@ -53,7 +65,35 @@ describe('hiddenCells', () => {
 
   it('hides a cell when any one of the counts it publishes is under ten', () => {
     const t = table({ total: [100, 50, 50], a: [60, 8, 52], b: [40, 42, 0] }, [{ total: 'total', parts: ['a', 'b'] }]);
-    expect([...hiddenCells(t)].sort()).toEqual(['a', 'b']);
+    // a (8 closed) and b (0 not closed) are both under ten on a count; for the not-closed count only a is non-empty among
+    // the hidden, so the total goes too.
+    expect([...hiddenCells(t)].sort()).toEqual(['a', 'b', 'total']);
+  });
+
+  it('does not take an empty group for the second hidden cell: a group of 4 and a group of 0 still leave the 4 to be subtracted', () => {
+    const t = table({ total: [60], ur: [4], other: [0], en: [30], ar: [26] }, [{ total: 'total', parts: ['ur', 'other', 'en', 'ar'] }]);
+    const hidden = hiddenCells(t);
+    expect(hidden.has('ur') && hidden.has('other')).toBe(true);
+    expect(hidden.size).toBeGreaterThan(2); // a third, non-empty cell went with them
+    expect(derivable(t, hidden)).toBe(false);
+  });
+
+  it('does not publish a hidden pair that adds up to under ten: 4 and 3 are a 7 the reader can subtract', () => {
+    const t = table({ total: [60], a: [4], b: [3], c: [30], d: [23] }, [{ total: 'total', parts: ['a', 'b', 'c', 'd'] }]);
+    const hidden = hiddenCells(t);
+    expect(hidden.size).toBeGreaterThanOrEqual(3);
+    expect(derivable(t, hidden)).toBe(false);
+  });
+
+  it('keeps two tied cells together, and hides the lower-ranked visible cell first when another has to go', () => {
+    const t: ProtectedTable = {
+      cells: new Map([['total', [100]], ['a', [4]], ['preferred', [60]], ['small', [36]]]),
+      relations: [{ total: 'total', parts: ['a', 'preferred', 'small'] }],
+      prefer: (key) => (key === 'preferred' ? 0 : 1),
+    };
+    expect([...hiddenCells(t)].sort()).toEqual(['a', 'preferred']); // the larger one, because it ranks first
+    const linked: ProtectedTable = { cells: new Map([['x', [4]], ['y', [40]]]), relations: [], equal: [['x', 'y']] };
+    expect([...hiddenCells(linked)].sort()).toEqual(['x', 'y']);
   });
 
   it('ignores a relation member that has no cell', () => {
