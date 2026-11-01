@@ -6,6 +6,8 @@ import {
   LOCALES,
   PHQ9_ITEM9_ANSWERS,
   answerAll,
+  computed,
+  seedTrend,
   crisisUrl,
   finishButton,
   goOffline,
@@ -496,6 +498,62 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await page.waitForTimeout(1500); // long enough for a stray send to show up
     expect(posts.length).toBe(settled.posts);
     expect(await row(id)).toEqual(settled.row);
+  },
+
+  async 'board-measurements-at-390'({ page, context, locale }) {
+    const ar = locale === 'ar';
+    const lh = { h1: ar ? '34px' : '30px', body: ar ? '24px' : '22px' };
+    const firstFamily = ar ? 'IBM Plex Sans Arabic' : 'IBM Plex Sans';
+    await visitOnline(page, locale);
+    await seedTrend(page, context, locale);
+
+    // Result: h2 700, body 15/22 (Arabic 15/24), eyebrow plain in Arabic, trend 150 tall, the Arabic face first.
+    for (const key of ['result.means', 'result.doesNotMean']) {
+      expect(await computed(page, `h2:text-is("${msg(locale, key)}")`, ['font-size', 'font-weight']), key).toMatchObject({ 'font-size': '16px', 'font-weight': '700' });
+    }
+    expect(await computed(page, `h2:text-is("${msg(locale, 'result.means')}") + p`, ['font-size', 'line-height'])).toMatchObject({ 'font-size': '15px', 'line-height': lh.body });
+    expect(await computed(page, '[data-result] > span:first-child', ['text-transform', 'letter-spacing'])).toMatchObject(
+      ar ? { 'text-transform': 'none', 'letter-spacing': 'normal' } : { 'text-transform': 'uppercase', 'letter-spacing': '0.6px' },
+    );
+    expect(await computed(page, 'svg[role="img"]', [])).toMatchObject({ height: 150 });
+    expect(String((await computed(page, 'body', ['font-family']))['font-family'])).toMatch(new RegExp(`^"?${firstFamily}"?,`));
+
+    // Home: the sparkline is 64 tall; the Help now pill pads 14 (Arabic 12); the privacy note is 20 in Arabic.
+    await page.goto(`/${locale}/`);
+    expect(await computed(page, 'svg[role="img"]', [])).toMatchObject({ height: 64 });
+    expect(await computed(page, `a:has-text("${msg(locale, 'common.helpNow')}")`, ['padding-left', 'padding-right'])).toMatchObject({ 'padding-left': ar ? '12px' : '14px', 'padding-right': ar ? '12px' : '14px' });
+    if (ar) expect(await computed(page, `p:has-text("${msg(locale, 'home.stored')}")`, ['line-height'])).toMatchObject({ 'line-height': '20px' });
+
+    // Check-in: disclaimer 19, and Back and Next in a 1:2 split of the 346 px left after the gap.
+    await page.goto(`/${locale}/check-in/?i=who5`);
+    expect(await computed(page, `p:text-is("${msg(locale, 'checkIn.note')}")`, ['line-height'])).toMatchObject({ 'line-height': '19px' });
+    const [back, next] = await page.locator('main > div:has(> .btn-primary) > *').evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().width));
+    expect(back).toBeCloseTo(115.33, 0);
+    expect(next).toBeCloseTo(230.67, 0);
+
+    // Options: h1 on the plan token, card h2 700, and the compact self-help card.
+    await page.goto(`/${locale}/options/`);
+    await expect(page.locator('[data-tier]').first()).toBeVisible();
+    expect(await computed(page, 'h1', ['font-size', 'line-height', 'font-weight'])).toMatchObject({ 'font-size': '24px', 'line-height': lh.h1, 'font-weight': '600' });
+    expect(await computed(page, '[data-tier][data-lead] h2', ['font-size', 'font-weight'])).toMatchObject({ 'font-size': '18px', 'font-weight': '700' });
+    await page.getByRole('button', { name: msg(locale, 'options.showOther'), exact: true }).click();
+    const selfHelp = page.locator('[data-tier="self_help"]:not([data-lead])');
+    expect(await computed(page, '[data-tier="self_help"]:not([data-lead])', ['padding-top', 'padding-bottom'])).toMatchObject({ 'padding-top': '14px', 'padding-bottom': '14px' });
+    await expect(selfHelp.locator('h2')).toHaveCSS('font-size', '16px');
+    await expect(selfHelp.locator('h2')).toHaveCSS('font-weight', '700');
+    await expect(selfHelp.locator('button')).toHaveCSS('font-size', '15px');
+    await expect(selfHelp.locator('button')).toHaveCSS('border-top-left-radius', '22px');
+    expect(await computed(page, '[data-tier="self_help"]:not([data-lead]) button', [])).toMatchObject({ height: 44 });
+
+    // Crisis: plain wordmark and dark toggle; the hotline card's second line is one 14/19 line of number and detail.
+    await page.goto(`/${locale}/crisis/`);
+    if (!ar) expect(await computed(page, '.wordmark', ['letter-spacing'])).toMatchObject({ 'letter-spacing': 'normal' });
+    expect(await computed(page, 'a.lang-toggle', ['color'])).toMatchObject({ color: 'rgb(42, 20, 20)' });
+    const detail = page.locator('a[href="tel:800725462"] > span:last-child > span:last-child');
+    await expect(detail).toHaveCSS('font-size', '14px');
+    await expect(detail).toHaveCSS('line-height', '19px');
+    await expect(detail).toContainText('800 725462');
+    await expect(detail).toContainText('·');
   },
 
   async 'console-clean-and-favicon'({ page, locale }) {

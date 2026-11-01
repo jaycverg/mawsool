@@ -30,6 +30,8 @@ export const TYPE = {
 
 export const FONT_FAMILIES = {
   sans: "'IBM Plex Sans', 'IBM Plex Sans Arabic', system-ui, sans-serif",
+  /** The stack on every Arabic screen: the Arabic face first, so Arabic text and the digits beside it use it. */
+  sansArabic: "'IBM Plex Sans Arabic', 'IBM Plex Sans', system-ui, sans-serif",
   mono: "'IBM Plex Mono', ui-monospace, monospace",
 } as const;
 

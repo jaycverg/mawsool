@@ -117,7 +117,7 @@ export function OptionsScreen() {
       <FlowHeader leading={leading} title={t('title')} />
       <main className="mx-auto flex max-w-md flex-col gap-3.5 px-4 py-5">
         <div className="flex flex-col gap-1">
-          <h1 className="text-[22px] font-semibold leading-7">{t('heading')}</h1>
+          <h1 className="t-h1">{t('heading')}</h1>
           <p className="t-body text-muted">{t('intro')}</p>
         </div>
 
@@ -273,15 +273,17 @@ function OptionCard({ t, option, insurance, lead, onChoose }: { t: Translate; op
   const tier = option.tier as Tier;
   const toCheck = option.eligibility.filter((item) => item.status === 'check').map((item) => t(`check.${item.kind}`));
   const why = option.reasons.map((reason) => reasonText(t, reason)).filter(Boolean).join(', ');
+  // The board's self-help card is the compact one: 14 px above and below, a 16 px title and a 44 px button.
+  const compact = tier === 'self_help' && !lead;
   return (
-    <article className={`flex flex-col gap-2.5 rounded-card bg-surface p-4 ${lead ? 'border-2 border-accent' : 'border border-border'}`} data-tier={tier} data-lead={lead || undefined}>
+    <article className={`flex flex-col gap-2.5 rounded-card bg-surface px-4 ${compact ? 'py-3.5' : 'py-4'} ${lead ? 'border-2 border-accent' : 'border border-border'}`} data-tier={tier} data-lead={lead || undefined}>
       <div className="flex flex-wrap items-center gap-2">
         {lead && <span className="rounded-[10px] bg-accent px-2.5 py-[3px] text-[12px] font-semibold text-surface">{t('bestMatch')}</span>}
         {option.current && <span className="rounded-[10px] bg-accent-tint px-2.5 py-[3px] text-[12px] font-semibold text-accent-dark">{t('currentSupport')}</span>}
         <span className="rounded-chip bg-mock px-2 py-[3px] text-[12px] font-semibold text-mock-ink">{t('sampleData')}</span>
       </div>
       <div>
-        <h2 className="text-[18px] font-semibold leading-6">{t(`tier.${tier}`)}</h2>
+        <h2 className={`font-bold leading-6 ${compact ? 'text-[16px]' : 'text-[18px]'}`}>{t(`tier.${tier}`)}</h2>
         <p className="mt-0.5 text-[14px] text-muted">
           {service.name} · {t(`regionName.${service.region}`)}
         </p>
@@ -323,7 +325,13 @@ function OptionCard({ t, option, insurance, lead, onChoose }: { t: Translate; op
       <button
         type="button"
         onClick={() => onChoose(option)}
-        className={lead ? 'btn-primary' : 'tap min-h-12 rounded-full border-[1.5px] border-accent px-4 text-[16px] font-semibold text-accent'}
+        className={
+          lead
+            ? 'btn-primary'
+            : compact
+              ? 'tap min-h-tap rounded-pill border-[1.5px] border-accent px-4 text-[15px] font-semibold text-accent'
+              : 'tap min-h-12 rounded-full border-[1.5px] border-accent px-4 text-[16px] font-semibold text-accent'
+        }
       >
         {t(lead ? 'choose' : 'chooseOther')}
       </button>

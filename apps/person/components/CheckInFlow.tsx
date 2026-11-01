@@ -153,15 +153,15 @@ export function CheckInFlow() {
                 {t('saveFailed')}
               </p>
             )}
-            <p className="t-small text-muted">{t('note')}</p>
+            <p className="t-small leading-[19px] text-muted">{t('note')}</p>
 
-            <div className="mt-auto flex gap-3">
+            <div className="mt-auto grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-3">
               {back ? (
-                <a href={back} className="flex min-h-cta flex-1 items-center justify-center rounded-cta border-[1.5px] border-accent text-[16px] font-semibold text-accent">
+                <a href={back} className="flex min-h-cta items-center justify-center rounded-cta border-[1.5px] border-accent text-[16px] font-semibold text-accent">
                   {tf('back')}
                 </a>
               ) : (
-                <button type="button" onClick={() => setIndex(index - 1)} className="min-h-cta flex-1 rounded-cta border-[1.5px] border-accent text-[16px] font-semibold text-accent">
+                <button type="button" onClick={() => setIndex(index - 1)} className="min-h-cta rounded-cta border-[1.5px] border-accent text-[16px] font-semibold text-accent">
                   {tf('back')}
                 </button>
               )}
@@ -172,7 +172,7 @@ export function CheckInFlow() {
                   if (last) window.location.assign(href(lang, 'result', { id: screeningId ?? '' }));
                   else setIndex(index + 1);
                 }}
-                className="btn-primary flex-[2]"
+                className="btn-primary px-0"
               >
                 {last ? t('finish') : tf('next')}
               </button>

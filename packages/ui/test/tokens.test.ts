@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { COLORS, CTA_HEIGHT_PX, PILL_RADII_PX, RADII_PX, TAP_TARGET_PX, TYPE } from '../src';
+import { COLORS, CTA_HEIGHT_PX, FONT_FAMILIES, PILL_RADII_PX, RADII_PX, TAP_TARGET_PX, TYPE } from '../src';
 
 const css = readFileSync(join(__dirname, '..', 'src', 'tokens.css'), 'utf8');
 const declared = (name: string) => new RegExp(`--${name}:\\s*([^;]+);`).exec(css)?.[1]?.trim();
@@ -66,6 +66,14 @@ describe('design tokens match the boards', () => {
     expect(declared('font-sans')).toContain("'IBM Plex Sans'");
     expect(declared('font-sans')).toContain("'IBM Plex Sans Arabic'");
     expect(declared('font-mono')).toContain("'IBM Plex Mono'");
+  });
+
+  it('puts IBM Plex Sans Arabic first on every Arabic screen, and IBM Plex Sans first elsewhere', () => {
+    const arabic = /html\[lang='ar'\]\s*{([^}]*)}/.exec(css)?.[1] ?? '';
+    const stack = /--font-sans:\s*([^;]+);/.exec(arabic)?.[1]?.trim();
+    expect(stack).toBe(FONT_FAMILIES.sansArabic);
+    expect(stack!.indexOf('IBM Plex Sans Arabic')).toBeLessThan(stack!.indexOf("'IBM Plex Sans'"));
+    expect(declared('font-sans')!.indexOf("'IBM Plex Sans'")).toBeLessThan(declared('font-sans')!.indexOf('IBM Plex Sans Arabic'));
   });
 
   it('self-hosts the fonts, weights 400-700 for sans and Arabic and 500-600 for mono', () => {
