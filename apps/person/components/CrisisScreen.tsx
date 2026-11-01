@@ -8,7 +8,8 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CrisisRecord } from '../lib/crisis';
-import { crisisLines, formatDialNumber } from '../lib/crisis-numbers';
+import { crisisTexts } from '../lib/crisis-copy';
+import { crisisLines } from '../lib/crisis-numbers';
 import { href } from '../lib/routes';
 import { loadScreenings } from '../lib/screening-store';
 import { useDevice } from '../lib/use-device';
@@ -18,13 +19,7 @@ import { within } from '../lib/within';
 type Reached = 'unasked' | 'asking' | 'yes' | 'later';
 
 const LINES = crisisLines();
-const SAKINA: CrisisNumber = LINES.primary;
-/** Message keys for each number's title and one-line description. The numbers themselves come from the config. */
-const WORDS: Record<CrisisNumber, { title: string; detail: string }> = {
-  '800725462': { title: 'callSakina', detail: 'sakinaDetail' },
-  '998': { title: 'call998', detail: 'ambulance' },
-  '999': { title: 'call999', detail: 'police' },
-};
+const SAKINA: CrisisNumber = LINES.hotline.number;
 
 /**
  * The crisis screen: calm, full screen, no tab bar, no auto-dismiss. Works offline and with no AI.
@@ -46,6 +41,7 @@ export function CrisisScreen() {
   const promptRef = useRef<HTMLHeadingElement>(null);
   const dialler = useMemo(() => createWebDialler((url) => window.location.assign(url)), []);
   const lang = isLocale(locale) ? locale : 'en';
+  const texts = crisisTexts(t, LINES);
 
   useEffect(() => {
     if (device === null || device === 'unavailable') return;
@@ -134,27 +130,24 @@ export function CrisisScreen() {
             </svg>
           </span>
           <span className="flex flex-col gap-0.5">
-            <span className="text-[20px] font-bold">{t(WORDS[SAKINA].title)}</span>
-            <bdi dir="ltr" className="self-start text-[16px] font-semibold">
-              {formatDialNumber(SAKINA)}
-            </bdi>
-            <span className="text-[14px] leading-[19px] text-[#FBE3E0]">{t(WORDS[SAKINA].detail)}</span>
+            <span className="text-[20px] font-bold">{texts.hotline.title}</span>
+            <span className="text-[14px] leading-[19px] text-[#FBE3E0]">{texts.hotline.detail}</span>
           </span>
         </a>
 
         <div className="grid grid-cols-2 gap-2.5">
-          {LINES.emergency.map((number) => (
+          {texts.emergency.map((line) => (
             <a
-              key={number}
-              href={`tel:${number}`}
+              key={line.dial}
+              href={`tel:${line.dial}`}
               onClick={(event) => {
                 event.preventDefault();
-                call(number);
+                call(line.dial as CrisisNumber);
               }}
               className={`${tile} no-underline`}
             >
-              <span className="text-[20px] font-bold">{t(WORDS[number].title)}</span>
-              <span className="text-[14px] text-[#4D3330]">{t(WORDS[number].detail)}</span>
+              <span className="text-[20px] font-bold">{line.title}</span>
+              <span className="text-[14px] text-[#4D3330]">{line.detail}</span>
             </a>
           ))}
         </div>
@@ -201,7 +194,7 @@ export function CrisisScreen() {
             {t('unsavedNote')}
           </p>
         )}
-        <p className="mt-auto text-[13px] leading-[19px] text-[#4D3330]">{t('offline')}</p>
+        <p className="mt-auto text-[13px] leading-[19px] text-[#4D3330]">{texts.offline}</p>
       </main>
     </div>
   );

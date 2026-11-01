@@ -232,23 +232,22 @@
   "crisis": {
     "heading": "You don't have to face this alone",
     "body": "Some of your answers suggest you may be going through something very painful. Talking to someone now can help.",
-    "callSakina": "Call 800-SAKINA",
-    "sakinaDetail": "24/7 mental health support · Arabic and English",
-    "call998": "Call 998",
-    "call999": "Call 999",
     "ambulance": "Ambulance",
     "police": "Police",
     "divider": "Or tell us how you are right now",
     "callNow": "Call now",
     "withSomeone": "I'm with someone safe",
     "safeNow": "I'm safe right now — continue",
-    "offline": "This screen works without internet. If you're in immediate danger, call 999 or 998.",
+    "offline": "This screen works without internet. If you're in immediate danger, call {police} or {ambulance}.",
     "reachedTitle": "Did you reach someone?",
     "reachedYes": "Yes, I spoke to someone",
     "reachedNo": "Not yet",
     "reachedThanks": "Thank you for telling us. It is good that you reached out. You can call again at any time.",
     "reachedLater": "You can call again at any time. The numbers stay on this screen.",
-    "unsavedNote": "This phone could not save your choice. It will ask again if the app is reopened."
+    "unsavedNote": "This phone could not save your choice. It will ask again if the app is reopened.",
+    "hotlineTitle": "Call {name}",
+    "hotlineDetail": "{number} · 24/7 mental health support · Arabic and English",
+    "callEmergency": "Call {number}"
   },
   "settings": {
     "title": "Privacy and your data",
@@ -270,7 +269,7 @@
     "deleteFailed": "Deleting failed. Close other tabs of this app and try again.",
     "unavailable": "This browser cannot keep data on this phone, so there is nothing stored here.",
     "numbersTitle": "Crisis numbers",
-    "numbersBody": "800-SAKINA 800 725462, ambulance 998, police 999."
+    "numbersBody": "{name} {hotline}, ambulance {ambulance}, police {police}."
   },
   "consent": {
     "title": "Share with a clinic",

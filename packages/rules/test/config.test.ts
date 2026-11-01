@@ -16,6 +16,7 @@ describe('config', () => {
   it('lists the three crisis numbers with no last_verified date until someone confirms them', () => {
     expect(CRISIS_NUMBERS_CONFIG.map((n) => n.number)).toEqual(['800725462', '999', '998']);
     expect(CRISIS_NUMBERS_CONFIG.every((n) => n.last_verified === null)).toBe(true);
+    expect(Object.fromEntries(CRISIS_NUMBERS_CONFIG.map((n) => [n.role, n.number]))).toEqual({ hotline: '800725462', police: '999', ambulance: '998' });
   });
 
   it('labels the insurance table as a sample', () => {
