@@ -21,6 +21,8 @@ export interface SendInput {
   content: BundleContent;
   approvedSummary: string | null;
   summaryRequestId: string | null;
+  /** The elements the approved summary was written from: empty when the person wrote it by hand. */
+  summaryBuiltFrom: readonly ConsentElement[];
   language: CareLanguage;
   now: () => Date;
 }
@@ -36,6 +38,8 @@ export function ticketRequest(input: SendInput): CreateTicketRequest {
     content: redact(input.content, input.elements),
     approvedSummary: input.approvedSummary && withinWordLimit(input.approvedSummary) ? input.approvedSummary : null,
     summaryRequestId: input.summaryRequestId,
+    // Only what is actually shared can be what a summary was built from.
+    summaryBuiltFrom: input.approvedSummary ? input.summaryBuiltFrom.filter((element) => input.elements.includes(element) || element === 'ticket') : [],
   };
 }
 

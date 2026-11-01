@@ -147,7 +147,8 @@ export function ConsentScreen() {
       });
       const parsed = result.ok ? SummaryDraftSchema.safeParse(result.body) : null;
       if (!parsed?.success) return setDrafting('failed');
-      setSummary({ text: parsed.data.text, source: parsed.data.source, approved: false, builtFrom: elements });
+      // A draft whose request carried no content (AI box unticked) was built from nothing, so no tick can ever stale it.
+      setSummary({ text: parsed.data.text, source: parsed.data.source, approved: false, builtFrom: aiOn ? elements : [] });
       setDrafting('idle');
     } catch {
       setDrafting('failed');
@@ -176,6 +177,7 @@ export function ConsentScreen() {
         content,
         approvedSummary,
         summaryRequestId: summary ? pending.requestId : null,
+        summaryBuiltFrom: summary?.builtFrom ?? [],
         language: content.preferences?.language ?? lang,
         now: deviceNow,
       });
@@ -204,7 +206,7 @@ export function ConsentScreen() {
         <div className="flex flex-col gap-1">
           <h1 className="t-h1">{t('heading')}</h1>
           <p className="t-body text-muted">
-            {t('sendingTo')} <b className="text-ink" dir="auto">{service?.name ?? ''}</b> <span className="ms-1 rounded-chip bg-mock px-2 py-[3px] text-[12px] font-semibold text-mock-ink">{t('sample')}</span>
+            {t('sendingTo')} <b className="text-ink" dir="auto">{service?.name ?? ''}</b> <span className="ms-1 inline-flex whitespace-nowrap rounded-chip bg-mock px-2 py-[3px] text-[12px] font-semibold text-mock-ink" data-sample>{t('sample')}</span>
           </p>
           {pending.reroute && <p className="t-small text-muted">{t('reroutingNote')}</p>}
         </div>
@@ -267,7 +269,7 @@ export function ConsentScreen() {
               {summary.approved ? (
                 <p role="status" className="text-[14px] font-semibold text-accent-dark">{t('approved')}</p>
               ) : (
-                <button type="button" className="tap self-start rounded-pill bg-accent px-4 text-[14px] font-semibold text-surface" disabled={summaryWords === 0 || summaryWords > SUMMARY_WORD_LIMIT} onClick={() => setSummary({ ...summary, approved: true })}>
+                <button type="button" className="tap self-start rounded-pill bg-accent px-4 text-[14px] font-semibold text-surface" disabled={summaryWords === 0 || summaryWords > SUMMARY_WORD_LIMIT} onClick={() => setSummary({ ...summary, approved: true, builtFrom: summary.builtFrom.filter((element) => elements.includes(element)) })}>
                   {t('approve')}
                 </button>
               )}
