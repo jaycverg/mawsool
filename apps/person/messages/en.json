@@ -126,6 +126,7 @@
     "count": "{count, plural, one {# option} other {# options}} near {region}",
     "sampleServices": "Sample services",
     "sampleData": "Sample data",
+    "sampleInsurance": "Sample insurance table",
     "bestMatch": "Best match",
     "currentSupport": "Your current support",
     "wait": "Indicative wait",

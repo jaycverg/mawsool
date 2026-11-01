@@ -1,11 +1,11 @@
 'use client';
 
-import { TICKET_SOURCES, TICKET_TIERS, METRIC_PERIODS, type EquityDimension, type EquityResponse, type MetricPeriod, type Session, type TicketSource, type TicketTier } from '@mawsool/types';
+import { EQUITY_FLAG_POINTS, TICKET_SOURCES, TICKET_TIERS, METRIC_PERIODS, type EquityDimension, type EquityResponse, type MetricPeriod, type Session, type TicketSource, type TicketTier } from '@mawsool/types';
 import { isLocale } from '@mawsool/ui';
 import { BrandMark } from '@mawsool/ui/components';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
-import { DEFAULT_FILTERS, isSuppressed, loadDashboard, numberFormat, type Dashboard as DashboardData, type Filters } from '../lib/metrics';
+import { DEFAULT_FILTERS, TIER_TARGET_DAYS, isSuppressed, loadDashboard, numberFormat, type Dashboard as DashboardData, type Filters } from '../lib/metrics';
 
 type Load = { k: 'loading' } | { k: 'failed' } | { k: 'ready'; data: DashboardData };
 
@@ -146,7 +146,7 @@ function Funnel({ data, t, format }: { data: DashboardData; t: Translate; format
   const top = stages.reduce((max, stage) => (typeof stage.count === 'number' && stage.count > max ? stage.count : max), 0);
   return (
     <section aria-label={t('funnel.label')} className={`${card} flex min-w-0 flex-[1_1_520px] flex-col gap-3`} data-section="funnel">
-      <h2 className="text-[17px] font-semibold">{t('funnel.heading')}</h2>
+      <h2 className="text-[17px] font-bold">{t('funnel.heading')}</h2>
       {stages.map((stage, index) => {
         const count = stage.count;
         const width = typeof count === 'number' && top > 0 ? Math.max(2, Math.round((count / top) * 100)) : 0;
@@ -184,7 +184,7 @@ function Equity({ equity, t, format }: { equity: EquityResponse; t: Translate; f
   return (
     <section aria-label={t('equity.label')} className={`${card} flex min-w-0 flex-[1_1_440px] flex-col gap-3`} data-section="equity">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="min-w-[200px] flex-1 text-[17px] font-semibold">{t('equity.heading')}</h2>
+        <h2 className="min-w-[200px] flex-1 text-[17px] font-bold">{t('equity.heading')}</h2>
         <div role="group" aria-label={t('equity.groupBy')} className="flex flex-wrap gap-1.5">
           {DIMENSIONS.map((entry) => (
             <button
@@ -200,7 +200,7 @@ function Equity({ equity, t, format }: { equity: EquityResponse; t: Translate; f
           ))}
         </div>
       </div>
-      <div className="grid items-center gap-x-3 gap-y-2.5 text-[14px] [grid-template-columns:110px_1fr_92px]" data-equity-rows={dimension}>
+      <div className="grid items-center gap-x-3 gap-y-2.5 text-[14px] [grid-template-columns:110px_1fr_76px]" data-equity-rows={dimension}>
         {rows.map((row) => {
           const cell = row.cell;
           if (isSuppressed(cell)) {
@@ -226,8 +226,12 @@ function Equity({ equity, t, format }: { equity: EquityResponse; t: Translate; f
       </div>
       {flagged.map(({ value, cell }) => (
         <p key={value} className="flex gap-2 rounded-input bg-warning px-3 py-2.5 text-[14px] leading-5 text-warning-ink" role="note" data-flag={value}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" className="mt-px flex-none">
+            <path d="M12 3l10 18H2z" />
+            <path d="M12 10v5M12 18v.5" />
+          </svg>
           <span>
-            <b>{t(cell.gapPoints < 0 ? 'equity.flagBelow' : 'equity.flagAbove', { group: t(`equity.value.${value}`), points: format(Math.abs(cell.gapPoints)), overall: format(overall ?? 0) })}</b>
+            <b>{t('equity.flagLabel')}</b> {t(cell.gapPoints < 0 ? 'equity.flagBelow' : 'equity.flagAbove', { group: t(`equity.value.${value}`), points: format(Math.abs(cell.gapPoints)), overall: format(overall ?? 0) })}
           </span>
         </p>
       ))}
@@ -240,13 +244,18 @@ function Timeliness({ data, t, format }: { data: DashboardData; t: Translate; fo
   const { timeliness } = data;
   const rows = [{ id: 'overall', label: t('timeliness.overall'), cell: timeliness.overall }, ...timeliness.tiers.map((entry) => ({ id: entry.tier, label: t(`tier.${entry.tier}`), cell: entry.cell }))];
   const overdue = timeliness.overdue;
+  // The board marks a tier whose within-target share is well under the overall one (its 58% against 71%). The rule used
+  // here is the one the equity view flags by: ten points or more below the overall within-target rate.
+  const overallWithin = isSuppressed(timeliness.overall) || isSuppressed(timeliness.overall.withinTarget) ? null : timeliness.overall.withinTarget.percent;
+  const below = (id: string, cell: (typeof rows)[number]['cell']): boolean =>
+    id !== 'overall' && overallWithin !== null && !isSuppressed(cell) && !isSuppressed(cell.withinTarget) && cell.withinTarget.percent <= overallWithin - EQUITY_FLAG_POINTS;
   return (
     <section aria-label={t('timeliness.label')} className={`${card} flex min-w-0 flex-[1_1_420px] flex-col gap-3 overflow-x-auto`} data-section="timeliness">
-      <h2 className="text-[17px] font-semibold">{t('timeliness.heading')}</h2>
+      <h2 className="-mb-0.5 text-[17px] font-bold">{t('timeliness.heading')}</h2>
       <table className="w-full border-collapse text-[14px]">
         <thead>
           <tr className="text-start text-[12px] uppercase tracking-[0.5px] text-muted">
-            {(['tier', 'tickets', 'within', 'median', 'p90'] as const).map((column) => <th key={column} scope="col" className="border-b border-border px-1.5 py-2 text-start font-normal">{t(`timeliness.${column}`)}</th>)}
+            {(['tier', 'target', 'tickets', 'within', 'median', 'p90'] as const).map((column) => <th key={column} scope="col" className="border-b border-border px-1.5 py-2 text-start font-bold">{t(`timeliness.${column}`)}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -254,14 +263,17 @@ function Timeliness({ data, t, format }: { data: DashboardData; t: Translate; fo
             const hidden = isSuppressed(cell);
             const withinHidden = hidden || isSuppressed(cell.withinTarget);
             return (
-              <tr key={id} data-tier-row={id} data-suppressed={hidden ? '' : undefined}>
+              <tr key={id} data-tier-row={id} data-suppressed={hidden ? '' : undefined} className="[&:last-child>td]:border-b-0">
                 <td className="border-b border-[#E6ECEA] px-1.5 py-2.5">{label}</td>
+                <td className="border-b border-[#E6ECEA] px-1.5 py-2.5">{id === 'overall' ? '—' : t('timeliness.days', { days: format(TIER_TARGET_DAYS[id as keyof typeof TIER_TARGET_DAYS]) })}</td>
                 {hidden ? (
                   <td colSpan={4} className="border-b border-[#E6ECEA] px-1.5 py-2.5 text-muted">{t('suppressed')}</td>
                 ) : (
                   <>
                     <td className="border-b border-[#E6ECEA] px-1.5 py-2.5">{format(cell.tickets)}</td>
-                    <td className="border-b border-[#E6ECEA] px-1.5 py-2.5">{withinHidden || isSuppressed(cell.withinTarget) ? t('suppressedShort') : `${format(cell.withinTarget.percent)}%`}</td>
+                    <td className={`border-b border-[#E6ECEA] px-1.5 py-2.5 ${below(id, cell) ? 'font-semibold' : ''}`} style={below(id, cell) ? { color: FLAG_INK } : undefined} data-below-target={below(id, cell) ? '' : undefined}>
+                      {withinHidden || isSuppressed(cell.withinTarget) ? t('suppressedShort') : `${format(cell.withinTarget.percent)}%`}
+                    </td>
                     <td className="border-b border-[#E6ECEA] px-1.5 py-2.5">{isSuppressed(cell.medianDaysToSeen) ? t('suppressedShort') : t('timeliness.days', { days: format(cell.medianDaysToSeen) })}</td>
                     <td className="border-b border-[#E6ECEA] px-1.5 py-2.5">{isSuppressed(cell.p90DaysToSeen) ? t('suppressedShort') : t('timeliness.days', { days: format(cell.p90DaysToSeen) })}</td>
                   </>
@@ -317,7 +329,7 @@ function Safety({ data, t, format }: { data: DashboardData; t: Translate; format
   );
   return (
     <section aria-label={t('safety.label')} className={`${card} flex min-w-0 flex-[1_1_420px] flex-col gap-2.5`} data-section="safety">
-      <h2 className="text-[17px] font-semibold">{t('safety.heading')}</h2>
+      <h2 className="text-[17px] font-bold">{t('safety.heading')}</h2>
       <div className="grid grid-cols-3 gap-2.5">
         {stat('shown', t('safety.shown'), isSuppressed(crisis.shown) ? null : format(crisis.shown))}
         {stat('called', t('safety.called'), isSuppressed(crisis.calledALine) ? null : t('safety.of', { count: format(crisis.calledALine.count), of: format(crisis.calledALine.of) }))}
