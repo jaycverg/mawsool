@@ -135,6 +135,9 @@ async function expectReadable(dash: Page, when: string): Promise<void> {
   await expect(urdu, `Urdu row ${when}`).toBeVisible();
   await expect(urdu, `Urdu row ${when}`).not.toHaveAttribute('data-suppressed', /.*/);
   await expect(urdu, `Urdu row ${when}`).toHaveAttribute('data-flagged', 'true');
+  const gap = Number(await urdu.getAttribute('data-gap'));
+  expect(gap, `Urdu gap ${when}`).toBeLessThanOrEqual(-18);
+  expect(gap, `Urdu gap ${when}`).toBeGreaterThanOrEqual(-22);
 }
 
 const CASES: Record<string, (ctx: Context) => Promise<void>> = {
@@ -279,8 +282,12 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
       await expect(stageCount(dash, 'positive_screen').locator('[data-count]')).toHaveText(new Intl.NumberFormat(locale === 'ar' ? 'ar-AE-u-nu-latn' : 'en-GB').format(parts.total));
     }
     await expect(dash.locator('[data-funnel-note]')).toHaveText(omsg(locale, 'dash.funnel.note'));
+    // The pitch view: the board's default "Last 90 days", 28 days into the demo, and then all time.
+    await dash.locator('[data-filter="period"]').selectOption('90d');
+    await expectReadable(dash, 'in the default view after the demo clock moved 28 days');
+    await expect(stageCount(dash, 'remeasured')).toBeVisible(); // shown or suppressed: no re-measured ticket is left in the last 90 days by then
     await dash.locator('[data-filter="period"]').selectOption('all');
-    await expectReadable(dash, 'after the demo clock moved 28 days');
+    await expectReadable(dash, 'in all time after the demo clock moved 28 days');
 
     // Step 12: the equity view flags Urdu 18 to 22 points below the overall rate (all time), and flags it in the default view.
     await dash.locator('[data-filter="period"]').selectOption('all');
@@ -303,7 +310,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await dash.locator('[data-filter="period"]').selectOption('all');
     const parts = await funnelParts(now, null);
     // Seeded: open invites, parentless tickets, crisis events, and Noura's fresh invite are all in the sum.
-    expect(parts.openInvites).toBe(14 + 1);
+    expect(parts.openInvites).toBe(36 + 1);
     expect(parts.journeys).toBe(470);
     expect(parts.crisisEvents).toBe(40);
     const stage = stageCount(dash, 'positive_screen');
@@ -317,9 +324,11 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     const app = await numberOf(stageCount(dash, 'positive_screen').locator('[data-count]').innerText());
     expect(app).toBe(await numberOf(stageCount(dash, 'ticket_issued').locator('[data-count]').innerText()));
     expect(app).toBeLessThan(parts.total - parts.crisisEvents);
+    // A front door has twelve or more open invites, so its first stage is shown and is its journeys plus those invites.
     await dash.locator('[data-filter="source"]').selectOption('tamm');
-    await expect(stageCount(dash, 'positive_screen').locator('[data-suppressed]')).toHaveText(omsg(locale, 'dash.suppressed'));
-    await expect(stageCount(dash, 'ticket_issued').locator('[data-count]')).toBeVisible();
+    const tammFirst = await numberOf(stageCount(dash, 'positive_screen').locator('[data-count]').innerText());
+    const tammIssued = await numberOf(stageCount(dash, 'ticket_issued').locator('[data-count]').innerText());
+    expect(tammFirst - tammIssued).toBe(12 + 1);
     await expect(dash.locator('[data-filter-scope]')).toHaveText(omsg(locale, 'dash.filters.scope'));
   },
 
@@ -332,6 +341,9 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await dash.locator('[data-filter="source"]').selectOption('school');
     await dash.locator('[data-filter="tier"]').selectOption('community');
     const first = stageCount(dash, 'positive_screen');
+    // Every hidden cell says the same neutral thing: many are hidden only to protect a small one, so a size would be false.
+    expect(omsg(locale, 'dash.suppressed')).toBe(locale === 'en' ? 'Suppressed to protect small groups' : 'مخفي لحماية المجموعات الصغيرة');
+    expect(omsg(locale, 'dash.suppressed')).not.toMatch(/\d|fewer|أقل/);
     await expect(first.locator('[data-suppressed]')).toHaveText(omsg(locale, 'dash.suppressed'));
     await expect(first.locator('[data-count]')).toHaveCount(0);
     await expect(stageCount(dash, 'remeasured').locator('[data-suppressed]')).toBeVisible();
@@ -503,7 +515,11 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(dash.locator('[data-tile="median-seen"] [data-value]')).toHaveText(/^\d+\D+$/);
     for (const row of await dash.locator('[data-equity-row]:not([data-suppressed]) > span:last-child').all()) await expect(row).toHaveText(/^\d+%/);
     const countColumn = await dash.locator('[data-equity-row="ur"] > span:last-child').boundingBox();
-    expect(Math.round(countColumn!.width)).toBe(76);
+    // The board's 76px count column in English; the Arabic has no board and its longer figures may widen it, but never wrap.
+    if (locale === 'en') expect(Math.round(countColumn!.width)).toBe(76);
+    else expect(Math.round(countColumn!.width)).toBeGreaterThanOrEqual(76);
+    const countLine = parseFloat(String((await computed(dash, '[data-equity-row="ur"] > span:last-child', ['line-height']))['line-height']));
+    expect(countColumn!.height, 'the count stays on one line').toBeLessThanOrEqual(countLine + 1);
     const note = dash.locator('[data-tile="within-target"] > div').last();
     const lineHeight = parseFloat(String((await computed(dash, '[data-tile="within-target"] > div:last-child', ['line-height']))['line-height']));
     expect((await note.boundingBox())!.height, 'the tile note fits one line').toBeLessThanOrEqual(lineHeight + 1);

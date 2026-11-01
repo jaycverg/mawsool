@@ -7,6 +7,10 @@
       {
         "file": "test/metrics.test.ts",
         "name": "measures the Urdu gap on the real query"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "keeps the demo’s dashboard readable in the default view"
       }
     ],
     "browser": "demo-steps-1-to-12"
@@ -114,7 +118,7 @@
   },
   {
     "id": "suppressed-cell-not-derivable",
-    "sentence": "A suppressed cell cannot be derived from its row total: the next smallest is hidden with it, in the funnel's filter values, timeliness by tier and every equity dimension",
+    "sentence": "No small number can be computed from the published figures of one response: not from a row total, not from several relations taken together (row-reduced exactly), not from a group's rate when it is empty on a count, not from the stage 1 total less the stage 2 total, and not from \"no bucket given\" published in another dimension",
     "project": "apps/api",
     "tests": [
       {
@@ -123,11 +127,23 @@
       },
       {
         "file": "test/metrics-protect.test.ts",
-        "name": "repeats until no relation has a single hidden member"
+        "name": "does not let two hidden blocks joined by one hidden cell pin the joining cell"
       },
       {
         "file": "test/metrics-protect.test.ts",
-        "name": "leaves no relation with a single hidden member, for tables of random sizes"
+        "name": "does not leave a small group’s 0% or 100% exact"
+      },
+      {
+        "file": "test/metrics-protect.test.ts",
+        "name": "does the same for timeliness"
+      },
+      {
+        "file": "test/metrics-protect.test.ts",
+        "name": "leaves nothing a reader can compute, for 1,500 random grids with zero cells"
+      },
+      {
+        "file": "test/metrics-protect.test.ts",
+        "name": "holds on 4,500 random tables of the three shapes the dashboard publishes"
       },
       {
         "file": "test/metrics.test.ts",
@@ -135,11 +151,7 @@
       },
       {
         "file": "test/metrics.test.ts",
-        "name": "suppresses a filter value under ten, and the next smallest beside it"
-      },
-      {
-        "file": "test/metrics.test.ts",
-        "name": "hides a small tier and the next smallest, so the overall cannot give the small one away"
+        "name": "hides a small tier and the next smallest"
       },
       {
         "file": "test/metrics.test.ts",
@@ -147,7 +159,18 @@
       },
       {
         "file": "test/metrics.test.ts",
-        "name": "flags a group 10 points or more from the overall rate, and carries no flag or gap on a suppressed one"
+        "name": "hides \"no bucket given\" in every dimension when 1 blank"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "hides \"no bucket given\" in every dimension when 9 blanks"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "lets the dimensions publish their own \"no bucket given\" once they differ by ten people"
+      },
+      {
+        "file": "test/metrics-leaks.test.ts"
       }
     ]
   },

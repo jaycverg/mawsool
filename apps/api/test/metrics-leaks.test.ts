@@ -56,7 +56,8 @@ describe('what cannot be worked out from the funnel, the crisis figures and the 
           const funnel = await get<FunnelResponse>(`/metrics/funnel?period=${period}&source=${source}`);
           const [first, second] = [stageCount(funnel, 'positive_screen'), stageCount(funnel, 'ticket_issued')];
           const truth = open.filter((invite) => invite.source === source).length;
-          if (first !== null && second !== null) expect(first - second, `${source}: first stage minus second`).not.toBe(truth);
+          // A front door's open invites are a hidden cell only while they are under ten; at ten or more their count is publishable.
+          if (first !== null && second !== null && truth < 10) expect(first - second, `${source}: first stage minus second`).not.toBe(truth);
         }
       });
 

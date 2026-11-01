@@ -472,6 +472,45 @@ describe('GET /metrics/equity', () => {
     expect(99 - visible.reduce((a, b) => a + b, 0)).toBe(29); // two groups' worth: it cannot be split
   });
 
+  describe('when only some people who opted in gave every bucket', () => {
+    // 60 people did not opt in (30 closed). 80 opted in with every bucket (female 40, male 40, 20 closed each); 4 are "another"
+    // (1 closed). `blanks` opted in with age band, region and language but no gender, none closed. Their gender "no bucket
+    // given" then holds 60 + blanks tickets while the other dimensions' holds 60: the two differ by `blanks` people.
+    const build = async (blanks: number) => {
+      const shared = { optIn: true as const, ageBand: '25_34' as const, region: 'al_ain' as const, language: 'ar' as const };
+      for (let i = 0; i < 60; i += 1) await world.addTicket({ person: await world.addPerson(), issuedAt: issued(100), path: i < 30 ? ['seen'] : [] });
+      for (const [gender, total, closed] of [['female', 40, 20], ['male', 40, 20], ['another', 4, 1]] as const) {
+        for (let i = 0; i < total; i += 1) await world.addTicket({ person: await world.addPerson({ ...shared, gender }), issuedAt: issued(100), path: i < closed ? ['seen'] : [] });
+      }
+      for (let i = 0; i < blanks; i += 1) await world.addTicket({ person: await world.addPerson(shared), issuedAt: issued(100), path: [] });
+      return get<EquityResponse>('/metrics/equity');
+    };
+    const notGiven = (equity: EquityResponse) => Object.fromEntries(equity.dimensions.map((dimension) => [dimension.dimension, dimension.rows.find((row) => row.value === 'not_given')!.cell]));
+    const hiddenIn = (equity: EquityResponse, dimension: string) => equity.dimensions.find((entry) => entry.dimension === dimension)!.rows.filter((row) => 'suppressed' in row.cell).map((row) => row.value);
+
+    for (const blanks of [1, 9]) {
+      it(`hides "no bucket given" in every dimension when ${blanks} blank${blanks > 1 ? 's' : ''} make the dimensions' copies differ, so the difference is not published`, async () => {
+        const equity = await build(blanks);
+        for (const [dimension, cell] of Object.entries(notGiven(equity))) expect(cell, dimension).toEqual({ suppressed: true });
+        // The reader's tries: "another" from the total less the shown gender groups less a "no bucket given" taken from elsewhere.
+        const gender = equity.dimensions.find((entry) => entry.dimension === 'gender')!;
+        const shown = gender.rows.reduce((sum, row) => sum + ('suppressed' in row.cell ? 0 : row.cell.tickets), 0);
+        const total = (equity.overall as { tickets: number }).tickets;
+        expect(total - shown, 'what the gender rows leave is more than "another" alone').not.toBe(4);
+        expect(hiddenIn(equity, 'gender').sort()).toEqual(['another', 'not_given']);
+      });
+    }
+
+    it('lets the dimensions publish their own "no bucket given" once they differ by ten people, and still hides "another"', async () => {
+      const equity = await build(10);
+      const given = notGiven(equity) as Record<string, { tickets: number } | { suppressed: true }>;
+      expect(given['gender']).toMatchObject({ tickets: 70 });
+      expect(given['age_band']).toMatchObject({ tickets: 60 });
+      expect(hiddenIn(equity, 'gender')).toContain('another');
+      expect(hiddenIn(equity, 'gender').length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
   it('measures the Urdu gap on the real query: 18 to 22 points below the overall rate, the way the seed measures it', async () => {
     await runSeed(testDb.db, SEED_ANCHOR);
     headers = await world.opsHeaders();
@@ -507,7 +546,7 @@ describe('the seeded data against the metric definitions', () => {
   });
 
   it('counts the same positive screens whatever day the seed is anchored on, as long as the clock reads that day', async () => {
-    const expected = 14 + 470 + 40; // open invites + parentless tickets + crisis events
+    const expected = 36 + 470 + 40; // open invites + parentless tickets + crisis events
     for (const anchor of [SEED_ANCHOR, new Date('2027-03-15T00:00:00+04:00'), new Date('2031-08-02T00:00:00+04:00')]) {
       await runSeed(testDb.db, anchor);
     headers = await world.opsHeaders();
@@ -522,10 +561,35 @@ describe('the seeded data against the metric definitions', () => {
     await runSeed(testDb.db, SEED_ANCHOR);
     headers = await world.opsHeaders();
     ctx.clock.set(SEED_ANCHOR);
-    expect(counts(await get<FunnelResponse>('/metrics/funnel')).positive_screen).toBe(14 + 470 + 40);
+    expect(counts(await get<FunnelResponse>('/metrics/funnel')).positive_screen).toBe(36 + 470 + 40);
     ctx.clock.set(new Date(SEED_ANCHOR.getTime() + 40 * DAY));
-    // The invites have lapsed (they expire between 5 and 29 days after the anchor); tickets and crisis events stay.
+    // The invites have lapsed (they were handed over in the 12 hours before the anchor and last 30 days); tickets and crisis events stay.
     expect(counts(await get<FunnelResponse>('/metrics/funnel')).positive_screen).toBe(470 + 40);
+  });
+
+  it('keeps the demo’s dashboard readable in the default view, straight after a reset and 28 days into the demo, and in all time at 28 days', async () => {
+    await runSeed(testDb.db, SEED_ANCHOR);
+    const moments = [0, 28 * DAY, 28 * DAY + 23 * HOUR];
+    for (const [period, offsets] of [['90d', moments], ['all', [28 * DAY]]] as const) {
+      for (const offset of offsets) {
+        ctx.clock.set(new Date(SEED_ANCHOR.getTime() + offset));
+        headers = await world.opsHeaders();
+        const label = `${period} at +${offset / HOUR}h`;
+        const funnel = await get<FunnelResponse>(`/metrics/funnel?period=${period}`);
+        for (const stage of ['positive_screen', 'ticket_issued', 'acknowledged', 'seen']) expect(typeof funnel.stages.find((entry) => entry.stage === stage)!.count, `${stage} ${label}`).toBe('number');
+        const timeliness = await get<TimelinessResponse>(`/metrics/timeliness?period=${period}`);
+        for (const tier of timeliness.tiers) expect(tier.cell, `${tier.tier} ${label}`).not.toHaveProperty('suppressed');
+        const crisis = await get<CrisisResponse>(`/metrics/crisis?period=${period}`);
+        for (const figure of ['shown', 'calledALine', 'contactConfirmed', 'medianMinutesToContact'] as const) expect(crisis[figure], `${figure} ${label}`).not.toHaveProperty('suppressed');
+        const equity = await get<EquityResponse>(`/metrics/equity?period=${period}`);
+        const urdu = equity.dimensions.find((entry) => entry.dimension === 'language')!.rows.find((row) => row.value === 'ur')!.cell;
+        expect(urdu, `Urdu ${label}`).not.toHaveProperty('suppressed');
+        const cell = urdu as { gapPoints: number; flagged: boolean };
+        expect(cell.flagged).toBe(true);
+        expect(cell.gapPoints, `Urdu gap ${label}`).toBeLessThanOrEqual(-18);
+        expect(cell.gapPoints, `Urdu gap ${label}`).toBeGreaterThanOrEqual(-22);
+      }
+    }
   });
 
   it('shows a funnel and a timeliness table from the seed with the equity opt-in buckets and the crisis events', async () => {

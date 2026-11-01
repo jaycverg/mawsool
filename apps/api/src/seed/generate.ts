@@ -48,6 +48,9 @@ export const LOOP_CLOSED_URDU = 28;
 export const LOOP_CLOSED_OTHER = 308;
 const REROUTED_PARENTS = { urdu: 4, other: 26 };
 const CRISIS_EVENT_COUNT = 40;
+/** Of the 40: this many tapped a number, and of those this many also confirmed they reached someone. */
+const CRISIS_TAPPED = 28;
+const CRISIS_CONFIRMED = 16;
 const HISTORY_DAYS = 90;
 
 const HOUR = 3_600_000;
@@ -237,8 +240,12 @@ function buildTimeline(
   return t.events;
 }
 
-/** Unclaimed invites the seed leaves open, by front door. Each is unexpired at the seed's own reference time (the anchor). */
-export const SEED_OPEN_INVITES = { phc: 5, tamm: 5, school: 4 } as const;
+/**
+ * Unclaimed invites the seed leaves open, by front door. Each is unexpired at the seed's own reference time (the anchor), and
+ * each was handed over in the 12 hours before it, so it is still open 28 days later (the demo moves the clock that far
+ * before it shows the dashboard) and each front door has the ten or more that its first funnel stage needs to be shown.
+ */
+export const SEED_OPEN_INVITES = { phc: 12, tamm: 12, school: 12 } as const;
 /** Unclaimed invites that had already expired by the anchor, so they must not be counted as positive screens. */
 export const SEED_EXPIRED_INVITES = 4;
 /** Invites claimed by the person of a seeded front-door ticket, so a claimed invite and its ticket are in the data once each. */
@@ -249,8 +256,8 @@ type InviteRow = Insert<typeof schema.inboundInvites>;
 /**
  * The seed's invites. Their codes are not known to anyone (only a hash of a throwaway value is stored), so none of them
  * can be claimed; they exist to be counted. Dates are relative to the anchor, never to the wall clock: open ones were
- * created between 1 and 25 days before it, so they expire between 5 and 29 days after it, and expired ones expired
- * between 5 and 30 days before it.
+ * created between 1 and 12 hours before it, so they expire about 30 days after it, and expired ones expired between 5
+ * and 30 days before it.
  */
 function buildInvites(rng: Rng, anchorMs: number, tickets: SeedData['tickets'], persons: SeedData['persons']): InviteRow[] {
   const rows: InviteRow[] = [];
@@ -270,7 +277,7 @@ function buildInvites(rng: Rng, anchorMs: number, tickets: SeedData['tickets'], 
     });
   };
   for (const [source, count] of Object.entries(SEED_OPEN_INVITES) as [keyof typeof SEED_OPEN_INVITES, number][]) {
-    for (let i = 0; i < count; i += 1) add(source, anchorMs - between(rng, DAY, 25 * DAY), rng.weighted<'ar' | 'en'>([['ar', 0.6], ['en', 0.4]]));
+    for (let i = 0; i < count; i += 1) add(source, anchorMs - between(rng, HOUR, 12 * HOUR), rng.weighted<'ar' | 'en'>([['ar', 0.6], ['en', 0.4]]));
   }
   for (let i = 0; i < SEED_EXPIRED_INVITES; i += 1) {
     add(rng.pick(['phc', 'tamm', 'school'] as const), anchorMs - INVITE_TTL_MS - between(rng, 5 * DAY, 30 * DAY), 'ar');
@@ -465,10 +472,14 @@ export function generateSeed(anchor: Date = SEED_ANCHOR): SeedData {
   });
 
   // Crisis events: no person id, no answers.
-  const crisisEvents: SeedData['crisisEvents'] = Array.from({ length: CRISIS_EVENT_COUNT }, () => {
-    const shownAt = between(rng, start, anchorMs - DAY);
-    const callTapped = rng.weighted<CrisisNumber | null>([[null, 0.25], ['800725462', 0.55], ['999', 0.1], ['998', 0.1]]);
-    const confirmed = callTapped !== null && rng.next() < 0.6;
+  // All 40 fall in the last 60 days, so the default "last 90 days" still holds every one of them 28 days into a demo, and the
+  // outcomes are fixed in number (28 tapped a number, 16 of those confirmed contact) so every share on the dashboard has
+  // ten or more people on each side of it in that view.
+  const crisisPlan = rng.shuffle(Array.from({ length: CRISIS_EVENT_COUNT }, (_, index): 'confirmed' | 'tapped' | 'none' => (index < CRISIS_CONFIRMED ? 'confirmed' : index < CRISIS_TAPPED ? 'tapped' : 'none')));
+  const crisisEvents: SeedData['crisisEvents'] = crisisPlan.map((plan) => {
+    const shownAt = between(rng, anchorMs - 60 * DAY, anchorMs - DAY);
+    const callTapped = plan === 'none' ? null : rng.weighted<CrisisNumber>([['800725462', 0.7], ['999', 0.15], ['998', 0.15]]);
+    const confirmed = plan === 'confirmed';
     const resolved = rng.next() < 0.9;
     return {
       id: rng.uuid(),
