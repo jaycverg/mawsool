@@ -5,6 +5,11 @@
 export interface StorageAdapter {
   get<T>(key: string): Promise<T | undefined>;
   set<T>(key: string, value: T): Promise<void>;
+  /**
+   * Stores `value` only if nothing is stored under `key`, and returns whatever is stored afterwards: the existing
+   * value, or `value`. It is atomic, so two callers racing on a fresh key both get the same stored value.
+   */
+  setIfAbsent<T>(key: string, value: T): Promise<T>;
   remove(key: string): Promise<void>;
   keys(): Promise<string[]>;
   /** Removes everything this adapter stored. */
@@ -49,6 +54,22 @@ export function createIndexedDbStorage(options: IndexedDbStorageOptions): Storag
     },
     async set<T>(key: string, value: T) {
       await request((await store('readwrite')).put(value, key));
+    },
+    async setIfAbsent<T>(key: string, value: T) {
+      // One readwrite transaction: IndexedDB runs these one after another, so the second racer sees the first's write.
+      const tx = (await db()).transaction(storeName, 'readwrite');
+      const objectStore = tx.objectStore(storeName);
+      return new Promise<T>((resolve, reject) => {
+        let stored = value;
+        const existing = objectStore.get(key);
+        existing.onsuccess = () => {
+          if (existing.result !== undefined) stored = existing.result as T;
+          else objectStore.add(value, key);
+        };
+        tx.oncomplete = () => resolve(stored);
+        tx.onerror = () => reject(tx.error ?? new Error('IndexedDB transaction failed'));
+        tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'));
+      });
     },
     async remove(key) {
       await request((await store('readwrite')).delete(key));

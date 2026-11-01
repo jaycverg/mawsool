@@ -33,6 +33,37 @@ describe('storage adapter (IndexedDB)', () => {
     expect(await storage.keys()).toEqual([]);
   });
 
+  it('setIfAbsent stores a missing key and returns the value', async () => {
+    const storage = fresh();
+    expect(await storage.setIfAbsent('k', 'first')).toBe('first');
+    expect(await storage.get('k')).toBe('first');
+  });
+
+  it('setIfAbsent leaves an existing value alone and returns it', async () => {
+    const storage = fresh();
+    await storage.set('k', 'kept');
+    expect(await storage.setIfAbsent('k', 'ignored')).toBe('kept');
+    expect(await storage.get('k')).toBe('kept');
+  });
+
+  it('setIfAbsent lets only the first of many racing callers write', async () => {
+    const storage = fresh();
+    const results = await Promise.all(['a', 'b', 'c', 'd'].map((v) => storage.setIfAbsent('k', v)));
+    expect(new Set(results).size).toBe(1);
+    expect(await storage.get('k')).toBe(results[0]);
+  });
+
+  it('setIfAbsent rejects when the database cannot be opened', async () => {
+    const broken = {
+      open() {
+        const req: { onerror?: () => void; error: Error } = { error: new Error('no storage') };
+        queueMicrotask(() => req.onerror?.());
+        return req;
+      },
+    } as unknown as IDBFactory;
+    await expect(createIndexedDbStorage({ indexedDB: broken }).setIfAbsent('k', 1)).rejects.toThrow('no storage');
+  });
+
   it('keeps separate databases apart', async () => {
     const factory = new IDBFactory();
     const one = createIndexedDbStorage({ indexedDB: factory, dbName: 'one' });
