@@ -147,8 +147,8 @@ export function ConsentScreen() {
       });
       const parsed = result.ok ? SummaryDraftSchema.safeParse(result.body) : null;
       if (!parsed?.success) return setDrafting('failed');
-      // A draft whose request carried no content (AI box unticked) was built from nothing, so no tick can ever stale it.
-      setSummary({ text: parsed.data.text, source: parsed.data.source, approved: false, builtFrom: aiOn ? elements : [] });
+      // Only a draft the AI wrote is built from the ticked elements. A template (flag off, no AI box, or a provider that failed) is built from nothing: no tick stales it and no stop deletes text the person typed.
+      setSummary({ text: parsed.data.text, source: parsed.data.source, approved: false, builtFrom: parsed.data.source === 'ai' ? elements : [] });
       setDrafting('idle');
     } catch {
       setDrafting('failed');
