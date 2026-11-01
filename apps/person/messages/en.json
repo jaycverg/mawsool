@@ -367,7 +367,7 @@
     "storageUnavailable": "This browser cannot keep your choices on this phone, so sharing is switched off.",
     "localFailed": "This phone could not save your choices, so nothing was sent. Try again.",
     "typedNotSaved": "What you typed could not be kept on this phone.",
-    "staleSummary": "You changed what is shared, so approve the summary again.",
+    "staleSummary": "You changed what is shared. The summary may still mention what you took out, so read it before you approve it again.",
     "equitySaveFailed": "Your referral was sent, but this phone could not keep your group-totals choice."
   },
   "ticket": {
