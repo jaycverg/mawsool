@@ -58,5 +58,45 @@
   {
     "id": "consent-and-ticket-measure-at-390",
     "sentence": "The consent and ticket screens hold the plan's type, tap-target and no-overflow rules at 390 px"
+  },
+  {
+    "id": "every-earlier-ticket-is-reachable-and-withdrawable",
+    "sentence": "After a reroute the earlier ticket can be opened from the ticket tab and withdrawn, and the old clinic then reads 410"
+  },
+  {
+    "id": "stopping-removes-the-summary-and-unticking-unapproves",
+    "sentence": "Stopping an element removes the approved summary and its logs and says so, and unticking an element a draft used clears its approval"
+  },
+  {
+    "id": "draft-request-carries-only-what-is-allowed",
+    "sentence": "The draft request carries no content with the AI box unticked, and only ticked elements with it ticked"
+  },
+  {
+    "id": "equity-opt-in-can-be-left",
+    "sentence": "The equity opt-in shows as on once given and can be turned off in Settings, which clears it on the server"
+  },
+  {
+    "id": "reads-list-and-its-failure",
+    "sentence": "The ticket shows who opened it, and says it could not be loaded rather than that nobody did"
+  },
+  {
+    "id": "local-failures-are-reported",
+    "sentence": "A refused save around choosing or sending is shown and never leaves the screen stuck, and a referral already sent is not hidden by a failed local write"
+  },
+  {
+    "id": "withdrawn-ticket-layout-and-day-count",
+    "sentence": "A withdrawn ticket shows no open steps and no dangling separator, and a 7-day promise reads 7 days on the day it is issued"
+  },
+  {
+    "id": "labels-are-translated",
+    "sentence": "Preferences and equity options read in the person's language, and directory text sets its own direction"
+  },
+  {
+    "id": "snapshot-consent",
+    "sentence": "The consent screen matches its committed snapshot at 390 x 844"
+  },
+  {
+    "id": "snapshot-ticket",
+    "sentence": "The ticket screen matches its committed snapshot at 390 x 844, with the code and QR masked"
   }
 ]

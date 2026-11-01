@@ -115,11 +115,11 @@ export async function triggerCrisis(page: Page, locale: Locale): Promise<void> {
 
 export const PHQ9_ITEM9_ANSWERS = [0, 0, 0, 0, 0, 0, 0, 0, 1] as const;
 
-export type IdbMode = 'refuse' | 'hang';
+export type IdbMode = 'refuse' | 'hang' | 'refuse-writes';
 
 /**
  * Makes the page's IndexedDB misbehave on demand, in a way that outlives navigation: while the tab's
- * `e2e.idb` session value is `refuse`, every transaction throws; while it is `hang`, every request is left pending
+ * `e2e.idb` session value is `refuse`, every transaction throws; while it is `refuse-writes`, every write throws and reads work; while it is `hang`, every request is left pending
  * for ever. Install before the first navigation, then switch it with `setIdbMode`.
  */
 export async function installFailingIndexedDb(page: Page): Promise<void> {
@@ -130,6 +130,7 @@ export async function installFailingIndexedDb(page: Page): Promise<void> {
     IDBDatabase.prototype.transaction = function (this: IDBDatabase, ...args: Parameters<typeof original>) {
       const mode = sessionStorage.getItem('e2e.idb');
       if (mode === 'refuse') throw new DOMException('refused by the test', 'InvalidStateError');
+      if (mode === 'refuse-writes' && args[1] === 'readwrite') throw new DOMException('refused by the test', 'QuotaExceededError');
       if (mode === 'hang') return { objectStore: () => hungStore } as unknown as IDBTransaction;
       return original.apply(this, args);
     };
