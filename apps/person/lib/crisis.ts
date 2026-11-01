@@ -117,7 +117,7 @@ export function createCrisisStore(storage: StorageAdapter, deps: CrisisDeps) {
      * A trigger answer was given: set the block and open the event. A second trigger while already blocked keeps the
      * event that is open. Never throws, so the caller can go to the crisis screen whatever happens.
      */
-    raise(input: { trigger: CrisisTrigger; screeningId: string; locale: Locale }): Promise<WriteStatus> {
+    raise(input: { trigger: CrisisTrigger; screeningId: string | null; locale: Locale }): Promise<WriteStatus> {
       return update((current) => {
         if (current.blocked && current.event) return null;
         const event = CrisisEventSubmissionSchema.parse({
