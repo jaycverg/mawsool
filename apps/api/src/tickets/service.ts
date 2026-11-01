@@ -60,6 +60,8 @@ class StateRace extends Error {}
 export interface IssueOptions {
   /** Set for a reroute: the stalled ticket that moves to `rerouted` in the same transaction. */
   parent?: { ticketId: string; reason: string };
+  /** Test seam: runs after the parent's last event was read and before the transaction starts, so a test can let a rival in. */
+  afterParentRead?: () => Promise<void>;
 }
 
 async function existingByRequestId(db: Db, clientRequestId: string): Promise<{ id: string; personId: string } | null> {
@@ -103,6 +105,7 @@ export async function issueTicket(deps: TicketDeps, personId: string, request: C
     if (!parentLast || evaluate(parentLast.state, 'rerouted', 'person') !== 'ok') return { kind: 'conflict', message: 'This ticket can no longer be rerouted' };
   }
 
+  await options.afterParentRead?.();
   const now = clock.now();
   try {
     const ticketId = await db.transaction(async (tx) => {

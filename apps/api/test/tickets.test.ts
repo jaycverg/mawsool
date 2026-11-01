@@ -4,9 +4,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { schema } from '../src/db/client';
 import { runSeed } from '../src/seed/run';
 import { sweep } from '../src/sweep';
+import { issueTicket } from '../src/tickets/service';
 import { createTestApp, signIn, type TestApp } from './helpers/app';
 import { createTestDb, type TestDb } from './helpers/db';
-import { CONDITION, FREE_TEXT, ONE_DAY, eventStates, issue, rawBundle, registerPerson, serviceAt, storedContent, ticketRequest, type TestPerson } from './helpers/flow';
+import { CONDITION, FREE_TEXT, cipher, ONE_DAY, eventStates, issue, rawBundle, registerPerson, serviceAt, storedContent, ticketRequest, type TestPerson } from './helpers/flow';
 
 const CLINICIAN_A = 'clinician.a@demo.mawsool.test';
 const CLINICIAN_B = 'clinician.b@demo.mawsool.test';
@@ -256,12 +257,29 @@ describe('tickets', () => {
       expect((await eventStates(testDb.db, parent.id)).at(-1)!.to).toBe('seen');
     });
 
-    it('rolls the parent back when the new ticket is refused', async () => {
+    it('leaves the parent alone when the new ticket is refused', async () => {
       const parent = await issue(ctx, person, ticketRequest(gpA));
       const res = await post(`/me/tickets/${parent.id}/reroute`, person.headers, { ...ticketRequest(specialistB, { consents: ['scores'] }), reason: 'cost' });
       expect(res.statusCode).toBe(400);
       expect((await eventStates(testDb.db, parent.id))).toHaveLength(1);
     });
+  });
+
+  it('creates one child and answers 409 to the loser when two reroutes of the same ticket race', async () => {
+    const parent = await issue(ctx, person, ticketRequest(gpA));
+    const winner = { ...ticketRequest(specialistB), reason: 'cost' };
+    const loser = ticketRequest(specialistB);
+    const before = await count(schema.tickets);
+    const result = await issueTicket({ db: testDb.db, cipher, clock: ctx.clock }, person.id, loser, {
+      parent: { ticketId: parent.id, reason: 'cost' },
+      afterParentRead: async () => {
+        expect((await post(`/me/tickets/${parent.id}/reroute`, person.headers, winner)).statusCode).toBe(201);
+      },
+    });
+    expect(result.kind).toBe('conflict');
+    expect(await count(schema.tickets)).toBe(before + 1);
+    expect((await eventStates(testDb.db, parent.id)).filter((event) => event.to === 'rerouted')).toHaveLength(1);
+    expect(await testDb.db.select().from(schema.tickets).where(eq(schema.tickets.clientRequestId, loser.clientRequestId))).toHaveLength(0);
   });
 
   it('shows the person their own audit trail of reads without any staff name', async () => {
