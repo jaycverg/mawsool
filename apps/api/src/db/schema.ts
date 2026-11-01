@@ -226,6 +226,8 @@ export const sharedBundles = pgTable(
     recipient: text('recipient').notNull(),
     contentCiphertext: text('content_ciphertext'),
     approvedSummaryCiphertext: text('approved_summary_ciphertext'),
+    /** The consent elements the approved summary was written from; empty for one written by hand or when there is none. */
+    summaryBuiltFrom: consentElementEnum('summary_built_from').array().notNull().default(sql`'{}'`),
     createdAt: at('created_at').notNull(),
     deletedAt: at('deleted_at'),
   },

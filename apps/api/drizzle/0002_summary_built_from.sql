@@ -1,0 +1,1 @@
+ALTER TABLE "shared_bundles" ADD COLUMN "summary_built_from" "consent_element"[] DEFAULT '{}' NOT NULL;

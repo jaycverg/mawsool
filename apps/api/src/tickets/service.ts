@@ -99,6 +99,7 @@ export async function issueTicket(deps: TicketDeps, personId: string, request: C
   if (!request.consents.includes('ticket')) return { kind: 'invalid', message: 'The ticket element is required' };
   if (!HANDOFF_WINDOWS_DAYS.includes(request.windowDays)) return { kind: 'invalid', message: 'That hand-off window is not offered' };
   if (request.approvedSummary !== null && !withinWordLimit(request.approvedSummary)) return { kind: 'invalid', message: 'The summary is over the word limit' };
+  if (request.summaryBuiltFrom.some((element) => !request.consents.includes(element))) return { kind: 'invalid', message: 'The summary was built from something that is not shared' };
 
   const [service] = await db.select().from(schema.services).where(eq(schema.services.id, request.serviceId)).limit(1);
   if (!service || service.facilityId === null || service.tier === 'self_help') return { kind: 'invalid', message: 'That service takes no referral' };
@@ -157,6 +158,7 @@ export async function issueTicket(deps: TicketDeps, personId: string, request: C
         recipient: service.id,
         contentCiphertext: cipher.encrypt(JSON.stringify(content), bundleContext(ticket.id)),
         approvedSummaryCiphertext: request.approvedSummary ? cipher.encrypt(request.approvedSummary, summaryContext(ticket.id)) : null,
+        summaryBuiltFrom: request.approvedSummary ? [...new Set(request.summaryBuiltFrom)] : [],
         createdAt: now,
       });
 

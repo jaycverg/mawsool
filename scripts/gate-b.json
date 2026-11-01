@@ -505,12 +505,24 @@
   },
   {
     "id": "summary-removed-with-what-it-was-built-from",
-    "sentence": "Stopping an element removes the approved summary and the ticket's logged drafts in the same transaction, and says so",
+    "sentence": "Stopping an element the approved summary was built from removes the summary and the ticket's logged drafts in the same transaction and says so; stopping any other element, or a hand-written summary, leaves both",
     "project": "apps/api",
     "tests": [
       {
         "file": "test/revoke-reach.test.ts",
-        "name": "removes the approved summary and the logs when an element is stopped, and says so"
+        "name": "removes the approved summary and the logs when an element it was built from is stopped"
+      },
+      {
+        "file": "test/revoke-reach.test.ts",
+        "name": "leaves the summary, its record and its logs alone when an element it was not built from is stopped"
+      },
+      {
+        "file": "test/revoke-reach.test.ts",
+        "name": "leaves a hand-written summary alone whatever is stopped"
+      },
+      {
+        "file": "test/revoke-reach.test.ts",
+        "name": "removes a draft left under the ticket\u2019s own request id"
       },
       {
         "file": "test/revoke-reach.test.ts",
