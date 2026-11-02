@@ -118,10 +118,14 @@ const plain = (text: string) => text.replace(/<\/?\w+>/g, '');
 const LATIN = /[A-Za-z]/;
 const ARABIC = /[؀-ۿ]/;
 
+/** The part of the decline words that says the clinic can still read what was shared, which must stay in the copy in each language. */
+const STILL_READABLE: Record<Locale, string> = { en: 'can still read what you shared', ar: 'الاطلاع على ما شاركتَه' };
+
 /** The ticket declined from the confirm box that Decline or "I don't want this any more" opens, and what the screen then says. */
 async function expectDeclineWords(page: Page, locale: Locale, id: string): Promise<void> {
   const dialog = page.getByRole('alertdialog');
   await expect(dialog).toContainText(plain(msg(locale, 'ticket.declineConfirm')));
+  await expect(dialog).toContainText(STILL_READABLE[locale]);
   // The words name what is still true, and point at the control that ends it.
   const link = dialog.locator('[data-stop-sharing-link]');
   await expect(link).toHaveCount(1);
@@ -137,6 +141,7 @@ async function expectDeclineWords(page: Page, locale: Locale, id: string): Promi
   ]);
   const note = page.locator('[data-declined-note]');
   await expect(note).toContainText(plain(msg(locale, 'ticket.declinedNote')));
+  await expect(note).toContainText(STILL_READABLE[locale]);
   // The copy is true: the clinic can still open what was shared.
   expect((await clinicRead(id)).bundle).toBe(200);
 
