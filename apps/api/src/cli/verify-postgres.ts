@@ -4,9 +4,12 @@
 //   3. every migration, through the invite tables, is applied and leaves the tables, checks and indexes the code relies on;
 //   4. two connections spending the same signed-request nonce at once leave exactly one invite and one nonce;
 //   5. one real "Stop sharing" through the app: the log rows made from the note go, the others and the approved summary stay;
-//   6. "Delete everything" removes the invite a person claimed and keeps the ticket and its source.
+//   6. "Delete everything" removes the invite a person claimed and keeps the ticket and its source;
+//   7. the demo's POST /demo/reset and one sweep (the +7 days step) leave the funnel and the Urdu row the dashboard reads
+//      equal to the ones PGlite gives for the same steps, with the Urdu row flagged 18 to 22 points below overall.
 // It works in a database of its own, created here and dropped at the end, so the dev data is never touched.
 import { randomUUID } from 'node:crypto';
+import type { EquityCell, EquityResponse, FunnelResponse } from '@mawsool/types';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { readFileSync } from 'node:fs';
@@ -15,13 +18,14 @@ import { and, inArray, eq, sql } from 'drizzle-orm';
 import pg from 'pg';
 import { ManualClock } from '../clock';
 import { loadConfig } from '../config';
-import { connect, schema } from '../db/client';
+import { connect, schema, type Db } from '../db/client';
 import { MIGRATIONS_FOLDER } from '../db/migrate';
 import { SWEEP_QUEUE, startJobs } from '../jobs';
 import { acceptScreen, formatInviteCode } from '../inbound/service';
 import { runSeed } from '../seed/run';
 import { sweep } from '../sweep';
-import { createTestApp } from '../../test/helpers/app';
+import { createTestApp, signIn } from '../../test/helpers/app';
+import { createTestDb } from '../../test/helpers/db';
 import { FREE_TEXT, issue, rawBundle, registerPerson, serviceAt, ticketRequest } from '../../test/helpers/flow';
 
 const POOLS = 8;
@@ -32,6 +36,43 @@ const check = (ok: boolean, message: string) => {
   say(`${ok ? 'ok     ' : 'FAILED '} ${message}`);
   if (!ok) problems.push(message);
 };
+
+/** What the dashboard reads from a database: the funnel for all time and for the last 90 days, and the Urdu row of the equity view. */
+interface DemoFigures {
+  funnel: FunnelResponse[];
+  urdu: EquityCell | null;
+}
+
+/**
+ * Runs the demo's steps against a database through the real routes, as the admin panel does: reset, read the dashboard's
+ * figures, move the demo clock +7 days (which runs one sweep) and read them again. The same function runs on Compose
+ * Postgres and on PGlite, so the two can be held to each other.
+ */
+async function demoFigures(database: Db): Promise<{ resetStatus: number; advanceStatus: number; markedOverdue: number; afterReset: DemoFigures; afterSweep: DemoFigures }> {
+  // Staff have to exist to sign in; the reset below reloads the seed anyway and keeps these sign-ins.
+  await runSeed(database);
+  const demo = await createTestApp(database, { demoMode: true });
+  try {
+    const admin = { authorization: `Bearer ${await signIn(demo, 'admin@demo.mawsool.test')}` };
+    const ops = { authorization: `Bearer ${await signIn(demo, 'ops@demo.mawsool.test')}` };
+    const read = async <T>(url: string): Promise<T> => {
+      const res = await demo.app.inject({ method: 'GET', url, headers: ops });
+      if (res.statusCode !== 200) throw new Error(`${url} answered ${res.statusCode}`);
+      return res.json() as T;
+    };
+    const figures = async (): Promise<DemoFigures> => {
+      const equity = await read<EquityResponse>('/metrics/equity');
+      const urdu = equity.dimensions.find((entry) => entry.dimension === 'language')?.rows.find((row) => row.value === 'ur')?.cell;
+      return { funnel: [await read<FunnelResponse>('/metrics/funnel?period=all'), await read<FunnelResponse>('/metrics/funnel?period=90d')], urdu: urdu && !('suppressed' in urdu) ? urdu : null };
+    };
+    const reset = await demo.app.inject({ method: 'POST', url: '/demo/reset', headers: admin });
+    const afterReset = await figures();
+    const advance = await demo.app.inject({ method: 'POST', url: '/demo/clock/advance', headers: admin, payload: { by: '7d' } });
+    return { resetStatus: reset.statusCode, advanceStatus: advance.statusCode, markedOverdue: advance.json().markedOverdue as number, afterReset, afterSweep: await figures() };
+  } finally {
+    await demo.app.close();
+  }
+}
 
 const databaseName = `gate_${randomUUID().replaceAll('-', '').slice(0, 12)}`;
 const adminUrl = new URL(config.databaseUrl);
@@ -143,6 +184,21 @@ try {
     check((await db.execute(sql`SELECT count(*)::int AS n FROM inbound_invites WHERE ticket_id = ${fromInvite.id}`)).rows[0]!.n === 0, 'and no invite still points at it');
   } finally {
     await ctx.app.close();
+  }
+
+  // 7. The demo on real Postgres: the reset reloads the seed, one sweep runs (the +7 days step runs one), and the figures the
+  // dashboard reads (the funnel and the Urdu row) are the ones PGlite gives for the same steps.
+  const onPostgres = await demoFigures(db);
+  const pglite = await createTestDb();
+  const onPglite = await demoFigures(pglite.db).finally(() => pglite.close());
+  check(onPostgres.resetStatus === 200 && onPostgres.advanceStatus === 200, 'POST /demo/reset and the +7 days step answer 200 on Postgres');
+  check(onPostgres.markedOverdue > 0 && onPostgres.markedOverdue === onPglite.markedOverdue, `the sweep after the step marked ${onPostgres.markedOverdue} tickets overdue on Postgres, as it did on PGlite (${onPglite.markedOverdue})`);
+  for (const when of ['afterReset', 'afterSweep'] as const) {
+    const urdu = onPostgres[when].urdu;
+    check(urdu !== null && urdu.flagged && urdu.gapPoints <= -18 && urdu.gapPoints >= -22, `the Urdu row ${when === 'afterReset' ? 'after the reset' : 'after the sweep'} is flagged 18 to 22 points below overall (${urdu?.gapPoints ?? 'missing'})`);
+    check(JSON.stringify(onPostgres[when].urdu) === JSON.stringify(onPglite[when].urdu), `the Urdu row ${when === 'afterReset' ? 'after the reset' : 'after the sweep'} is the same on Postgres and PGlite`);
+    check(JSON.stringify(onPostgres[when].funnel) === JSON.stringify(onPglite[when].funnel), `the funnel ${when === 'afterReset' ? 'after the reset' : 'after the sweep'} is the same on Postgres and PGlite`);
+    check(onPostgres[when].funnel.every((view) => typeof view.stages[0]?.count === 'number'), `the funnel's first stage is a figure, not a suppressed cell, ${when === 'afterReset' ? 'after the reset' : 'after the sweep'} on Postgres`);
   }
 } catch (error) {
   problems.push(`threw: ${error instanceof Error ? error.stack : String(error)}`);
