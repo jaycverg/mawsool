@@ -31,6 +31,37 @@ These live under the message namespace `clinicalCopy` in both languages, and are
 - the "what this means" line for each severity band of the PHQ-9 and GAD-7, and for the two WHO-5 outcomes;
 - the "what it does not mean" line shown on every result.
 
+## Diagnostic labels the person-facing copy never uses
+
+A result tells a person what a score suggests and what it does not mean. It never tells them they have, suffer from or
+were diagnosed with a condition. `apps/person/test/diagnostic-labels.test.ts` fails when any message a person reads
+(`apps/person/messages` and `packages/ui/messages`, in both languages) contains one of the labels below, and fails when
+this list and the test's list differ. The clinician app's messages are held to the same list. They name each instrument
+by what it measures ("Depression (PHQ-9)", from the instrument's published title and the design board) beside a score and
+its band: that names the measure and is not a statement about the person, and it stays only while no label below appears
+there. A symptom word on its own ("anxiety", "mood") is not a label. Instrument item wording is published and is not part
+of these files. Add a label here and in the test together.
+
+English:
+
+- you have depression, you have anxiety, you have a depressive, you have an anxiety disorder
+- you are depressed, you're depressed, you suffer from, you are suffering from
+- you have been diagnosed, you were diagnosed, diagnosed with, your diagnosis
+- major depressive, major depression, clinical depression, depressive disorder, anxiety disorder
+- generalised anxiety, generalized anxiety, bipolar, ptsd, post-traumatic, psychosis, schizophren
+- mental illness, mental disorder
+
+Arabic:
+
+- لديك اكتئاب، لديك اضطراب، أنت مكتئب، أنت مصاب
+- مصاب بالاكتئاب، مصاب بالقلق، تعاني من الاكتئاب، تعاني من اضطراب
+- تم تشخيصك، شُخِّصت، تشخيصك
+- اضطراب الاكتئاب، اضطراب اكتئابي، اضطراب القلق، اكتئاب سريري
+- اضطراب ثنائي القطب، اضطراب ما بعد الصدمة، فصام، ذهان، اضطراب نفسي، مرض نفسي
+
+The Arabic labels were written for this build and have not been read by a native Arabic speaker with mental health
+experience, so the list may miss phrasings a native reader would flag.
+
 ## Open items
 
 - A clinician has not reviewed any of this copy.

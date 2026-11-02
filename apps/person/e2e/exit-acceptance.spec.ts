@@ -473,12 +473,13 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect(control[0]!.url).toContain('thiqa-al_ain');
 
     // Everything else that went to the API is the unfiltered directory read and the demo clock's offset read: two plain
-    // GETs of fixed addresses, with no query, no body and no credential, and nothing more.
+    // GETs of fixed addresses with no body and no credential, and nothing more. The directory's one query value is the
+    // page's own language, so its names come back in it; no filter and nothing about the person goes with it.
     const toApi = seen.filter((request) => !request.url.includes('control='));
     expect(toApi.length, 'the directory was fetched, so the interception was live').toBeGreaterThanOrEqual(1);
-    expect(toApi.some((request) => request.url === `${API}/services`)).toBe(true);
+    expect(toApi.some((request) => request.url === `${API}/services?locale=${locale}`)).toBe(true);
     for (const request of toApi) {
-      expect([`${API}/services`, `${API}/clock`]).toContain(request.url);
+      expect([`${API}/services?locale=${locale}`, `${API}/clock`]).toContain(request.url);
       expect(request).toMatchObject({ method: 'GET', body: null });
       expect(request.headers['authorization']).toBeUndefined();
       expect(request.headers['cookie']).toBeUndefined();

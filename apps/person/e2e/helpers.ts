@@ -60,7 +60,7 @@ export async function waitForStored(page: Page, key: string): Promise<void> {
  * and the sample directory is saved on the device.
  */
 export async function visitOnline(page: Page, locale: Locale): Promise<void> {
-  const directory = page.waitForResponse((response) => response.url() === `${API}/services` && response.ok());
+  const directory = page.waitForResponse((response) => response.url() === `${API}/services?locale=${locale}` && response.ok());
   await page.goto(`/${locale}/`);
   await directory;
   await page.evaluate(async () => {

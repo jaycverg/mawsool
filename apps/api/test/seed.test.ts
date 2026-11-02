@@ -24,6 +24,15 @@ describe('seed content', () => {
     expect(new Set(others.map((s) => s.facilityId))).toEqual(new Set([FACILITY_A_ID, FACILITY_B_ID]));
   });
 
+  it('gives every service and facility an Arabic name, and every facility Arabic contact text, with no Latin letter in any of them', () => {
+    for (const service of data.services) expect(service.nameAr, service.name).toMatch(/^[^A-Za-z]*[؀-ۿ][^A-Za-z]*$/);
+    for (const facility of data.facilities) {
+      expect(facility.nameAr, facility.name).toMatch(/^[^A-Za-z]*[؀-ۿ][^A-Za-z]*$/);
+      expect(facility.contactTextAr, facility.name).toMatch(/^[^A-Za-z]*[؀-ۿ][^A-Za-z]*$/);
+    }
+    expect(new Set(data.services.map((service) => service.nameAr)).size).toBe(data.services.length);
+  });
+
   it('covers tele, every region, and all five tiers', () => {
     expect(new Set(data.services.map((s) => s.tier))).toEqual(new Set(['self_help', 'community', 'tele', 'gp', 'specialist']));
     expect(new Set(data.services.map((s) => s.region))).toEqual(new Set(REGIONS));

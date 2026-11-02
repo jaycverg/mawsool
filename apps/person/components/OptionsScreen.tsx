@@ -53,9 +53,9 @@ export function OptionsScreen() {
   const fetchDirectory = useCallback(
     (d: Device) => {
       setDirectory('loading');
-      void loadDirectory({ storage: d.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, now: deviceNow }).then(setDirectory, () => setDirectory(null));
+      void loadDirectory({ storage: d.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, now: deviceNow }).then(setDirectory, () => setDirectory(null));
     },
-    [],
+    [lang],
   );
 
   useEffect(() => {
@@ -315,7 +315,7 @@ function OptionCard({ t, option, insurance, lead, onChoose }: { t: Translate; op
       <div>
         <h2 className={`font-bold leading-6 ${compact ? 'text-[16px]' : 'text-[18px]'}`}>{t(`tier.${tier}`)}</h2>
         <p className="mt-0.5 text-[14px] text-muted">
-          <span dir="auto">{service.name}</span> · {t(`regionName.${service.region}`)}
+          <span dir="auto" data-service-name>{service.name}</span> · {t(`regionName.${service.region}`)}
         </p>
       </div>
       <div className="flex flex-wrap gap-1.5 text-[13px]">

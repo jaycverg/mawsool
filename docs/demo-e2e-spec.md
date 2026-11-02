@@ -16,6 +16,9 @@ The demo script (steps 1 to 12) runs in Arabic and in English against the real A
 - `dashboard-toggle-and-rtl`: The ops dashboard has the Arabic and English toggle and runs right to left in Arabic
 - `dashboard-holds-the-board-and-plan-tokens`: The ops dashboard holds the board's type, colours, radii, chart sizes and 44 px tap targets
 - `snapshot-ops-dashboard`: The ops dashboard matches the committed snapshot
+- `overdue-ticket-prompts-the-person-to-reroute`: A ticket past its deadline goes overdue on the demo clock, the phone shows the overdue prompt, the prompt leads to a reroute that moves the old ticket to rerouted, and the ops dashboard's overdue list counts the tickets the table holds as overdue
+- `seam-equity-opt-in-reaches-the-dashboard-row`: A person who opts in to the group totals on the phone adds one ticket to their age band's row on the ops dashboard, and no other row moves
+- `seam-crisis-contact-reaches-the-crisis-figures`: A crisis screen shown on a phone, a number tapped and contact confirmed add one to the dashboard's screens shown, called a line and contact confirmed
 
 ## Source
 
@@ -160,6 +163,37 @@ async function expectReadable(dash: Page, when: string): Promise<void> {
   const gap = Number(await urdu.getAttribute('data-gap'));
   expect(gap, `Urdu gap ${when}`).toBeLessThanOrEqual(-18);
   expect(gap, `Urdu gap ${when}`).toBeGreaterThanOrEqual(-22);
+}
+
+/** Where a ticket page is, and which ticket it shows. */
+const ticketPage = (locale: Locale) => new RegExp(`/${locale}/ticket/\\?id=`);
+const ticketIdOf = (page: Page) => new URL(page.url()).searchParams.get('id')!;
+const formatNumber = (locale: Locale, value: number) => new Intl.NumberFormat(locale === 'ar' ? 'ar-AE-u-nu-latn' : 'en-GB').format(value);
+/** Every whole number in a piece of text, in order: "28 of 40" gives [28, 40]. */
+const numbersIn = (text: string) => (text.match(/\d[\d,]*/g) ?? []).map((digits) => Number(digits.replaceAll(',', '')));
+
+/**
+ * A referral made the way a person makes one: a PHQ-9 of 11 on the phone, the lead option (a GP), scores ticked on the
+ * consent screen, and Send. With `equity`, the group-totals opt-in is ticked first with the age band given. Returns the
+ * ticket's id.
+ */
+async function referralFromPhone(page: Page, locale: Locale, options: { equityAgeBand?: string } = {}): Promise<string> {
+  await page.goto(`/${locale}/`);
+  await takeCheckIn(page, locale, 'phq9', [2, 2, 2, 1, 1, 1, 1, 1, 0]);
+  await expect(page.locator('[data-score]')).toHaveText('11');
+  await page.getByRole('link', { name: msg(locale, 'result.options'), exact: true }).click();
+  await expect(page.locator('[data-tier][data-lead]')).toHaveAttribute('data-tier', 'gp');
+  await page.locator('[data-tier][data-lead]').getByRole('button', { name: msg(locale, 'options.choose'), exact: true }).click();
+  await expect(page.locator('[data-screen="consent"]')).toBeVisible();
+  await page.locator('input[data-element="scores"]').check();
+  if (options.equityAgeBand) {
+    await page.locator('#equity-on').check();
+    await page.locator('#equity-ageBand').selectOption(options.equityAgeBand);
+  }
+  await page.getByRole('button', { name: msg(locale, 'consent.send'), exact: true }).click();
+  await expect(page).toHaveURL(ticketPage(locale));
+  await expect(page.locator('[data-ticket]')).toBeVisible();
+  return ticketIdOf(page);
 }
 
 const CASES: Record<string, (ctx: Context) => Promise<void>> = {
@@ -615,6 +649,109 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await dash.locator('[data-filter="period"]').selectOption('all');
     await expect(dash.locator('[data-equity-row="ur"]')).toBeVisible();
     await snapshot(dash, `ops-dashboard-${locale}`);
+  },
+
+  async 'overdue-ticket-prompts-the-person-to-reroute'({ page, context, browser, locale }) {
+    test.setTimeout(300_000);
+    const admin = await signedInPage(context, OPS, ADMIN);
+    await resetFromPanel(admin, locale);
+    const id = await referralFromPhone(page, locale);
+    expect((await stored(id)).ticket.state).toBe('issued');
+    await expect(page.locator('[data-prompt="overdue"]')).toHaveCount(0);
+
+    // Three weeks pass on the demo clock, which is past the deadline of any hand-off window; moving it runs the sweep.
+    await admin.bringToFront();
+    await advanceFromPanel(admin, '3w', 21);
+    const clockRead = page.waitForResponse((response) => response.url() === `${API}/clock`);
+    await page.reload();
+    await clockRead;
+    const prompt = page.locator('[data-prompt="overdue"]');
+    await expect(prompt).toBeVisible();
+    await expect(prompt).toContainText(msg(locale, 'ticket.overduePrompt'));
+    const overdue = await stored(id);
+    expect(overdue.ticket.state).toBe('overdue');
+    expect(overdue.events.at(-1)).toMatchObject({ toState: 'overdue', actor: 'system' });
+
+    // The ops dashboard's overdue list counts exactly the tickets the table holds as overdue, this one among them.
+    const inTable = ((await (await fetch(`${INSPECT}/ticket-state-counts`)).json()) as { overdue?: number }).overdue ?? 0;
+    expect(inTable).toBeGreaterThanOrEqual(10); // the list is hidden under ten, so a count under ten would prove nothing here
+    const dash = await dashboard(browser, locale);
+    const list = dash.locator('[data-overdue-list]');
+    await expect(list).toBeVisible();
+    await expect(list.locator('p').first()).toContainText(omsg(locale, 'dash.timeliness.overdueCount', { count: formatNumber(locale, inTable) }));
+    expect(await list.locator('li').count()).toBeGreaterThan(0);
+
+    // The prompt leads to the options screen as a reroute, and sending a new referral moves the overdue one to rerouted.
+    await prompt.getByRole('button', { name: msg(locale, 'ticket.findAnother'), exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/${locale}/options/\\?reroute=${id}&reason=wait_too_long`));
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(msg(locale, 'options.rerouteHeading'));
+    await page.locator('[data-tier][data-lead]').getByRole('button', { name: msg(locale, 'options.choose'), exact: true }).click();
+    await expect(page.locator('[data-screen="consent"]')).toBeVisible();
+    await page.getByRole('button', { name: msg(locale, 'consent.send'), exact: true }).click();
+    await expect(page).toHaveURL(ticketPage(locale));
+    const child = ticketIdOf(page);
+    expect(child).not.toBe(id);
+    expect((await stored(child)).ticket).toMatchObject({ state: 'issued' });
+    const parent = await stored(id);
+    expect(parent.ticket.state).toBe('rerouted');
+    expect(parent.events.at(-1)).toMatchObject({ fromState: 'overdue', toState: 'rerouted', actor: 'person' });
+  },
+
+  async 'seam-equity-opt-in-reaches-the-dashboard-row'({ page, context, browser, locale }) {
+    test.setTimeout(300_000);
+    await resetFromPanel(await signedInPage(context, OPS, ADMIN), locale);
+    /** The number of tickets the age-band row for a band shows, with the row read as a figure and not as "suppressed". */
+    const groupSize = async (dash: Page, band: string): Promise<number> => {
+      await dash.locator('[data-dimension="age_band"]').click();
+      const row = dash.locator(`[data-equity-rows="age_band"] [data-equity-row="${band}"]`);
+      await expect(row, `the ${band} row is a figure`).toBeVisible();
+      await expect(row).not.toHaveAttribute('data-suppressed', /.*/);
+      const text = await row.locator(':scope > span:last-child').innerText();
+      return numbersIn(text).at(-1)!;
+    };
+    const before = await dashboard(browser, locale);
+    const [chosenBefore, otherBefore] = [await groupSize(before, '25_34'), await groupSize(before, '35_44')];
+
+    // On the phone: opt in to the group totals with the age band 25 to 34, and send a referral.
+    await referralFromPhone(page, locale, { equityAgeBand: '25_34' });
+
+    const after = await dashboard(browser, locale);
+    expect(await groupSize(after, '25_34'), 'the chosen age band gains the ticket').toBe(chosenBefore + 1);
+    expect(await groupSize(after, '35_44'), 'another age band does not move').toBe(otherBefore);
+  },
+
+  async 'seam-crisis-contact-reaches-the-crisis-figures'({ context, browser, locale }) {
+    test.setTimeout(300_000);
+    await resetFromPanel(await signedInPage(context, OPS, ADMIN), locale);
+    const figures = async (dash: Page) => {
+      const read = async (stat: string) => numbersIn(await dash.locator(`[data-crisis-stat="${stat}"] [data-value]`).innerText());
+      return { shown: (await read('shown'))[0]!, called: await read('called'), confirmed: await read('confirmed') };
+    };
+    const before = await figures(await dashboard(browser, locale));
+    expect(before.called).toHaveLength(2); // a share is a figure ("28 of 40"), not "suppressed"
+    expect(before.confirmed).toHaveLength(2);
+
+    // On another phone: PHQ-9 item 9 "several days", then Call now, then "Yes, I spoke to someone".
+    const phone = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const rashid = await phone.newPage();
+    const posts: { body: Record<string, unknown>; status: number }[] = [];
+    rashid.on('response', (response) => {
+      const request = response.request();
+      if (request.url() === `${API}/crisis-events` && request.method() === 'POST') posts.push({ body: JSON.parse(request.postData() ?? '{}'), status: response.status() });
+    });
+    await rashid.goto(`${BASE}/${locale}/`);
+    await takeCheckIn(rashid, locale, 'phq9', [0, 0, 0, 0, 0, 0, 0, 0, 1]);
+    await expect(rashid.getByRole('heading', { level: 1 })).toHaveText(msg(locale, 'crisis.heading'));
+    await rashid.getByRole('button', { name: msg(locale, 'crisis.callNow'), exact: true }).click();
+    await rashid.locator('a[href="tel:800725462"]').click();
+    await rashid.getByRole('button', { name: msg(locale, 'crisis.reachedYes'), exact: true }).click();
+    await expect.poll(() => posts.some((post) => post.body['humanContactConfirmed'] === true && post.status < 300), { timeout: 15_000 }).toBe(true);
+    await phone.close();
+
+    const after = await figures(await dashboard(browser, locale));
+    expect(after.shown, 'screens shown').toBe(before.shown + 1);
+    expect(after.called, 'a number was tapped').toEqual([before.called[0]! + 1, before.called[1]! + 1]);
+    expect(after.confirmed, 'contact was confirmed').toEqual([before.confirmed[0]! + 1, before.confirmed[1]! + 1]);
   },
 };
 

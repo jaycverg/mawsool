@@ -25,12 +25,12 @@ export function DeviceSync() {
     const lang = isLocale(locale) ? locale : 'en';
 
     syncNow(lang);
-    refreshDirectory();
+    refreshDirectory(lang);
     refreshDemoClock({ restore: true });
     const onOnline = () => {
       void repairNow(lang);
       syncNow(lang);
-      refreshDirectory();
+      refreshDirectory(lang);
       refreshDemoClock({ restore: false });
     };
     // A presenter moves the clock from the admin panel in another tab: coming back to this one asks again.

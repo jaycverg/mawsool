@@ -4,6 +4,7 @@ import {
   CreatedTicketSchema,
   FhirBundleSchema,
   ErrorResponseSchema,
+  LocaleQuerySchema,
   PersonTicketListSchema,
   PersonTicketViewSchema,
   RerouteRequestSchema,
@@ -11,6 +12,7 @@ import {
   TicketEventRequestSchema,
   TicketEventResultSchema,
   type Actor,
+  type Locale,
   type TicketEventRequest,
   type TicketEventResult,
 } from '@mawsool/types';
@@ -21,6 +23,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { readBundle, revokeConsent, type ConsentDeps } from '../consents/service';
 import { schema } from '../db/client';
+import { localized, personLocale } from '../locale';
 import { personIdOf, sendError } from '../plugins/auth';
 import { facilityScopedTicket } from '../plugins/facility-scope';
 import { ownedTicket } from '../plugins/ownership';
@@ -106,7 +109,7 @@ async function result(deps: ConsentDeps, ticketId: string): Promise<TicketEventR
   };
 }
 
-function issueReply(reply: FastifyReply, issued: IssueResult, deps: TicketDeps) {
+function issueReply(reply: FastifyReply, issued: IssueResult, deps: TicketDeps, locale: Locale) {
   switch (issued.kind) {
     case 'invalid':
       return sendError(reply, 400, 'invalid_request', issued.message);
@@ -116,7 +119,7 @@ function issueReply(reply: FastifyReply, issued: IssueResult, deps: TicketDeps) 
       return sendError(reply, 404, 'not_found', 'Ticket not found');
     case 'created':
     case 'replayed':
-      return personTicketView(deps.db, issued.ticketId).then((ticket) => reply.code(issued.kind === 'created' ? 201 : 200).send({ created: issued.kind === 'created', ticket: ticket! }));
+      return personTicketView(deps.db, issued.ticketId, locale).then((ticket) => reply.code(issued.kind === 'created' ? 201 : 200).send({ created: issued.kind === 'created', ticket: ticket! }));
   }
 }
 
@@ -132,38 +135,41 @@ export function registerTicketFlowRoutes(app: FastifyInstance, deps: ConsentDeps
     '/tickets',
     { config: { access: 'person' }, schema: { body: CreateTicketRequestSchema, response: { 200: CreatedTicketSchema, 201: CreatedTicketSchema, ...Errors } } },
     async (request, reply) => {
-      const issued = await issueTicket(deps, personIdOf(request), request.body);
-      return issueReply(reply, issued, deps);
+      const personId = personIdOf(request);
+      const issued = await issueTicket(deps, personId, request.body);
+      return issueReply(reply, issued, deps, await personLocale(deps.db, personId, undefined));
     },
   );
 
   typed.get(
     '/me/tickets',
-    { config: { access: 'person' }, schema: { response: { 200: PersonTicketListSchema } } },
+    { config: { access: 'person' }, schema: { querystring: LocaleQuerySchema, response: { 200: PersonTicketListSchema } } },
     async (request) => {
       const personId = personIdOf(request);
+      const locale = await personLocale(deps.db, personId, request.query.locale);
       const rows = await deps.db.select({ id: schema.tickets.id }).from(schema.tickets).where(eq(schema.tickets.personId, personId)).orderBy(asc(schema.tickets.createdAt));
-      return (await Promise.all(rows.map((row) => personTicketView(deps.db, row.id)))).flatMap((view) => (view ? [view] : []));
+      return (await Promise.all(rows.map((row) => personTicketView(deps.db, row.id, locale)))).flatMap((view) => (view ? [view] : []));
     },
   );
 
   typed.get(
     '/me/tickets/:id',
-    { config: { access: 'person' }, preHandler: ownedTicket(deps.db), schema: { params: Params, response: { 200: PersonTicketViewSchema, ...Errors } } },
-    async (request) => (await personTicketView(deps.db, request.ownTicket!.id))!,
+    { config: { access: 'person' }, preHandler: ownedTicket(deps.db), schema: { params: Params, querystring: LocaleQuerySchema, response: { 200: PersonTicketViewSchema, ...Errors } } },
+    async (request) => (await personTicketView(deps.db, request.ownTicket!.id, await personLocale(deps.db, personIdOf(request), request.query.locale)))!,
   );
 
   typed.get(
     '/me/tickets/:id/reads',
-    { config: { access: 'person' }, preHandler: ownedTicket(deps.db), schema: { params: Params, response: { 200: z.array(BundleReadViewSchema), ...Errors } } },
+    { config: { access: 'person' }, preHandler: ownedTicket(deps.db), schema: { params: Params, querystring: LocaleQuerySchema, response: { 200: z.array(BundleReadViewSchema), ...Errors } } },
     async (request) => {
+      const locale = await personLocale(deps.db, personIdOf(request), request.query.locale);
       const rows = await deps.db
-        .select({ at: schema.bundleReads.at, facilityName: schema.facilities.name })
+        .select({ at: schema.bundleReads.at, facilityName: schema.facilities.name, facilityNameAr: schema.facilities.nameAr })
         .from(schema.bundleReads)
         .innerJoin(schema.facilities, eq(schema.facilities.id, schema.bundleReads.facilityId))
         .where(eq(schema.bundleReads.ticketId, request.ownTicket!.id))
         .orderBy(asc(schema.bundleReads.at));
-      return rows.map((row) => ({ at: row.at.toISOString(), role: 'clinician' as const, facilityName: row.facilityName }));
+      return rows.map((row) => ({ at: row.at.toISOString(), role: 'clinician' as const, facilityName: localized(row.facilityName, row.facilityNameAr, locale) }));
     },
   );
 
@@ -179,7 +185,7 @@ export function registerTicketFlowRoutes(app: FastifyInstance, deps: ConsentDeps
     async (request, reply) => {
       const { reason, ...rest } = request.body;
       const issued = await issueTicket(deps, request.ownTicket!.personId, rest, { parent: { ticketId: request.ownTicket!.id, reason } });
-      return issueReply(reply, issued, deps);
+      return issueReply(reply, issued, deps, await personLocale(deps.db, request.ownTicket!.personId, undefined));
     },
   );
 
