@@ -25,9 +25,12 @@ type Reads = { at: string; facilityName: string }[] | 'failed';
 type Load = { status: 'loading' } | { status: 'none' } | { status: 'failed' } | { status: 'ready'; ticket: PersonTicketView; reads: Reads; all: PersonTicketView[] };
 type Panel = 'none' | 'reason' | 'declining' | 'withdrawing';
 
-/** Turns the `<stop>` part of a message into a link to the sharing panel, where each "Stop sharing" control and "Withdraw" live. */
+/**
+ * Turns the `<stop>` part of a message into a link to the sharing panel, where each "Stop sharing" control and "Withdraw" live.
+ * It sits inside a sentence, so its 44 px tap target is vertical padding, which makes the box taller without lifting the line.
+ */
 const stopSharingLink = (chunks: ReactNode) => (
-  <a href="#sharing" className="font-semibold text-accent underline" data-stop-sharing-link>
+  <a href="#sharing" className="py-[13px] font-semibold text-accent underline" data-stop-sharing-link>
     {chunks}
   </a>
 );
@@ -222,7 +225,7 @@ function Ready({ t, lang, ticket, reads, all, savedWarning, notice, panel, setPa
 
       {savedWarning && <p role="status" className="rounded-staff bg-warning px-3.5 py-3 text-[14px] text-warning-ink">{t('savedWarning')}</p>}
       {shareEnded && <p role="status" className="rounded-staff bg-accent-tint px-3.5 py-3 text-[14px]" data-share-ended>{t('withdrawnNote')}</p>}
-      {declinedButShared && <p role="status" className="rounded-staff bg-accent-tint px-3.5 py-3 text-[14px]" data-declined-note>{t.rich('declinedNote', { stop: stopSharingLink })}</p>}
+      {declinedButShared && <p role="status" className="rounded-staff bg-accent-tint px-3.5 py-3 text-[14px] leading-5" data-declined-note>{t.rich('declinedNote', { stop: stopSharingLink })}</p>}
       {earlier && (
         <p className="t-small text-muted" data-earlier>
           {t('earlier')} · <a className="inline-flex min-h-tap items-center font-semibold text-accent" href={href(lang, 'ticket', { id: earlier.id })}>{`${earlier.shortCode.slice(0, 2)}-${earlier.shortCode.slice(2)}`}</a>
@@ -282,7 +285,7 @@ function Ready({ t, lang, ticket, reads, all, savedWarning, notice, panel, setPa
       )}
       {panel === 'declining' && (
         <section role="alertdialog" aria-labelledby="decline-text" className="flex flex-col gap-2 rounded-staff border border-danger p-3">
-          <p id="decline-text" className="text-[15px] font-semibold">{t.rich('declineConfirm', { stop: stopSharingLink })}</p>
+          <p id="decline-text" className="t-body font-semibold">{t.rich('declineConfirm', { stop: stopSharingLink })}</p>
           <button type="button" className="tap rounded-pill bg-danger px-4 font-semibold text-surface" disabled={busy} onClick={onDecline}>{t('declineYes')}</button>
           <button type="button" className="tap rounded-pill border-[1.5px] border-border px-4 font-semibold" onClick={() => setPanel('none')}>{t('keep')}</button>
         </section>

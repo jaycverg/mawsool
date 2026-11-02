@@ -130,6 +130,9 @@ async function expectDeclineWords(page: Page, locale: Locale, id: string): Promi
   const link = dialog.locator('[data-stop-sharing-link]');
   await expect(link).toHaveCount(1);
   await expect(link).toHaveAttribute('href', '#sharing');
+  // Body text: 15 px on 22 in English and 24 in Arabic. The link is a 44 px target, as every control is.
+  expect(await computed(page, '#decline-text', ['font-size', 'line-height'])).toMatchObject({ 'font-size': '15px', 'line-height': locale === 'ar' ? '24px' : '22px' });
+  expect((await computed(page, '#decline-text [data-stop-sharing-link]', [])).height).toBeGreaterThanOrEqual(44);
   await page.getByRole('button', { name: msg(locale, 'ticket.declineYes'), exact: true }).click();
 
   await expect(page.locator('[data-step="declined"]')).toHaveAttribute('data-done', 'true');
@@ -142,6 +145,9 @@ async function expectDeclineWords(page: Page, locale: Locale, id: string): Promi
   const note = page.locator('[data-declined-note]');
   await expect(note).toContainText(plain(msg(locale, 'ticket.declinedNote')));
   await expect(note).toContainText(STILL_READABLE[locale]);
+  // The board's tinted note is 14 px on 20, and its link is a 44 px target too.
+  expect(await computed(page, '[data-declined-note]', ['font-size', 'line-height'])).toMatchObject({ 'font-size': '14px', 'line-height': '20px' });
+  expect((await computed(page, '[data-declined-note] [data-stop-sharing-link]', [])).height).toBeGreaterThanOrEqual(44);
   // The copy is true: the clinic can still open what was shared.
   expect((await clinicRead(id)).bundle).toBe(200);
 
@@ -863,9 +869,14 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
   async 'snapshot-ticket'({ page, context, locale }) {
     // A fixed ticket, so every date is the same in every run; the code and the QR are masked as well.
     const id = '5b5d2f6e-0a0e-4a45-9d2c-3c7e1a4e9a11';
+    // What the API serves for the page's language: the Arabic run is given Arabic text, as a real Arabic ticket carries.
+    const names =
+      locale === 'ar'
+        ? { serviceName: 'نموذج: مركز الرعاية الأولية 1', clinicName: 'نموذج: مركز الرعاية الأولية · مدينة خليفة', clinicContact: 'مكتب استقبال نموذجي. الاستقبال مفتوح من 8:00 إلى 16:00؛ اسأل عن مكتب الإحالات.' }
+        : { serviceName: 'Sample primary care centre 1', clinicName: 'Sample PHC, Khalifa City', clinicContact: 'Sample clinic. Reception is open 8:00 to 16:00; ask for the referral desk.' };
     const ticket = {
       id, shortCode: 'MW4K7Q', qrPayload: 'MAWSOOL:TICKET:MW4K7Q', tier: 'gp', state: 'acknowledged', language: locale, deadlineAt: '2026-11-05T23:59:59+04:00', source: 'app',
-      serviceId: '6c6d2f6e-0a0e-4a45-9d2c-3c7e1a4e9a22', serviceName: 'Sample primary care centre 1', clinicName: 'Sample PHC, Khalifa City', clinicContact: 'Sample clinic. Reception is open 8:00 to 16:00; ask for the referral desk.',
+      serviceId: '6c6d2f6e-0a0e-4a45-9d2c-3c7e1a4e9a22', ...names,
       parentTicketId: null, createdAt: '2026-10-29T08:00:00+04:00',
       events: [
         { seq: 1, fromState: null, toState: 'issued', actor: 'person', reason: null, selfConfirmed: false, at: '2026-10-29T08:00:00+04:00' },
@@ -879,7 +890,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await context.clock.setFixedTime(new Date('2026-11-02T08:00:00+04:00'));
     // The screen asks for the page's language with every read, so each address carries it.
     await page.route(`${API}/me/tickets/${id}?locale=${locale}`, (route) => route.fulfill({ json: ticket }));
-    await page.route(`${API}/me/tickets/${id}/reads?locale=${locale}`, (route) => route.fulfill({ json: [{ at: '2026-10-31T10:00:00+04:00', role: 'clinician', facilityName: 'Sample PHC, Khalifa City' }] }));
+    await page.route(`${API}/me/tickets/${id}/reads?locale=${locale}`, (route) => route.fulfill({ json: [{ at: '2026-10-31T10:00:00+04:00', role: 'clinician', facilityName: names.clinicName }] }));
     await page.route(`${API}/me/tickets?locale=${locale}`, (route) => route.fulfill({ json: [ticket] }));
     await visitOnline(page, locale);
     await page.goto(`/${locale}/ticket/?id=${id}`);
