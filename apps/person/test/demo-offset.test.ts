@@ -15,8 +15,12 @@ describe('the person app on the demo clock', () => {
     const { storage } = memoryStorage();
     await refreshDemoOffset(storage, answer({ demoMode: true, offsetMs: 3 * WEEK }));
     expect(demoOffsetMs()).toBe(3 * WEEK);
-    expect(deviceNow().getTime() - Date.now()).toBeGreaterThanOrEqual(3 * WEEK);
-    expect(deviceNow().getTime() - Date.now()).toBeLessThan(3 * WEEK + 5000);
+    // Read the device clock between two reads of the real one, so the millisecond can tick between calls without moving the bounds.
+    const before = Date.now();
+    const read = deviceNow().getTime();
+    const after = Date.now();
+    expect(read).toBeGreaterThanOrEqual(before + 3 * WEEK);
+    expect(read).toBeLessThanOrEqual(after + 3 * WEEK);
   });
 
   it('keeps the last offset in the phone’s store, and restores it with no network at all', async () => {

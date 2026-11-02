@@ -720,8 +720,12 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     const title = page.locator('a[href="tel:800725462"] > span:last-child > span:first-child');
     await expect(title).toHaveCSS('line-height', 'normal');
     if (!ar) {
-      expect(await computed(page, 'a[href="tel:800725462"] > span:last-child > span:first-child', [])).toMatchObject({ height: 25 });
-      expect(await computed(page, 'a[href="tel:800725462"]', [])).toMatchObject({ height: 97 });
+      // `normal` is the font's own height, which Chromium rounds one way on macOS (the board's 25) and another on Linux (27, in
+      // the official Playwright image). Each platform's figure is exact, and the card is the title plus the same 72 px of padding
+      // and detail line on both.
+      const titleHeight = process.platform === 'darwin' ? 25 : 27;
+      expect(await computed(page, 'a[href="tel:800725462"] > span:last-child > span:first-child', [])).toMatchObject({ height: titleHeight });
+      expect(await computed(page, 'a[href="tel:800725462"]', [])).toMatchObject({ height: titleHeight + 72 });
     }
 
     // Crisis prompt answers are body text: 15/22 in English, 15/24 in Arabic.

@@ -7,5 +7,6 @@
 
 - [`product-spec.md`](product-spec.md): the product spec (epics, stories, demo script), exported as handed over, with the decisions taken during the build noted at the top.
 - [`running-the-demo.md`](running-the-demo.md): how to turn on `DEMO_MODE` and run the demo.
+- [`browser-baselines.md`](browser-baselines.md): how the browser gates' pixel snapshots are made and checked, on macOS and on Linux for CI.
 
 Plans, investigation notes and the design boards live in `.local/` at the workspace root, outside git.
