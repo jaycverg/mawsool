@@ -42,7 +42,16 @@ its band: that names the measure and is not a statement about the person, and it
 there. A symptom word on its own ("anxiety", "mood") is not a label. Instrument item wording is published and is not part
 of these files. Add a label here and in the test together.
 
-English:
+The test reads the bullets under the six headings below, and only those, and compares each list to its own as a set: an
+entry added here and not in the test, or left in the test and removed here, fails it, whatever the prose says.
+
+A band word within three words of a condition word, in either order, is a label too, because it grades a condition the
+person is told they have ("Moderate depression", "you have moderate depression", "severe anxiety", "اكتئاب متوسط",
+"القلق الشديد"). The definite article is ignored in Arabic. The band and condition words are the lists headed "Band words"
+and "Condition words" below; a result names a band on its own ("mild", "moderate") and says what the score suggests, but
+never joins it to the condition's name.
+
+English labels:
 
 - you have depression, you have anxiety, you have a depressive, you have an anxiety disorder
 - you are depressed, you're depressed, you suffer from, you are suffering from
@@ -51,13 +60,29 @@ English:
 - generalised anxiety, generalized anxiety, bipolar, ptsd, post-traumatic, psychosis, schizophren
 - mental illness, mental disorder
 
-Arabic:
+Arabic labels:
 
 - لديك اكتئاب، لديك اضطراب، أنت مكتئب، أنت مصاب
 - مصاب بالاكتئاب، مصاب بالقلق، تعاني من الاكتئاب، تعاني من اضطراب
 - تم تشخيصك، شُخِّصت، تشخيصك
 - اضطراب الاكتئاب، اضطراب اكتئابي، اضطراب القلق، اكتئاب سريري
 - اضطراب ثنائي القطب، اضطراب ما بعد الصدمة، فصام، ذهان، اضطراب نفسي، مرض نفسي
+
+Band words (English):
+
+- minimal, mild, moderate, moderately, severe, severely
+
+Condition words (English):
+
+- depression, depressed, depressive, anxiety, anxious
+
+Band words (Arabic):
+
+- طفيف، بسيط، بسيطة، خفيف، خفيفة، متوسط، متوسطة، شديد، شديدة، حاد، حادة
+
+Condition words (Arabic):
+
+- اكتئاب، اكتئابي، مكتئب، قلق
 
 The Arabic labels were written for this build and have not been read by a native Arabic speaker with mental health
 experience, so the list may miss phrasings a native reader would flag.
