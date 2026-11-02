@@ -721,7 +721,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
 
     // The phone opens its ticket screen afresh: it registers again (the server has no such person) and asks for its ticket,
     // which is not there, so the server answers 404 for it and for its reads. The test provokes exactly those two.
-    for (const path of [`/me/tickets/${ticketId}`, `/me/tickets/${ticketId}/reads`]) {
+    for (const path of [`/me/tickets/${ticketId}?locale=${locale}`, `/me/tickets/${ticketId}/reads?locale=${locale}`]) {
       consoleGuard.allow({ url: `${API}${path}`, expect: 404, reason: 'the server no longer holds this phone’s ticket, which this test provokes on purpose' });
     }
     await page.goto(`/${locale}/ticket/`);

@@ -452,6 +452,9 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await visitOnline(page, locale);
     await takeCheckIn(page, locale, 'phq9', PHQ9_ELEVEN);
     await page.goto(`/${locale}/settings/`);
+    // Let the page's own background reads (the directory and the clock) finish first: they start after the load event, and
+    // on a slow machine they would land after the listener below and be counted as requests Delete everything made.
+    await page.waitForLoadState('networkidle');
     await context.setOffline(true);
     page.on('request', (request) => {
       if (request.url().startsWith(API)) toApi.push(`${request.method()} ${request.url()}`);
@@ -753,11 +756,12 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect((await clinicRead(id)).bundle).toBe(200);
     await page.reload();
     await expect(page.locator('[data-reads] li')).toHaveCount(1);
-    await expect(page.locator('[data-reads]')).toContainText('Sample');
+    // The clinic is named in the page's language: the sample name in English, its Arabic name in Arabic.
+    await expect(page.locator('[data-reads]')).toContainText(locale === 'ar' ? 'نموذج' : 'Sample');
     await expect(page.locator('[data-reads-failed]')).toHaveCount(0);
 
-    consoleGuard.allow({ url: `${API}/me/tickets/${id}/reads`, expect: 'net::ERR_FAILED', reason: 'the test aborts the reads call on purpose to show it is reported as failed, not as nobody opening the ticket' });
-    await page.route('**/me/tickets/*/reads', (route) => route.abort());
+    consoleGuard.allow({ url: `${API}/me/tickets/${id}/reads?locale=${locale}`, expect: 'net::ERR_FAILED', reason: 'the test aborts the reads call on purpose to show it is reported as failed, not as nobody opening the ticket' });
+    await page.route('**/me/tickets/*/reads?locale=*', (route) => route.abort());
     await page.reload();
     await expect(page.locator('[data-reads-failed]')).toHaveText(msg(locale, 'ticket.readsFailed'));
     await expect(page.getByText(msg(locale, 'ticket.readsNone'))).toHaveCount(0);
@@ -868,9 +872,10 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
       ],
     };
     await context.clock.setFixedTime(new Date('2026-11-02T08:00:00+04:00'));
-    await page.route(`${API}/me/tickets/${id}`, (route) => route.fulfill({ json: ticket }));
-    await page.route(`${API}/me/tickets/${id}/reads`, (route) => route.fulfill({ json: [{ at: '2026-10-31T10:00:00+04:00', role: 'clinician', facilityName: 'Sample PHC, Khalifa City' }] }));
-    await page.route(`${API}/me/tickets`, (route) => route.fulfill({ json: [ticket] }));
+    // The screen asks for the page's language with every read, so each address carries it.
+    await page.route(`${API}/me/tickets/${id}?locale=${locale}`, (route) => route.fulfill({ json: ticket }));
+    await page.route(`${API}/me/tickets/${id}/reads?locale=${locale}`, (route) => route.fulfill({ json: [{ at: '2026-10-31T10:00:00+04:00', role: 'clinician', facilityName: 'Sample PHC, Khalifa City' }] }));
+    await page.route(`${API}/me/tickets?locale=${locale}`, (route) => route.fulfill({ json: [ticket] }));
     await visitOnline(page, locale);
     await page.goto(`/${locale}/ticket/?id=${id}`);
     await expect(page.locator('[data-ticket]')).toBeVisible();
@@ -951,8 +956,8 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page.getByText(msg(locale, 'ticket.noTicket'))).toHaveCount(0);
 
     // If that list cannot be had, the person is told so, never that they have no referral.
-    consoleGuard.allow({ url: `${API}/me/tickets`, expect: 'net::ERR_FAILED', reason: 'the test aborts the ticket list on purpose to show a failed list is not reported as no referral' });
-    await page.route(`${API}/me/tickets`, (route) => route.abort());
+    consoleGuard.allow({ url: `${API}/me/tickets?locale=${locale}`, expect: 'net::ERR_FAILED', reason: 'the test aborts the ticket list on purpose to show a failed list is not reported as no referral' });
+    await page.route(`${API}/me/tickets?locale=${locale}`, (route) => route.abort());
     await page.goto(`/${locale}/ticket/`);
     await expect(page.getByRole('alert').filter({ hasText: msg(locale, 'ticket.loadFailed') })).toBeVisible();
     await expect(page.getByText(msg(locale, 'ticket.noTicket'))).toHaveCount(0);

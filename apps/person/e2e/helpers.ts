@@ -70,8 +70,24 @@ export async function visitOnline(page: Page, locale: Locale): Promise<void> {
   await waitForStored(page, 'directory');
 }
 
+/**
+ * The static server's request counts once they have stopped moving. A page that has settled can still have a request on its
+ * way that the browser made on its own (the service worker's check for a newer `sw.js`), and counted after the network was cut
+ * it would look like a request made offline.
+ */
+async function settledStaticHits(): Promise<void> {
+  let last = JSON.stringify(await staticHits());
+  for (let round = 0; round < 20; round += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const now = JSON.stringify(await staticHits());
+    if (now === last) return;
+    last = now;
+  }
+}
+
 /** Cuts the network for the browser and returns the static server's request counts as they stand. */
 export async function goOffline(context: BrowserContext): Promise<Record<string, number>> {
+  await settledStaticHits();
   await context.setOffline(true);
   return staticHits();
 }

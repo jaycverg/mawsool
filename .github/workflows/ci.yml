@@ -21,3 +21,37 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: cp .env.example .env
       - run: pnpm verify
+
+  # The browser gates: the person, clinician and ops apps built for production and driven in a real Chromium with a
+  # real service worker (`gate:phase2`, `gate:phase3`, `gate:phase4`, `gate:c`). Each runs in its own job so one red does
+  # not hide another. They run inside the official Playwright image for the exact Playwright version the person app pins,
+  # because the pixel snapshots depend on the fonts and libraries that image carries. The committed Linux baselines
+  # (`*-chromium-linux.png`) were made in this same image on linux/amd64 by `pnpm e2e:linux --update`; the macOS
+  # ones are for a developer's machine and are not used here. Snapshot comparison stays on: a missing or stale baseline fails
+  # the run. `scripts/e2e-linux-lib.test.mjs` fails when this image or Node version drifts from the pins. How to make the
+  # baselines again is in docs/browser-baselines.md. No Docker is needed by these gates.
+  browser-gates:
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host
+    strategy:
+      fail-fast: false
+      matrix:
+        gate: [phase2, phase3, phase4, c]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: cp .env.example .env
+      - run: pnpm gate:${{ matrix.gate }}
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-${{ matrix.gate }}
+          path: apps/person/test-results
+          if-no-files-found: ignore
