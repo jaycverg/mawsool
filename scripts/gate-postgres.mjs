@@ -2,7 +2,8 @@
 // `pnpm gate:postgres`: the checks PGlite cannot make, against the real Compose Postgres.
 //
 //   - several connections sweeping at once leave exactly one `overdue` event per ticket;
-//   - pg-boss starts, the sweep's schedule exists, and one fire of the queue runs the sweep.
+//   - pg-boss starts, the sweep's schedule exists, and one fire of the queue runs the sweep;
+//   - the demo's reset and one sweep leave the funnel and the Urdu row equal to the ones PGlite gives for the same steps.
 //
 // It needs Docker and fails, never skips, when Docker is not available. It starts the Compose Postgres (and leaves it
 // running; `pnpm db:down` stops it), works in a database of its own that it drops at the end, and takes under a
