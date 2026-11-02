@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { KEYS } from './keys';
 
 const CopySchema = z.object({ fetchedAt: z.iso.datetime({ offset: true }), services: ServicesResponseSchema });
-/** One saved copy per language, so an Arabic reader offline is never handed the English names saved for someone else. */
+/** One saved copy per language, so each page gets its own language's names whenever it has them. */
 const CachedDirectorySchema = z.object({ ar: CopySchema.optional(), en: CopySchema.optional() });
 
 export interface Directory {
@@ -17,8 +17,9 @@ export interface Directory {
 /**
  * The mock service directory for on-device matching. It asks for the whole list with a GET that carries no credential,
  * no header and no body, and one query value: the language of the page, so the names come back in it. Nothing about
- * the person goes with it. The copy is kept on the device for each language, so matching still works offline after one
- * online visit in that language. Returns null when there is neither a network nor a saved copy.
+ * the person goes with it. The copy is kept on the device for each language. Offline, a page gets its own language's copy,
+ * else the other language's, so matching still works after one online visit in either. Returns null when there is neither
+ * a network nor a saved copy.
  */
 export async function loadDirectory(deps: { storage: StorageAdapter; fetch: typeof fetch; apiUrl: string; locale: Locale; now: () => Date }): Promise<Directory | null> {
   try {
@@ -36,7 +37,9 @@ export async function loadDirectory(deps: { storage: StorageAdapter; fetch: type
   }
   try {
     const cached = CachedDirectorySchema.safeParse(await deps.storage.get<unknown>(KEYS.directory));
-    const copy = cached.success ? cached.data[deps.locale] : undefined;
+    // This language's copy first. With none, the other language's saved copy: stored text in the other language, nothing made
+    // up, and matching keeps working offline for someone who visited in one language and then switched.
+    const copy = cached.success ? (cached.data[deps.locale] ?? cached.data[deps.locale === 'ar' ? 'en' : 'ar']) : undefined;
     return copy ? { ...copy, source: 'cache' } : null;
   } catch {
     return null;

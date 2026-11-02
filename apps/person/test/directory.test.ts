@@ -50,14 +50,23 @@ describe('loadDirectory', () => {
     expect(directory).toMatchObject({ source: 'cache', services: [SERVICE], fetchedAt: now().toISOString() });
   });
 
-  it('keeps one copy per language: offline, each page gets its own names and never the other language', async () => {
+  it('keeps one copy per language: offline, each page gets its own names when it has them', async () => {
     const { storage } = memoryStorage();
     await loadDirectory({ ...base, storage, fetch: respond([SERVICE]) });
-    // Only the English copy exists yet, so an Arabic page offline has nothing, rather than English names under an Arabic page.
-    expect(await loadDirectory({ ...base, locale: 'ar', storage, fetch: offline() })).toBeNull();
     await loadDirectory({ ...base, locale: 'ar', storage, fetch: respond([SERVICE_AR]) });
     expect((await loadDirectory({ ...base, locale: 'ar', storage, fetch: offline() }))?.services[0]?.name).toBe(SERVICE_AR.name);
     expect((await loadDirectory({ ...base, locale: 'en', storage, fetch: offline() }))?.services[0]?.name).toBe(SERVICE.name);
+  });
+
+  it('offline in a language never visited, serves the saved copy of the other language rather than nothing, in either direction', async () => {
+    const english = memoryStorage();
+    await loadDirectory({ ...base, storage: english.storage, fetch: respond([SERVICE]) });
+    const arabicPage = await loadDirectory({ ...base, locale: 'ar', storage: english.storage, fetch: offline() });
+    expect(arabicPage).toMatchObject({ source: 'cache', services: [SERVICE], fetchedAt: now().toISOString() });
+
+    const arabic = memoryStorage();
+    await loadDirectory({ ...base, locale: 'ar', storage: arabic.storage, fetch: respond([SERVICE_AR]) });
+    expect(await loadDirectory({ ...base, locale: 'en', storage: arabic.storage, fetch: offline() })).toMatchObject({ source: 'cache', services: [SERVICE_AR] });
   });
 
   it('serves the copy when the server errors or answers with something that is not a directory', async () => {
