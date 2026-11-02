@@ -657,5 +657,20 @@
     "id": "browser-ticket-tab-finds-a-ticket-after-a-failed-local-save",
     "sentence": "After a failed local save the ticket tab finds the ticket from the server, a failed list is an error and a phone that never shared makes no request (browser)",
     "browser": "ticket-tab-finds-a-ticket-after-a-failed-local-save"
+  },
+  {
+    "id": "browser-directory-names-follow-the-language",
+    "sentence": "In Arabic the service names, the clinic's name, contact and read list have no Latin letter on the options, consent and ticket screens, and in English they are the sample names (browser)",
+    "browser": "directory-names-follow-the-language"
+  },
+  {
+    "id": "browser-decline-keeps-the-share-until-stopped",
+    "sentence": "Declining says the clinic can still read what was shared until the person stops sharing, links to that control, and is true (browser)",
+    "browser": "decline-keeps-the-share-until-stopped"
+  },
+  {
+    "id": "browser-no-longer-wanted-says-the-same-as-decline",
+    "sentence": "\"I don't want this any more\" on the day-7 check declines with the same words, link and effect (browser)",
+    "browser": "no-longer-wanted-says-the-same-as-decline"
   }
 ]
