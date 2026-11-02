@@ -19,6 +19,7 @@ import {
   INSURANCE_BY_TIER,
   SEED_ANCHOR,
   SERVICES,
+  SERVICE_NAMES_AR,
   STAFF,
 } from './fixtures';
 import { createRng, type Rng } from './prng';
@@ -310,6 +311,7 @@ export function generateSeed(anchor: Date = SEED_ANCHOR): SeedData {
   const services: SeedData['services'] = SERVICES.map((fixture) => ({
     id: rng.uuid(),
     name: fixture.name,
+    nameAr: SERVICE_NAMES_AR[fixture.name] ?? null,
     tier: fixture.tier,
     modality: fixture.modality,
     languages: fixture.languages,

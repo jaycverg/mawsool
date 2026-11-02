@@ -175,15 +175,25 @@ describe('choosing a service within a tier', () => {
     expect(options.find((o) => o.tier === 'gp')?.service?.name).toBe('Near fast');
   });
 
-  it('breaks ties by name, then id', () => {
+  it('breaks ties by the place in the directory, never by name or id', () => {
     const a = service('gp', { name: 'Alpha', id: '00000000-0000-4000-8000-0000000000bb' });
     const b = service('gp', { name: 'Alpha', id: '00000000-0000-4000-8000-0000000000aa' });
     const c = service('gp', { name: 'Beta', id: '00000000-0000-4000-8000-0000000000cc' });
     const pick = (list: typeof ONE_PER_TIER) =>
       match([phq9(12)], {}, 'thiqa', REGION, list).find((o) => o.tier === 'gp')?.service?.id;
-    expect(pick([a, b, c])).toBe('00000000-0000-4000-8000-0000000000aa');
-    expect(pick([c, b, a])).toBe('00000000-0000-4000-8000-0000000000aa');
-    expect(pick([c])).toBe('00000000-0000-4000-8000-0000000000cc');
+    expect(pick([a, b, c])).toBe(a.id);
+    expect(pick([c, b, a])).toBe(c.id);
+    expect(pick([b, c, a])).toBe(b.id);
+    expect(pick([c])).toBe(c.id);
+  });
+
+  it('offers the same service in every language: names written in another script do not move a tie', () => {
+    const english = [service('gp', { name: 'Clinic B' }), service('gp', { name: 'Clinic A' })];
+    // By name, English would pick the second entry ("Clinic A") and Arabic the first (alef sorts before ba), so a name tie-break differs by language.
+    const arabic = english.map((entry, index) => ({ ...entry, name: ['عيادة أ', 'عيادة ب'][index]! }));
+    const pick = (list: typeof ONE_PER_TIER) => match([phq9(12)], {}, 'thiqa', REGION, list).find((o) => o.tier === 'gp')?.service?.id;
+    expect(pick(arabic)).toBe(pick(english));
+    expect(pick(english)).toBe(english[0]!.id);
   });
 
   it('reports eligibility per need and counts only stated preferences', () => {

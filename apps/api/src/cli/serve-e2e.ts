@@ -5,7 +5,7 @@
 // crisis event, the raw bundle of a ticket (as stored, and decrypted with this harness's own key), its events and
 // consents, a person's equity buckets and the number of registered devices. It is part of this harness, not of the
 // product API. It also returns the sign-in link the API logged for an address (the product never sends it), read from
-// the API's own log lines, and counts invites and nonces.
+// the API's own log lines, counts invites and nonces, and counts tickets by state.
 //
 // Usage: tsx src/cli/serve-e2e.ts   (E2E_API_PORT, E2E_INSPECT_PORT, E2E_ORIGIN, E2E_CLINICIAN_URL, E2E_OPS_URL)
 import { PGlite } from '@electric-sql/pglite';
@@ -141,6 +141,10 @@ const inspect = createServer(async (request, response) => {
     response.end(JSON.stringify(person ? { equityOptIn: person.equityOptIn, ageBand: person.ageBand, gender: person.gender, language: person.language, region: person.region } : null));
   } else if (url.pathname === '/logged-sign-in-link') {
     response.end(JSON.stringify({ link: loggedSignInLink(url.searchParams.get('to') ?? '') }));
+  } else if (url.pathname === '/ticket-state-counts') {
+    // How many tickets sit in each state, counted from the table, so a test can hold the dashboard's overdue list to it.
+    const rows = await db.select({ state: schema.tickets.state, n: sql<number>`count(*)::int` }).from(schema.tickets).groupBy(schema.tickets.state);
+    response.end(JSON.stringify(Object.fromEntries(rows.map((row) => [row.state, row.n]))));
   } else if (url.pathname === '/inbound/counts') {
     const [invites, nonces] = await Promise.all([db.select().from(schema.inboundInvites), db.select().from(schema.inboundNonces)]);
     response.end(JSON.stringify({ invites: invites.length, nonces: nonces.length }));

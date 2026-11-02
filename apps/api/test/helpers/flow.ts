@@ -17,11 +17,11 @@ export interface TestPerson {
   headers: { authorization: string };
 }
 
-/** A device that has registered through the real route. */
-export async function registerPerson({ app }: Pick<TestApp, 'app'>): Promise<TestPerson> {
+/** A device that has registered through the real route, with the language its person uses (English unless said). */
+export async function registerPerson({ app }: Pick<TestApp, 'app'>, locale: 'ar' | 'en' = 'en'): Promise<TestPerson> {
   const id = randomUUID();
   const secret = randomBytes(32).toString('base64url');
-  const res = await app.inject({ method: 'POST', url: '/persons', payload: { id, secret, locale: 'en' } });
+  const res = await app.inject({ method: 'POST', url: '/persons', payload: { id, secret, locale } });
   if (res.statusCode !== 201) throw new Error(`register failed: ${res.statusCode}`);
   return { id, headers: { authorization: `Bearer ${id}.${secret}` } };
 }

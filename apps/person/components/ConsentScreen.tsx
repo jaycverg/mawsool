@@ -72,13 +72,13 @@ export function ConsentScreen() {
       setStoredOptIn(equityStored.optIn);
       setEquity({ on: equityStored.optIn, buckets: equityStored.buckets as Partial<Demographics> });
       if (!pending) return setLoaded('none');
-      const directory = await loadDirectory({ storage: device.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, now: deviceNow });
+      const directory = await loadDirectory({ storage: device.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, now: deviceNow });
       setSharing(saved);
       setConditionsText(saved.conditions.join('\n'));
       const invite = await loadInvite(device.storage).catch(() => null);
       setLoaded({ pending, service: directory?.services.find((service) => service.id === pending.serviceId) ?? null, screenings, base: buildContent(screenings, preferences, saved), sharing: saved, inviteId: invite?.inviteId ?? null });
     })().catch(() => setUnreadable(true));
-  }, [device]);
+  }, [device, lang]);
 
   const content = useMemo<BundleContent>(() => {
     if (!loaded || loaded === 'none') return {};
@@ -212,7 +212,7 @@ export function ConsentScreen() {
         <div className="flex flex-col gap-1">
           <h1 className="t-h1">{t('heading')}</h1>
           <p className="t-body text-muted">
-            {t('sendingTo')} <b className="text-ink" dir="auto">{service?.name ?? ''}</b> <span className="ms-1 inline-flex whitespace-nowrap rounded-chip bg-mock px-2 py-[3px] text-[12px] font-semibold text-mock-ink" data-sample>{t('sample')}</span>
+            {t('sendingTo')} <b className="text-ink" dir="auto" data-service-name>{service?.name ?? ''}</b> <span className="ms-1 inline-flex whitespace-nowrap rounded-chip bg-mock px-2 py-[3px] text-[12px] font-semibold text-mock-ink" data-sample>{t('sample')}</span>
           </p>
           {pending.reroute && <p className="t-small text-muted">{t('reroutingNote')}</p>}
         </div>

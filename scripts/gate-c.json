@@ -367,5 +367,20 @@
     "id": "dashboard-snapshot",
     "sentence": "The ops dashboard matches its committed snapshot in both languages",
     "browser": "snapshot-ops-dashboard"
+  },
+  {
+    "id": "overdue-prompts-reroute",
+    "sentence": "A ticket past its deadline goes overdue on the demo clock, the phone prompts the person to reroute, the reroute moves the old ticket to rerouted, and the ops dashboard's overdue list counts the tickets the table holds as overdue",
+    "browser": "overdue-ticket-prompts-the-person-to-reroute"
+  },
+  {
+    "id": "seam-equity-opt-in-to-dashboard-row",
+    "sentence": "An equity opt-in made on the phone reaches the dashboard: the person's age-band row gains one ticket and no other row moves",
+    "browser": "seam-equity-opt-in-reaches-the-dashboard-row"
+  },
+  {
+    "id": "seam-crisis-contact-to-crisis-figures",
+    "sentence": "A crisis screen, a tapped number and a confirmed contact on a phone reach the dashboard's crisis figures, each one higher by one",
+    "browser": "seam-crisis-contact-reaches-the-crisis-figures"
   }
 ]

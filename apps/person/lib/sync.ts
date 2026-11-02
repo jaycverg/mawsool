@@ -32,11 +32,11 @@ export function repairNow(locale: Locale): Promise<void> {
   }
 }
 
-/** Refreshes the saved copy of the sample directory so matching works offline. Fire and forget. */
-export function refreshDirectory(): void {
+/** Refreshes the saved copy of the sample directory, in the page's language, so matching works offline. Fire and forget. */
+export function refreshDirectory(locale: Locale): void {
   try {
     const { storage } = getDevice();
-    void loadDirectory({ storage, fetch: window.fetch.bind(window), apiUrl: API_URL, now: deviceNow }).catch(() => undefined);
+    void loadDirectory({ storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale, now: deviceNow }).catch(() => undefined);
   } catch {
     // No usable storage, so there is nowhere to save it.
   }

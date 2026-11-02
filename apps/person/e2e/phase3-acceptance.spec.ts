@@ -112,7 +112,119 @@ async function openSettingsAndConfirmDelete(page: Page, locale: Locale): Promise
 
 const confirmDelete = (page: Page, locale: Locale) => page.getByRole('button', { name: msg(locale, 'settings.deleteYes'), exact: true }).click();
 
+/** A message with its rich-text tags removed, as the person reads it. */
+const plain = (text: string) => text.replace(/<\/?\w+>/g, '');
+
+const LATIN = /[A-Za-z]/;
+const ARABIC = /[؀-ۿ]/;
+
+/** The ticket declined from the confirm box that Decline or "I don't want this any more" opens, and what the screen then says. */
+async function expectDeclineWords(page: Page, locale: Locale, id: string): Promise<void> {
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog).toContainText(plain(msg(locale, 'ticket.declineConfirm')));
+  // The words name what is still true, and point at the control that ends it.
+  const link = dialog.locator('[data-stop-sharing-link]');
+  await expect(link).toHaveCount(1);
+  await expect(link).toHaveAttribute('href', '#sharing');
+  await page.getByRole('button', { name: msg(locale, 'ticket.declineYes'), exact: true }).click();
+
+  await expect(page.locator('[data-step="declined"]')).toHaveAttribute('data-done', 'true');
+  const row = await stored(id);
+  expect(row.ticket.state).toBe('declined');
+  expect(row.events.map((event) => [event.fromState, event.toState, event.actor])).toEqual([
+    [null, 'issued', 'person'],
+    ['issued', 'declined', 'person'],
+  ]);
+  const note = page.locator('[data-declined-note]');
+  await expect(note).toContainText(plain(msg(locale, 'ticket.declinedNote')));
+  // The copy is true: the clinic can still open what was shared.
+  expect((await clinicRead(id)).bundle).toBe(200);
+
+  // The link in the note goes to the sharing panel, which holds the real control; using it ends the share.
+  await note.locator('[data-stop-sharing-link]').click();
+  await expect(page).toHaveURL(/#sharing$/);
+  await expect(page.locator('[data-panel="sharing"]')).toBeInViewport();
+  await page.getByRole('button', { name: msg(locale, 'ticket.withdraw'), exact: true }).click();
+  await page.getByRole('button', { name: msg(locale, 'ticket.withdrawYes'), exact: true }).click();
+  await expect(page.locator('[data-share-ended]')).toBeVisible();
+  await expect(page.locator('[data-declined-note]')).toHaveCount(0);
+  expect((await clinicRead(id)).bundle).toBe(410);
+  expect((await stored(id)).ticket.state).toBe('declined');
+}
+
 const CASES: Record<string, (ctx: Context) => Promise<void>> = {
+  async 'directory-names-follow-the-language'({ page, locale }) {
+    // Every service name the person is shown (the option cards, the consent screen, the ticket) and the clinic's name and
+    // contact are in the page's language. In Arabic none of them has a Latin letter; in English they are the sample names.
+    const inLanguage = (texts: string[], what: string) => {
+      expect(texts.length, `${what} has text`).toBeGreaterThan(0);
+      for (const text of texts) {
+        if (locale === 'ar') {
+          expect(text, `${what}: ${text}`).toMatch(ARABIC);
+          expect(text, `${what}: ${text}`).not.toMatch(LATIN);
+        } else {
+          expect(text, `${what}: ${text}`).toMatch(/^Sample /);
+        }
+      }
+    };
+    await toOptions(page, locale);
+    await page.getByRole('button', { name: msg(locale, 'options.showOther'), exact: true }).click();
+    const cards = page.locator('[data-tier] [data-service-name]');
+    expect(await cards.count(), 'the lead cards and the other tiers').toBeGreaterThanOrEqual(4);
+    inLanguage(await cards.allInnerTexts(), 'option cards');
+
+    await page.locator('[data-tier][data-lead]').getByRole('button', { name: msg(locale, 'options.choose'), exact: true }).click();
+    await expect(page.locator('[data-screen="consent"]')).toBeVisible();
+    inLanguage(await page.locator('[data-screen="consent"] [data-service-name]').allInnerTexts(), 'consent screen');
+
+    await tick(page, 'scores');
+    await send(page, locale);
+    await expect(page).toHaveURL(ticketUrl(locale));
+    await expect(page.locator('[data-ticket]')).toBeVisible();
+    const id = ticketIdOf(page);
+    inLanguage(await page.locator('[data-ticket] [data-service-name]').allInnerTexts(), 'ticket service');
+    inLanguage(await page.locator('[data-ticket] [data-clinic-name]').allInnerTexts(), 'ticket clinic');
+    const contact = await page.locator('[data-clinic-contact]').innerText();
+    if (locale === 'ar') {
+      expect(contact).toMatch(ARABIC);
+      expect(contact).not.toMatch(LATIN);
+    } else {
+      expect(contact).toMatch(/^Sample /);
+    }
+
+    // The list of who opened it names the clinic in the same language once the clinic has.
+    expect((await clinicRead(id)).bundle).toBe(200);
+    await page.reload();
+    const reads = page.locator('[data-reads] li');
+    await expect(reads).toHaveCount(1);
+    if (locale === 'ar') expect(await reads.innerText()).not.toMatch(LATIN);
+    else expect(await reads.innerText()).toMatch(/^Sample /);
+
+    // Switching the language and coming back shows the other language's names, not the saved ones.
+    const other = locale === 'ar' ? 'en' : 'ar';
+    await page.goto(`/${other}/ticket/?id=${id}`);
+    await expect(page.locator('[data-ticket]')).toBeVisible();
+    const otherName = await page.locator('[data-ticket] [data-service-name]').innerText();
+    if (other === 'ar') expect(otherName).not.toMatch(LATIN);
+    else expect(otherName).toMatch(/^Sample /);
+  },
+
+  async 'decline-keeps-the-share-until-stopped'({ page, locale }) {
+    const id = await issueTicket(page, locale, ['scores']);
+    await expect(page.locator('[data-declined-note]')).toHaveCount(0);
+    await page.getByRole('button', { name: msg(locale, 'ticket.decline'), exact: true }).click();
+    await expectDeclineWords(page, locale, id);
+  },
+
+  async 'no-longer-wanted-says-the-same-as-decline'({ page, context, locale }) {
+    const id = await issueTicket(page, locale, ['scores']);
+    await context.clock.setFixedTime(new Date(Date.now() + 8 * DAY_MS));
+    await page.reload();
+    await expect(page.locator('[data-prompt="follow-up"]')).toBeVisible();
+    await page.getByRole('button', { name: msg(locale, 'ticket.followUpNo'), exact: true }).click();
+    await expectDeclineWords(page, locale, id);
+  },
+
   async 'consent-and-ticket-redirect-while-blocked'({ page, locale }) {
     await visitOnline(page, locale);
     await triggerCrisis(page, locale);

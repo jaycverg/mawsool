@@ -178,8 +178,15 @@ export type CrisisEventSubmission = z.infer<typeof CrisisEventSubmissionSchema>;
 export const CrisisEventReceiptSchema = z.object({ id: z.uuid(), created: z.boolean() });
 export type CrisisEventReceipt = z.infer<typeof CrisisEventReceiptSchema>;
 
-/** GET /services filters. The person app sends none: matching happens on the device. */
-export const ServicesQuerySchema = z.object({
+/**
+ * The language the text of a read is written in: the page's language on the phone, and nothing else about the person.
+ * Left out, a person route uses the language the device registered with and the public directory uses English.
+ */
+export const LocaleQuerySchema = z.object({ locale: LocaleSchema.optional() });
+export type LocaleQuery = z.infer<typeof LocaleQuerySchema>;
+
+/** GET /services filters. The person app sends none of them: matching happens on the device. It sends only the page's `locale`. */
+export const ServicesQuerySchema = LocaleQuerySchema.extend({
   tier: TierSchema.optional(),
   region: RegionSchema.optional(),
   modality: ModalitySchema.optional(),

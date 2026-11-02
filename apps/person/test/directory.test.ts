@@ -15,51 +15,69 @@ const SERVICE = {
   facilityId: '00000000-0000-4000-8000-000000000002',
   sample: true,
 };
+const SERVICE_AR = { ...SERVICE, name: 'نموذج: مركز الرعاية الأولية' };
 const now = () => new Date('2026-11-01T08:00:00+04:00');
 const respond = (body: unknown, status = 200) => vi.fn(async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
+const offline = () =>
+  vi.fn(async () => {
+    throw new TypeError('Failed to fetch');
+  }) as unknown as typeof fetch;
+const base = { apiUrl: 'http://api.test', locale: 'en' as const, now };
 
 describe('loadDirectory', () => {
-  it('asks for the whole list with a bare GET: no query, no headers, no credential, no body', async () => {
+  it('asks for the whole list with a GET that has no header, credential or body and one query value: the page language', async () => {
     const { storage } = memoryStorage();
     const fetchFn = respond([SERVICE]);
-    const directory = await loadDirectory({ storage, fetch: fetchFn, apiUrl: 'http://api.test', now });
+    const directory = await loadDirectory({ ...base, storage, fetch: fetchFn });
     expect(directory).toMatchObject({ source: 'network', services: [SERVICE] });
     const [url, init] = vi.mocked(fetchFn).mock.calls[0]!;
-    expect(url).toBe('http://api.test/services');
+    expect(url).toBe('http://api.test/services?locale=en');
     expect(init).toEqual({ signal: expect.any(AbortSignal) });
+  });
+
+  it('asks in Arabic on an Arabic page and returns the names the server wrote in Arabic', async () => {
+    const { storage } = memoryStorage();
+    const fetchFn = respond([SERVICE_AR]);
+    const directory = await loadDirectory({ ...base, locale: 'ar', storage, fetch: fetchFn });
+    expect(vi.mocked(fetchFn).mock.calls[0]![0]).toBe('http://api.test/services?locale=ar');
+    expect(directory?.services[0]?.name).toBe(SERVICE_AR.name);
   });
 
   it('keeps a copy and serves it when the network is down', async () => {
     const { storage } = memoryStorage();
-    await loadDirectory({ storage, fetch: respond([SERVICE]), apiUrl: 'http://api.test', now });
-    const offline = vi.fn(async () => {
-      throw new TypeError('Failed to fetch');
-    }) as unknown as typeof fetch;
-    const directory = await loadDirectory({ storage, fetch: offline, apiUrl: 'http://api.test', now });
+    await loadDirectory({ ...base, storage, fetch: respond([SERVICE]) });
+    const directory = await loadDirectory({ ...base, storage, fetch: offline() });
     expect(directory).toMatchObject({ source: 'cache', services: [SERVICE], fetchedAt: now().toISOString() });
+  });
+
+  it('keeps one copy per language: offline, each page gets its own names and never the other language', async () => {
+    const { storage } = memoryStorage();
+    await loadDirectory({ ...base, storage, fetch: respond([SERVICE]) });
+    // Only the English copy exists yet, so an Arabic page offline has nothing, rather than English names under an Arabic page.
+    expect(await loadDirectory({ ...base, locale: 'ar', storage, fetch: offline() })).toBeNull();
+    await loadDirectory({ ...base, locale: 'ar', storage, fetch: respond([SERVICE_AR]) });
+    expect((await loadDirectory({ ...base, locale: 'ar', storage, fetch: offline() }))?.services[0]?.name).toBe(SERVICE_AR.name);
+    expect((await loadDirectory({ ...base, locale: 'en', storage, fetch: offline() }))?.services[0]?.name).toBe(SERVICE.name);
   });
 
   it('serves the copy when the server errors or answers with something that is not a directory', async () => {
     const { storage } = memoryStorage();
-    await loadDirectory({ storage, fetch: respond([SERVICE]), apiUrl: 'http://api.test', now });
-    expect((await loadDirectory({ storage, fetch: respond({}, 500), apiUrl: 'http://api.test', now }))?.source).toBe('cache');
-    expect((await loadDirectory({ storage, fetch: respond({ nope: true }), apiUrl: 'http://api.test', now }))?.source).toBe('cache');
+    await loadDirectory({ ...base, storage, fetch: respond([SERVICE]) });
+    expect((await loadDirectory({ ...base, storage, fetch: respond({}, 500) }))?.source).toBe('cache');
+    expect((await loadDirectory({ ...base, storage, fetch: respond({ nope: true }) }))?.source).toBe('cache');
   });
 
   it('is null with no network and no copy, or an unreadable copy', async () => {
-    const offline = vi.fn(async () => {
-      throw new TypeError('Failed to fetch');
-    }) as unknown as typeof fetch;
-    expect(await loadDirectory({ storage: memoryStorage().storage, fetch: offline, apiUrl: 'http://api.test', now })).toBeNull();
-    expect(await loadDirectory({ storage: memoryStorage({ directory: { junk: 1 } }).storage, fetch: offline, apiUrl: 'http://api.test', now })).toBeNull();
+    expect(await loadDirectory({ ...base, storage: memoryStorage().storage, fetch: offline() })).toBeNull();
+    expect(await loadDirectory({ ...base, storage: memoryStorage({ directory: { junk: 1 } }).storage, fetch: offline() })).toBeNull();
     const broken = memoryStorage();
     broken.failures.read = true;
-    expect(await loadDirectory({ storage: broken.storage, fetch: offline, apiUrl: 'http://api.test', now })).toBeNull();
+    expect(await loadDirectory({ ...base, storage: broken.storage, fetch: offline() })).toBeNull();
   });
 
   it('still returns the fresh list when the copy cannot be saved', async () => {
     const { storage, failures } = memoryStorage();
     failures.write = true;
-    expect((await loadDirectory({ storage, fetch: respond([SERVICE]), apiUrl: 'http://api.test', now }))?.source).toBe('network');
+    expect((await loadDirectory({ ...base, storage, fetch: respond([SERVICE]) }))?.source).toBe('network');
   });
 });

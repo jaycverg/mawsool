@@ -5,7 +5,7 @@ import { isLocale } from '@mawsool/ui';
 import { useDemoOffsetMs } from '@mawsool/ui/components';
 import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { z } from 'zod';
 import { API_URL } from '../lib/api';
 import { deviceNow } from '../lib/clock';
@@ -24,6 +24,13 @@ type Translate = ReturnType<typeof useTranslations>;
 type Reads = { at: string; facilityName: string }[] | 'failed';
 type Load = { status: 'loading' } | { status: 'none' } | { status: 'failed' } | { status: 'ready'; ticket: PersonTicketView; reads: Reads; all: PersonTicketView[] };
 type Panel = 'none' | 'reason' | 'declining' | 'withdrawing';
+
+/** Turns the `<stop>` part of a message into a link to the sharing panel, where each "Stop sharing" control and "Withdraw" live. */
+const stopSharingLink = (chunks: ReactNode) => (
+  <a href="#sharing" className="font-semibold text-accent underline" data-stop-sharing-link>
+    {chunks}
+  </a>
+);
 
 const ReadsSchema = z.array(z.object({ at: z.string(), role: z.string(), facilityName: z.string() }));
 const DAY_MS = 86_400_000;
@@ -50,6 +57,8 @@ export function TicketScreen() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const serverDeps = useCallback((d: Device): ServerDeps => ({ storage: d.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, random: window.crypto }), [lang]);
+  /** Asks the server for the service, clinic and contact text in the page's language. */
+  const inLanguage = `?locale=${lang}`;
 
   const refresh = useCallback(async () => {
     if (device === null || device === 'unavailable') return;
@@ -60,16 +69,16 @@ export function TicketScreen() {
       // This phone has no note of a ticket. If it has never given the server anything there is nothing to ask for, and
       // no request is made; if it has (a send whose local note failed), the server's own list says what exists.
       if (!(await hasServerFootprint(device.storage).catch(() => false))) return setLoad({ status: 'none' });
-      const list = await callServer<unknown>(deps, 'GET', '/me/tickets');
+      const list = await callServer<unknown>(deps, 'GET', `/me/tickets${inLanguage}`);
       const newest = list.ok ? PersonTicketListSchema.safeParse(list.body) : null;
       if (!newest?.success) return setLoad({ status: 'failed' });
       id = newest.data.at(-1)?.id;
       if (!id) return setLoad({ status: 'none' });
     }
     const [ticket, reads, list] = await Promise.all([
-      callServer<unknown>(deps, 'GET', `/me/tickets/${id}`),
-      callServer<unknown>(deps, 'GET', `/me/tickets/${id}/reads`),
-      callServer<unknown>(deps, 'GET', '/me/tickets'),
+      callServer<unknown>(deps, 'GET', `/me/tickets/${id}${inLanguage}`),
+      callServer<unknown>(deps, 'GET', `/me/tickets/${id}/reads${inLanguage}`),
+      callServer<unknown>(deps, 'GET', `/me/tickets${inLanguage}`),
     ]);
     // The server does not know a ticket this phone has noted (the demo was reset): forget the note and show the screen
     // as one with no ticket, rather than a failure that asking again cannot clear.
@@ -83,7 +92,7 @@ export function TicketScreen() {
     const readList = reads.ok ? ReadsSchema.safeParse(reads.body) : null;
     const everyTicket = list.ok ? PersonTicketListSchema.safeParse(list.body) : null;
     setLoad({ status: 'ready', ticket: parsed.data, reads: readList?.success ? readList.data : 'failed', all: everyTicket?.success ? everyTicket.data : [parsed.data] });
-  }, [device, requested, serverDeps]);
+  }, [device, requested, serverDeps, inLanguage]);
 
   useEffect(() => void refresh(), [refresh]);
 
@@ -179,6 +188,8 @@ function Ready({ t, lang, ticket, reads, all, savedWarning, notice, panel, setPa
   const shareEnded = ticket.consents.some((consent) => consent.element === 'ticket' && consent.revokedAt !== null);
   const earlier = ticket.parentTicketId ? all.find((candidate) => candidate.id === ticket.parentTicketId) : undefined;
   const due = followUpDue(ticket, now);
+  /** Declining ends the referral but not the share: the clinic can read the bundle until the person stops sharing it. */
+  const declinedButShared = ticket.state === 'declined' && !shareEnded;
   return (
     <>
       <section className="overflow-hidden rounded-ticket border border-border bg-surface" data-ticket={ticket.shortCode}>
@@ -192,7 +203,7 @@ function Ready({ t, lang, ticket, reads, all, savedWarning, notice, panel, setPa
         </div>
         <div className="flex flex-col gap-1.5 px-4 py-3.5">
           <span className="flex flex-wrap items-center gap-2">
-            <span className="text-[17px] font-semibold" dir="auto">{ticket.serviceName}</span>
+            <span className="text-[17px] font-semibold" dir="auto" data-service-name>{ticket.serviceName}</span>
             <span className="inline-flex whitespace-nowrap rounded-chip bg-mock px-2 py-[3px] text-[12px] font-semibold text-mock-ink" data-sample>{t('sample')}</span>
           </span>
           <span className="flex items-center gap-1.5 text-[15px]" data-deadline>
@@ -205,12 +216,13 @@ function Ready({ t, lang, ticket, reads, all, savedWarning, notice, panel, setPa
               {live && <> · {t('daysLeft', { count: daysLeft })}</>}
             </span>
           </span>
-          <span className="t-small text-muted" dir="auto">{ticket.clinicName}</span>
+          <span className="t-small text-muted" dir="auto" data-clinic-name>{ticket.clinicName}</span>
         </div>
       </section>
 
       {savedWarning && <p role="status" className="rounded-staff bg-warning px-3.5 py-3 text-[14px] text-warning-ink">{t('savedWarning')}</p>}
       {shareEnded && <p role="status" className="rounded-staff bg-accent-tint px-3.5 py-3 text-[14px]" data-share-ended>{t('withdrawnNote')}</p>}
+      {declinedButShared && <p role="status" className="rounded-staff bg-accent-tint px-3.5 py-3 text-[14px]" data-declined-note>{t.rich('declinedNote', { stop: stopSharingLink })}</p>}
       {earlier && (
         <p className="t-small text-muted" data-earlier>
           {t('earlier')} · <a className="inline-flex min-h-tap items-center font-semibold text-accent" href={href(lang, 'ticket', { id: earlier.id })}>{`${earlier.shortCode.slice(0, 2)}-${earlier.shortCode.slice(2)}`}</a>
@@ -270,13 +282,13 @@ function Ready({ t, lang, ticket, reads, all, savedWarning, notice, panel, setPa
       )}
       {panel === 'declining' && (
         <section role="alertdialog" aria-labelledby="decline-text" className="flex flex-col gap-2 rounded-staff border border-danger p-3">
-          <p id="decline-text" className="text-[15px] font-semibold">{t('declineConfirm')}</p>
+          <p id="decline-text" className="text-[15px] font-semibold">{t.rich('declineConfirm', { stop: stopSharingLink })}</p>
           <button type="button" className="tap rounded-pill bg-danger px-4 font-semibold text-surface" disabled={busy} onClick={onDecline}>{t('declineYes')}</button>
           <button type="button" className="tap rounded-pill border-[1.5px] border-border px-4 font-semibold" onClick={() => setPanel('none')}>{t('keep')}</button>
         </section>
       )}
 
-      <section className="flex flex-col gap-2 rounded-card border border-border bg-surface p-4" data-panel="sharing">
+      <section id="sharing" className="flex scroll-mt-4 flex-col gap-2 rounded-card border border-border bg-surface p-4" data-panel="sharing">
         <h2 className="text-[16px] font-semibold">{t('sharingTitle')}</h2>
         <p className="t-small text-muted">{t('sharingBody')}</p>
         {notice === 'summaryRemoved' && <p role="status" className="rounded-chip bg-accent-tint px-3 py-2 text-[14px]" data-notice="summary-removed">{t('summaryRemoved')}</p>}

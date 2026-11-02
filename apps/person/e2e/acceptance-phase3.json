@@ -1,5 +1,17 @@
 [
   {
+    "id": "directory-names-follow-the-language",
+    "sentence": "In Arabic the service names on the option cards, the consent screen and the ticket, and the clinic's name, contact and read list, have no Latin letter; in English they are the sample names; and switching language shows the other language's names"
+  },
+  {
+    "id": "decline-keeps-the-share-until-stopped",
+    "sentence": "Decline moves the ticket to declined and says the clinic can still read what was shared until the person stops sharing, with a link to that control; the clinic can still read it until they do, and cannot after"
+  },
+  {
+    "id": "no-longer-wanted-says-the-same-as-decline",
+    "sentence": "\"I don't want this any more\" on the day-7 check declines the ticket with the same words, the same link and the same effect on what the clinic can read"
+  },
+  {
     "id": "consent-and-ticket-redirect-while-blocked",
     "sentence": "/consent and /ticket redirect to /crisis while the block is set"
   },

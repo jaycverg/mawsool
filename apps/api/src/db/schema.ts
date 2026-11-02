@@ -53,20 +53,27 @@ export const careLanguageEnum = pgEnum('care_language', CARE_LANGUAGES);
 export const crisisTriggerEnum = pgEnum('crisis_trigger', CRISIS_TRIGGERS);
 export const crisisNumberEnum = pgEnum('crisis_number', CRISIS_NUMBERS);
 
+/**
+ * `name` and `contact_text` are the English text. The `_ar` columns hold the Arabic text where someone has written
+ * it; null means there is none, and an Arabic reader is then served the English text, never a generated translation.
+ */
 export const facilities = pgTable('facilities', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').notNull(),
+  nameAr: text('name_ar'),
   region: regionEnum('region').notNull(),
   contactText: text('contact_text').notNull(),
+  contactTextAr: text('contact_text_ar'),
   sample: boolean('sample').notNull().default(true),
 });
 
-/** Mock directory. Every tier except self-help belongs to a facility, tele included. */
+/** Mock directory. Every tier except self-help belongs to a facility, tele included. `name_ar` follows the rule of `facilities`. */
 export const services = pgTable(
   'services',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
+    nameAr: text('name_ar'),
     tier: tierEnum('tier').notNull(),
     modality: modalityEnum('modality').notNull(),
     languages: careLanguageEnum('languages').array().notNull(),

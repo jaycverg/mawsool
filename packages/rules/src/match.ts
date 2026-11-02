@@ -72,14 +72,13 @@ function eligibilityFor(service: Service, prefs: Preferences, insurance: Insuran
   ];
 }
 
-/** Lower sorts first: fewer items to check, then shorter wait, then name and id for a stable order. */
-function compareServices(a: { service: Service; checks: number }, b: { service: Service; checks: number }): number {
-  return (
-    a.checks - b.checks ||
-    a.service.indicativeWaitDays - b.service.indicativeWaitDays ||
-    a.service.name.localeCompare(b.service.name, 'en') ||
-    a.service.id.localeCompare(b.service.id, 'en')
-  );
+/**
+ * Lower sorts first: fewer items to check, then shorter wait, then the place in the directory. The name is not used:
+ * it is written in the reader's language, so ordering by it would let the language change which service is offered.
+ * The directory lists services by English name and then id, so a tie still falls to the same service in every language.
+ */
+function compareServices(a: { service: Service; checks: number; position: number }, b: { service: Service; checks: number; position: number }): number {
+  return a.checks - b.checks || a.service.indicativeWaitDays - b.service.indicativeWaitDays || a.position - b.position;
 }
 
 function bestService(
@@ -90,10 +89,11 @@ function bestService(
   region: Region,
 ): { service: Service; eligibility: EligibilityItem[] } | null {
   const ranked = services
-    .filter((service) => service.tier === tier)
-    .map((service) => {
+    .map((service, position) => ({ service, position }))
+    .filter(({ service }) => service.tier === tier)
+    .map(({ service, position }) => {
       const eligibility = eligibilityFor(service, prefs, insurance, region);
-      return { service, eligibility, checks: eligibility.filter((item) => item.status === 'check').length };
+      return { service, position, eligibility, checks: eligibility.filter((item) => item.status === 'check').length };
     })
     .sort(compareServices);
   return ranked[0] ?? null;

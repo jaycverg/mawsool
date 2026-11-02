@@ -1,11 +1,12 @@
 import { randomInt } from 'node:crypto';
 import { redact, withinWordLimit } from '@mawsool/consent';
 import { HANDOFF_WINDOWS_DAYS, computeDeadline } from '@mawsool/rules';
-import { SHORT_CODE_ALPHABET, type CreateTicketRequest, type PersonTicketView, type TicketSource, type TicketState } from '@mawsool/types';
+import { SHORT_CODE_ALPHABET, type CreateTicketRequest, type Locale, type PersonTicketView, type TicketSource, type TicketState } from '@mawsool/types';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import type { Clock } from '../clock';
 import type { Cipher } from '../crypto';
 import { schema, type Db } from '../db/client';
+import { localized } from '../locale';
 import { appendEvent, lastEvent, type Executor } from './events';
 import { evaluate } from './transitions';
 
@@ -207,8 +208,11 @@ export async function issueTicket(deps: TicketDeps, personId: string, request: C
   }
 }
 
-/** A ticket as its owner sees it: the timeline, the clinic's contact and the consents behind it. */
-export async function personTicketView(db: Db, ticketId: string): Promise<PersonTicketView | null> {
+/**
+ * A ticket as its owner sees it: the timeline, the clinic's contact and the consents behind it. The service name, the
+ * clinic name and the contact text are in `locale` where an Arabic version exists, and English otherwise.
+ */
+export async function personTicketView(db: Db, ticketId: string, locale: Locale): Promise<PersonTicketView | null> {
   const [row] = await db
     .select({ ticket: schema.tickets, service: schema.services, facility: schema.facilities })
     .from(schema.tickets)
@@ -230,9 +234,9 @@ export async function personTicketView(db: Db, ticketId: string): Promise<Person
     deadlineAt: ticket.deadlineAt.toISOString(),
     source: ticket.source,
     serviceId: ticket.serviceId,
-    serviceName: row.service.name,
-    clinicName: row.facility.name,
-    clinicContact: row.facility.contactText,
+    serviceName: localized(row.service.name, row.service.nameAr, locale),
+    clinicName: localized(row.facility.name, row.facility.nameAr, locale),
+    clinicContact: localized(row.facility.contactText, row.facility.contactTextAr, locale),
     parentTicketId: ticket.parentTicketId,
     createdAt: ticket.createdAt.toISOString(),
     events: events.map((event) => ({
