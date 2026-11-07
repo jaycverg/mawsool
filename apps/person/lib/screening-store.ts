@@ -12,9 +12,12 @@ export async function loadScreenings(storage: StorageAdapter): Promise<Screening
   return Array.isArray(stored) ? (stored as Screening[]) : [];
 }
 
-/** The check-in in progress for an instrument, if one was left part-answered. */
-export function findDraft(screenings: readonly Screening[], instrument: Instrument): Screening | undefined {
-  return screenings.findLast((screening) => screening.instrument === instrument && !isCompleteScreening(screening));
+/**
+ * The check-in in progress for an instrument, if one was left part-answered. With `notBefore` (epoch ms), only one started at or
+ * after that moment counts: the repeat check uses it so an old unfinished check-in is never finished and sent as the new one.
+ */
+export function findDraft(screenings: readonly Screening[], instrument: Instrument, notBefore?: number): Screening | undefined {
+  return screenings.findLast((screening) => screening.instrument === instrument && !isCompleteScreening(screening) && (notBefore === undefined || Date.parse(screening.takenAt) >= notBefore));
 }
 
 /** How many questions of the instrument are answered in a row from the first. */
@@ -33,6 +36,8 @@ export interface AnswerInput {
    * the check-in in progress for the instrument is used, or a new one opened.
    */
   screeningId?: string | null;
+  /** Epoch ms: a check-in in progress that was started before it is not resumed, and a new one is opened (see `findDraft`). */
+  notBefore?: number;
 }
 
 /**
@@ -55,7 +60,7 @@ async function saveAnswerNow(storage: StorageAdapter, input: AnswerInput, deps: 
   }
   const all = await loadScreenings(storage);
   const held = input.screeningId ? all.find((screening) => screening.id === input.screeningId && screening.instrument === instrument) : undefined;
-  const draft = held ?? findDraft(all, instrument);
+  const draft = held ?? findDraft(all, instrument, input.notBefore);
   const answers = [...(draft?.answers ?? [])];
   if (!Number.isInteger(index) || index < 0 || index > answers.length || index >= itemCount(instrument)) {
     throw new RangeError(`question ${index + 1} of ${instrument} cannot be answered before the ones above it`);

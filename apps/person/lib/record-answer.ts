@@ -34,13 +34,13 @@ export interface RecordAnswerDeps {
  * patience, and the outcome is `crisis` however they turn out: a full disk, a blocked database or a slow one must
  * not stand between a person and the help screen. Any other answer that cannot be saved is a plain failure.
  */
-export async function recordAnswer(input: { instrument: Instrument; index: number; value: number; screeningId?: string | null }, deps: RecordAnswerDeps): Promise<AnswerOutcome> {
-  const { instrument, index, value, screeningId } = input;
+export async function recordAnswer(input: { instrument: Instrument; index: number; value: number; screeningId?: string | null; notBefore?: number }, deps: RecordAnswerDeps): Promise<AnswerOutcome> {
+  const { instrument, index, value, screeningId, notBefore } = input;
   const trigger = answerFiresCrisis(instrument, index, value);
   // Before anything asynchronous: the tab's crisis flag is set at once, so whatever storage does next, Back and a
   // direct visit to a guarded screen in this tab still land on the crisis screen.
   if (trigger) deps.crisis.markBlocked(trigger);
-  const save = saveAnswer(deps.storage, { instrument, index, value, screeningId }, { now: deps.now, newId: deps.newId });
+  const save = saveAnswer(deps.storage, { instrument, index, value, screeningId, notBefore }, { now: deps.now, newId: deps.newId });
 
   if (!trigger) {
     try {

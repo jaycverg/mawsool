@@ -3,10 +3,12 @@ import { createTabMark } from '@mawsool/ui';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCrisisStore, isCrisisMark, type CrisisMark } from '../lib/crisis';
 import { recordAnswer, type RecordAnswerDeps } from '../lib/record-answer';
-import { idFrom, remeasureDue, remeasureOpensAt, repeatCheck, seenAt, sendRemeasure, totalsOf } from '../lib/remeasure';
+import { idFrom, remeasureDue, remeasureOpensAt, repeatCheck, seenAt, sendRemeasure, sinceFrom, totalsOf } from '../lib/remeasure';
 import { GUARDED_ROUTES, isGuardedPath } from '../lib/routes';
-import { loadScreenings } from '../lib/screening-store';
+import { findDraft, loadScreenings } from '../lib/screening-store';
 import { forgetRegistration } from '../lib/server';
+// @ts-expect-error plain .mjs script with JSDoc types
+import { PRECACHE_ROUTES } from '../scripts/build-precache.mjs';
 import ar from '../messages/ar.json';
 import en from '../messages/en.json';
 import { fixtureClock, memoryStorage } from './helpers/memory';
@@ -52,8 +54,10 @@ describe('addresses', () => {
     for (const bad of [null, '', 'abc', `${TICKET_ID}x`, '../ticket', "11111111-1111-4111-8111-11111111111'"]) expect(idFrom(bad), String(bad)).toBeNull();
   });
 
-  it('puts the repeat check screen among the guarded routes and in the offline screens', () => {
+  it('puts the repeat check screen among the guarded routes and in the precache list of both languages', () => {
     expect(GUARDED_ROUTES).toContain('/remeasure');
+    expect(PRECACHE_ROUTES).toContain('/en/remeasure/');
+    expect(PRECACHE_ROUTES).toContain('/ar/remeasure/');
     expect(isGuardedPath('/en/remeasure/')).toBe(true);
     expect(isGuardedPath('/ar/remeasure/?id=x')).toBe(true);
   });
@@ -66,11 +70,22 @@ describe('the two finished questionnaires of a repeat check', () => {
   const gad = done('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'gad7', 5);
 
   it('are found by the ids in the address, only when both are finished and of the right kind', () => {
-    expect(repeatCheck([phq, gad], { phq9: phq.id, gad7: gad.id })).toEqual({ phq9: phq, gad7: gad });
-    expect(repeatCheck([phq], { phq9: phq.id, gad7: gad.id })).toBeNull();
-    expect(repeatCheck([phq, gad], { phq9: null, gad7: gad.id })).toBeNull();
-    expect(repeatCheck([phq, gad], { phq9: gad.id, gad7: phq.id })).toBeNull();
-    expect(repeatCheck([phq, { ...gad, answers: [1, 1] }], { phq9: phq.id, gad7: gad.id })).toBeNull();
+    const opens = new Date('2026-12-21T08:00:00+04:00');
+    expect(repeatCheck([phq, gad], { phq9: phq.id, gad7: gad.id }, opens)).toEqual({ phq9: phq, gad7: gad });
+    expect(repeatCheck([phq], { phq9: phq.id, gad7: gad.id }, opens)).toBeNull();
+    expect(repeatCheck([phq, gad], { phq9: null, gad7: gad.id }, opens)).toBeNull();
+    expect(repeatCheck([phq, gad], { phq9: gad.id, gad7: phq.id }, opens)).toBeNull();
+    expect(repeatCheck([phq, { ...gad, answers: [1, 1] }], { phq9: phq.id, gad7: gad.id }, opens)).toBeNull();
+    expect(repeatCheck([phq, gad], { phq9: phq.id, gad7: gad.id }, null)).toBeNull();
+  });
+
+  it('refuse a screening started before the repeat check opened, to the millisecond', () => {
+    const ids = { phq9: phq.id, gad7: gad.id };
+    const taken = Date.parse(phq.takenAt);
+    expect(repeatCheck([phq, gad], ids, new Date(taken))).not.toBeNull();
+    expect(repeatCheck([phq, gad], ids, new Date(taken + 1))).toBeNull();
+    const old = { ...gad, takenAt: '2026-10-01T09:00:00+04:00' };
+    expect(repeatCheck([phq, old], ids, new Date('2026-12-21T08:00:00+04:00'))).toBeNull();
   });
 
   it('give totals with a band and a date and no answers', () => {
@@ -169,6 +184,45 @@ describe('item 9 of the repeat PHQ-9 takes the crisis path exactly as in a check
     const { base, crisis } = setup();
     for (let index = 0; index < 9; index += 1) expect(await recordAnswer({ instrument: 'phq9', index, value: index === 8 ? 0 : 3 }, base)).toMatchObject({ kind: 'saved' });
     expect((await crisis.read()).status).toBe('clear');
+  });
+});
+
+describe('the repeat check starts a fresh check-in rather than finishing an old one', () => {
+  const OPENED = Date.parse('2026-12-21T08:00:00+04:00');
+  const oldDraft = { id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', instrument: 'phq9', answers: [3, 3, 3], total: 9, band: null, item9Flag: false, takenAt: '2026-10-01T09:00:00+04:00' } as Screening;
+  const newDraft = { ...oldDraft, id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', answers: [0, 0], total: 0, takenAt: '2026-12-21T09:00:00+04:00' } as Screening;
+
+  it('does not resume an unfinished PHQ-9 from before the repeat check opened, and resumes one started after', () => {
+    expect(findDraft([oldDraft], 'phq9')).toBe(oldDraft); // an ordinary check-in still resumes it
+    expect(findDraft([oldDraft], 'phq9', OPENED)).toBeUndefined();
+    expect(findDraft([oldDraft, newDraft], 'phq9', OPENED)).toBe(newDraft);
+    expect(findDraft([oldDraft], 'phq9', sinceFrom(null))).toBeUndefined();
+    expect(findDraft([newDraft], 'phq9', Date.parse(newDraft.takenAt))).toBe(newDraft);
+  });
+
+  it('starts at question 1 with a new id, and leaves the old unfinished check-in as it was', async () => {
+    const memory = memoryStorage({ screenings: [oldDraft] });
+    const clock = fixtureClock('2026-12-21T10:00:00+04:00');
+    const fallback = createTabMark<CrisisMark>(undefined, 'crisis', isCrisisMark);
+    const crisis = createCrisisStore(memory.storage, { now: clock.now, newId: clock.newId, fallback, readPatienceMs: 20 });
+    const base: RecordAnswerDeps = { storage: memory.storage, crisis, now: clock.now, newId: clock.newId, locale: 'en', patienceMs: 20 };
+    const outcome = await recordAnswer({ instrument: 'phq9', index: 0, value: 1, notBefore: OPENED }, base);
+    expect(outcome).toMatchObject({ kind: 'saved' });
+    const all = await loadScreenings(memory.storage);
+    expect(all).toHaveLength(2);
+    expect(all.find((screening) => screening.id === oldDraft.id)).toEqual(oldDraft);
+    const fresh = all.find((screening) => screening.id !== oldDraft.id)!;
+    expect(fresh.answers).toEqual([1]);
+    expect(Date.parse(fresh.takenAt)).toBeGreaterThanOrEqual(OPENED);
+    // The same answer without the bound is the ordinary check-in, which does finish the old draft.
+    const ordinary = memoryStorage({ screenings: [oldDraft] });
+    const outcome2 = await recordAnswer({ instrument: 'phq9', index: 3, value: 1 }, { ...base, storage: ordinary.storage, crisis: createCrisisStore(ordinary.storage, { now: clock.now, newId: clock.newId, fallback, readPatienceMs: 20 }) });
+    expect(outcome2).toMatchObject({ kind: 'saved', screening: { id: oldDraft.id } });
+  });
+
+  it('reads the opening from the address, and treats a missing, empty or unreadable one as "resume nothing"', () => {
+    expect(sinceFrom(String(OPENED))).toBe(OPENED);
+    for (const bad of [null, '', ' ', 'abc']) expect(sinceFrom(bad), String(bad)).toBe(Number.POSITIVE_INFINITY);
   });
 });
 

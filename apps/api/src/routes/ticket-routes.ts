@@ -193,6 +193,10 @@ export function registerTicketFlowRoutes(app: FastifyInstance, deps: ConsentDeps
           return sendError(reply, 409, 'conflict', 'That change is not allowed from the current state');
         case 'too_early':
           return sendError(reply, 409, 'too_early', 'A repeat check opens six weeks after the clinic saw you');
+        case 'invalid_scores':
+          return sendError(reply, 400, 'invalid_request', 'A total must come from a check taken after the repeat check opened');
+        case 'share_full':
+          return sendError(reply, 409, 'conflict', 'What is shared has no room for these totals');
         case 'no_share':
           return sendError(reply, 409, 'conflict', 'Nothing is shared for this ticket');
         case 'lost_race':

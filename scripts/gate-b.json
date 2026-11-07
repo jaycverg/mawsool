@@ -745,13 +745,21 @@
       },
       {
         "file": "test/remeasure.test.ts",
-        "name": "is reached by withdrawing and by Delete everything"
+        "name": "stopping sharing scores afterwards takes the new totals out of the stored bundle"
+      },
+      {
+        "file": "test/remeasure.test.ts",
+        "name": "ending the share after the totals were sent (withdrawing) takes them out of the raw bundle"
+      },
+      {
+        "file": "test/remeasure.test.ts",
+        "name": "Delete everything after the totals were sent empties both ciphertext columns"
       }
     ]
   },
   {
     "id": "reminder-number-is-erased-and-kept-apart",
-    "sentence": "The reminder number is ciphertext bound to the person, in its own table, and the raw row is gone after removal, turning reminders off or Delete everything",
+    "sentence": "The reminder number is ciphertext bound to the person, in its own table; the raw row is gone after removal and after Delete everything, and the phone sends that same removal when reminders are turned off, also when an upload's reply was lost or its local note failed",
     "project": "apps/api",
     "tests": [
       {
@@ -760,11 +768,40 @@
       },
       {
         "file": "test/reminders.test.ts",
+        "name": "deletes the row when the number is removed"
+      },
+      {
+        "file": "test/reminders.test.ts",
         "name": "Delete everything removes the row, as the raw table shows"
       },
       {
         "file": "test/erase-reach.test.ts",
         "name": "has a reviewed fate and a proof for each person-linked table"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/reminders.test.ts",
+        "name": "turning reminders off deletes the server row first"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/reminders.test.ts",
+        "name": "turning reminders off after an upload whose reply was lost (the reply is lost)"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/reminders.test.ts",
+        "name": "turning reminders off after an upload whose reply was lost (the server answers 503)"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/reminders.test.ts",
+        "name": "removing the number after a lost reply sends the DELETE too"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/reminders.test.ts",
+        "name": "when the upload succeeds and the phone then fails to save the number"
       }
     ]
   },
@@ -816,5 +853,58 @@
     "id": "browser-person-ending-closes-a-seen-ticket",
     "sentence": "The person's end control moves a seen ticket to closed (browser)",
     "browser": "person-ending-a-seen-ticket-closes-it"
+  },
+  {
+    "id": "repeat-check-total-must-come-from-the-repeat-check",
+    "sentence": "A total taken before the repeat check opened, or dated after now, is refused with nothing written; the repeat check starts a fresh check-in and never finishes an old one",
+    "tests": [
+      {
+        "project": "apps/api",
+        "file": "test/remeasure.test.ts",
+        "name": "refuses a total taken before the repeat check opened, or dated after now (400)"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/remeasure.test.ts",
+        "name": "does not resume an unfinished PHQ-9 from before the repeat check opened"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/remeasure.test.ts",
+        "name": "starts at question 1 with a new id, and leaves the old unfinished check-in as it was"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/remeasure.test.ts",
+        "name": "refuse a screening started before the repeat check opened, to the millisecond"
+      }
+    ]
+  },
+  {
+    "id": "stored-totals-have-a-cap-the-inputs-do-not-exceed",
+    "sentence": "A referral, a consent or a summary draft carries at most three totals, and a repeat check that would overfill the stored totals is refused with nothing written",
+    "tests": [
+      {
+        "project": "apps/api",
+        "file": "test/remeasure.test.ts",
+        "name": "refuses a referral, a consent or a summary draft that carries more than three totals"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/remeasure.test.ts",
+        "name": "answers 409 and moves nothing when the stored totals leave no room"
+      }
+    ]
+  },
+  {
+    "id": "repeat-check-screen-is-guarded-and-precached",
+    "sentence": "The repeat check screen is a guarded route and is in the precache list of both languages",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/remeasure.test.ts",
+        "name": "in the precache list of both languages"
+      }
+    ]
   }
 ]
