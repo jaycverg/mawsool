@@ -51,10 +51,12 @@ person is told they have ("Moderate depression", "you have moderate depression",
 below, with their adverbs and a few synonyms ("mildly", "slight", "serious", "melancholia", "معتدل", "كآبة").
 
 In Arabic the test also reads a word with something attached as the word itself: a conjunction (و, ف), a preposition
-(ب, ك, ل) with or without the article (the definite article is ignored), the accusative ending (اكتئابًا), a plural and a
-possessive (اكتئابك, قلقها). So "باكتئاب شديد" (with severe depression), "قلقًا شديدًا" and "اكتئابك الشديد" are labels
-like their bare forms. A label of the first list is found the same way: "مصاب باكتئاب" and "تعاني من قلق" are found as
-well as "مصاب بالاكتئاب". A label's own possessive stays on it: "تشخيصك" (your diagnosis) is a label, "تشخيصًا" (a
+(ب, ك, ل) with or without the article (the definite article is ignored), the accusative ending (اكتئابًا), the feminine
+and adjective endings (قلقة, اكتئابية), a plural (ات, ين, ون) and a possessive (اكتئابك, قلقها); a final ه is read as ة
+("متوسطه"). So "باكتئاب شديد" (with severe depression), "قلقًا شديدًا", "اكتئابك الشديد", "قلقة شديدة", "مكتئبة بشدة" and
+"أعراض اكتئابية متوسطة" are labels like their bare forms. "الحادي" ("the eleventh", as in "اليوم الحادي عشر") is not the
+band word "حاد". A label of the first list is found the same way: "مصاب باكتئاب", "مصابة بالاكتئاب", "تعاني من اكتئاب" and
+"تعانين من الاكتئاب" are found as well as "مصاب بالاكتئاب". A label's own possessive stays on it: "تشخيصك" (your diagnosis) is a label, "تشخيصًا" (a
 diagnosis, as in "ليس تشخيصًا") is not.
 
 What the result card shows, which this check does not reach: the card names the instrument above the score ("Anxiety
@@ -91,7 +93,7 @@ Condition words (English):
 
 Band words (Arabic):
 
-- طفيف، طفيفة، بسيط، بسيطة، خفيف، خفيفة، متوسط، متوسطة، معتدل، معتدلة، شديد، شديدة، حاد، حادة
+- طفيف، طفيفة، بسيط، بسيطة، خفيف، خفيفة، متوسط، متوسطة، معتدل، معتدلة، شديد، شديدة، حاد، حادة، بشدة، قليلا
 
 Condition words (Arabic):
 

@@ -76,7 +76,7 @@ const DIAGNOSTIC_LABELS: Record<Locale, string[]> = {
  */
 const BAND_WORDS: Record<Locale, string[]> = {
   en: ['minimal', 'minimally', 'mild', 'mildly', 'slight', 'slightly', 'moderate', 'moderately', 'severe', 'severely', 'serious', 'seriously'],
-  ar: ['طفيف', 'طفيفة', 'بسيط', 'بسيطة', 'خفيف', 'خفيفة', 'متوسط', 'متوسطة', 'معتدل', 'معتدلة', 'شديد', 'شديدة', 'حاد', 'حادة'],
+  ar: ['طفيف', 'طفيفة', 'بسيط', 'بسيطة', 'خفيف', 'خفيفة', 'متوسط', 'متوسطة', 'معتدل', 'معتدلة', 'شديد', 'شديدة', 'حاد', 'حادة', 'بشدة', 'قليلا'],
 };
 const CONDITION_WORDS: Record<Locale, string[]> = {
   en: ['depression', 'depressed', 'depressive', 'anxiety', 'anxious', 'melancholia'],
@@ -84,13 +84,15 @@ const CONDITION_WORDS: Record<Locale, string[]> = {
 };
 const BAND_WINDOW = 3;
 
-/** Lower case, one kind of apostrophe and space, and Arabic without its marks, tatweel or alef variants, so spelling cannot hide a label. */
+/** Lower case, one kind of apostrophe and space, and Arabic without its marks, tatweel or alef variants and with a final ه as ة, so spelling cannot hide a label. */
 function normalise(text: string): string {
   return text
     .toLowerCase()
     .replace(/[’‘]/g, "'")
     .replace(/[ً-ٰٟـ]/g, '')
     .replace(/[أإآٱ]/g, 'ا')
+    // A final ه is written for ة in everyday Arabic ("متوسطه"), so the two are one letter here.
+    .replace(/ه(?!\p{L})/gu, 'ة')
     .replace(/\s+/g, ' ');
 }
 
@@ -102,7 +104,13 @@ function normalise(text: string): string {
  */
 const ARABIC_CONJUNCTIONS = ['', 'و', 'ف'];
 const ARABIC_PREFIXES = ['', 'ب', 'ك', 'ل', 'ال', 'بال', 'كال', 'لل'];
-const ARABIC_SUFFIXES = ['', 'ا', 'ات', 'ك', 'ه', 'ها', 'نا', 'كم', 'هم', 'هن', 'ي'];
+/**
+ * What ends a word: the accusative alef, the feminine (ة, which also makes "اكتئابية" the listed "اكتئابي"), the plural (ات, ين, ون)
+ * and the possessive pronouns. A final ه was already written as ة, so "his" (اكتئابه) is the feminine ending here and strips the same way.
+ */
+const ARABIC_SUFFIXES = ['', 'ا', 'ة', 'ات', 'ين', 'ون', 'ك', 'ها', 'نا', 'كم', 'هم', 'هن', 'ي'];
+/** Words that look like a band word with something attached and are another word: "الحادي" is "the eleventh", not "حاد". */
+const NOT_A_GRADE = new Set(['حادي']);
 /** A word is never cut down to fewer letters than this, so a short word does not become another word. */
 const MIN_STEM = 3;
 
@@ -140,7 +148,9 @@ function labelsIn(text: string, locale: Locale): string[] {
     // The label's own words are the fixed side (with the article taken off: "بالاكتئاب" is "اكتئاب"); the text's words may
     // carry anything Arabic attaches. A label's own possessive stays on it: "تشخيصك" (your diagnosis) is not "تشخيصا" (a diagnosis).
     const phrase = words(label).map((word) => word.replace(/^(?:بال|كال|لل|ال)(?=\p{L}{3})/u, ''));
-    return tokens.some((_, at) => phrase.every((word, offset) => tokens[at + offset] !== undefined && stems(tokens[at + offset]!).has(word)));
+    // A verb ending in ي ("تعاني") is also found as its stem with the plural or feminine ending on ("تعانين", "تعانون").
+    const forms = (word: string) => (word.endsWith('ي') && word.length > MIN_STEM ? [word, word.slice(0, -1)] : [word]);
+    return tokens.some((_, at) => phrase.every((word, offset) => tokens[at + offset] !== undefined && forms(word).some((form) => stems(tokens[at + offset]!).has(form))));
   });
 }
 
@@ -157,7 +167,7 @@ function bandedConditionsIn(text: string, locale: Locale): string[] {
   const hits: string[] = [];
   tokens.forEach((token, at) => {
     const grade = listed(token, band);
-    if (grade === undefined) return;
+    if (grade === undefined || [...stems(token)].some((stem) => NOT_A_GRADE.has(stem))) return;
     for (let other = Math.max(0, at - BAND_WINDOW); other <= Math.min(tokens.length - 1, at + BAND_WINDOW); other += 1) {
       const name = other === at ? undefined : listed(tokens[other]!, condition);
       if (name !== undefined) hits.push(`${grade} ${name}`);
@@ -264,6 +274,17 @@ describe('no diagnostic label in a message a person reads (MW-103)', () => {
     ['a possessive suffix on the condition', 'اكتئابك الشديد', 'ar', ['شديد اكتئاب']],
     ['a possessive suffix on the condition, band first', 'المتوسط في قلقها', 'ar', ['متوسط قلق']],
     ['a synonym for the condition', 'كآبة متوسطة', 'ar', ['متوسطة كابة']],
+    ['the feminine ending on the condition', 'قلقة شديدة', 'ar', ['شديدة قلق']],
+    ['the adjective ending on the condition', 'أعراض اكتئابية متوسطة', 'ar', ['متوسطة اكتئابي']],
+    ['the adverb "severely" with the condition', 'مكتئب بشدة', 'ar', ['بشدة مكتئب']],
+    ['the adverb "severely" with the feminine condition', 'مكتئبة بشدة', 'ar', ['بشدة مكتئب']],
+    ['the adverb "a little" with the condition', 'مكتئب قليلاً', 'ar', ['قليلا مكتئب']],
+    ['the plural ending on the condition (-ين)', 'مكتئبين بشدة', 'ar', ['بشدة مكتئب']],
+    ['the plural ending on the condition (-ون)', 'مكتئبون بشدة', 'ar', ['بشدة مكتئب']],
+    ['a final ه for ة', 'كآبه متوسطه', 'ar', ['متوسطة كابة']],
+    ['the feminine form inside a label', 'مصابة بالاكتئاب', 'ar', ['مصاب بالاكتئاب']],
+    ['the feminine verb ending inside a label', 'تعانين من الاكتئاب', 'ar', ['تعاني من الاكتئاب']],
+    ['the plural verb ending inside a label', 'تعانون من الاكتئاب', 'ar', ['تعاني من الاكتئاب']],
     ['a synonym for the band', 'قلق معتدل', 'ar', ['معتدل قلق']],
     ['the adverb "mildly"', 'You are mildly anxious.', 'en', ['mildly anxious']],
     ['the adverb "mildly" before a different condition word', 'Mildly depressed', 'en', ['mildly depressed']],
@@ -284,6 +305,9 @@ describe('no diagnostic label in a message a person reads (MW-103)', () => {
     expect(violationsIn('قلقك', 'ar')).toEqual([]);
     expect(violationsIn('درجة متوسطة', 'ar')).toEqual([]);
     expect(violationsIn('mildly', 'en')).toEqual([]);
+    // "الحادي" is "the eleventh", not the band word "حاد" with an ending, even three words from "القلق".
+    expect(violationsIn('اليوم الحادي عشر ثم القلق', 'ar')).toEqual([]);
+    expect(violationsIn('اليوم الحادي عشر', 'ar')).toEqual([]);
     expect(violationsIn('Your answers suggest a slightly higher score than last time.', 'en')).toEqual([]);
   });
 

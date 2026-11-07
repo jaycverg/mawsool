@@ -14,9 +14,9 @@ export function buildCrisis(period: MetricPeriod, facts: readonly CrisisFact[], 
   const inPeriod = facts.filter((fact) => since === null || fact.shownAt >= since);
   const contacts = inPeriod.filter((fact) => fact.contactConfirmed && fact.msToContact !== null).map((fact) => Math.max(0, fact.msToContact!) / MINUTE_MS);
   // When the funnel hides the crisis events of this period (to keep a small cell from being worked out), the count and every
-  // share over it go too: a share names the count it divides, and the funnel's difference would give it back. The median is
-  // hidden outright: the contacts are a part of those events and the funnel hides a count that is small, so the median would be
-  // suppressed on its own count anyway; hiding it here keeps a computed-but-never-shown branch out of the code.
+  // share over it go too: a share names the count it divides, and the funnel's difference would give it back. The median goes
+  // with them as a decision, not because it would be small anyway: the funnel can hide a large crisis count to protect another
+  // cell, and a median published beside a hidden count still describes the hidden group.
   if (countHidden) {
     const hidden = { suppressed: true } as const;
     return { period, shown: hidden, calledALine: hidden, contactConfirmed: hidden, medianMinutesToContact: hidden };
