@@ -3,12 +3,15 @@
 import { completedSeries, isCompleteScreening, selectRow } from '@mawsool/rules';
 import type { Instrument } from '@mawsool/types';
 import { isLocale } from '@mawsool/ui';
+import { useDemoOffsetMs } from '@mawsool/ui/components';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { deviceNow } from '../lib/clock';
 import { addWeeks, formatDate, partOfDay, spanBetween, type Part } from '../lib/format';
 import { href } from '../lib/routes';
+import { loadReminders, reminderDue, type ReminderSettings } from '../lib/reminders';
 import { findDraft } from '../lib/screening-store';
+import { useDevice } from '../lib/use-device';
 import { useScreenings } from '../lib/use-screenings';
 import { BottomNav } from './BottomNav';
 import { HomeHeader } from './HomeHeader';
@@ -21,14 +24,24 @@ export function HomeScreen() {
   const t = useTranslations('home');
   const ti = useTranslations('instrument');
   const tr = useTranslations('result');
+  const trm = useTranslations('reminder');
   const locale = useLocale();
   const lang = isLocale(locale) ? locale : 'en';
   const screenings = useScreenings();
   const [part, setPart] = useState<Part | null>(null);
+  const device = useDevice();
+  const [reminders, setReminders] = useState<ReminderSettings | null>(null);
+  // Re-render when the demo clock moves, so a reminder that the clock made due appears.
+  useDemoOffsetMs();
 
   useEffect(() => setPart(partOfDay(deviceNow())), []);
+  useEffect(() => {
+    if (device === null || device === 'unavailable') return;
+    void loadReminders(device.storage).then(setReminders, () => setReminders(null));
+  }, [device]);
 
   const list = Array.isArray(screenings) ? screenings : [];
+  const reminderIsDue = reminders !== null && Array.isArray(screenings) && reminderDue(reminders, list, deviceNow());
   const draft = findDraft(list, 'who5') ?? findDraft(list, 'gad7') ?? findDraft(list, 'phq9');
   const trendInstrument = TRENDS.find((instrument) => completedSeries(list, instrument).length > 0);
   const series = trendInstrument ? completedSeries(list, trendInstrument) : [];
@@ -45,6 +58,14 @@ export function HomeScreen() {
           <p role="alert" className="rounded-chip bg-warning px-3 py-2 text-small text-warning-ink">
             {t('storageUnavailable')}
           </p>
+        )}
+
+        {reminderIsDue && (
+          <section className="flex flex-col gap-2 rounded-card border-2 border-accent bg-accent-tint p-4" data-prompt="reminder">
+            <h2 className="text-[16px] font-semibold">{trm('title')}</h2>
+            <p className="t-body">{trm('body')}</p>
+            <a className="btn-primary" href={href(lang, 'check-in')}>{trm('action')}</a>
+          </section>
         )}
 
         <section className="flex flex-col gap-3 rounded-card border border-border bg-surface p-5">

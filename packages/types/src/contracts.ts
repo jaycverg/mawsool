@@ -346,3 +346,23 @@ export const EquityRequestSchema = z.object({ optIn: z.boolean(), buckets: Demog
 export type EquityRequest = z.infer<typeof EquityRequestSchema>;
 
 export const OpenApiDocumentSchema = z.object({ openapi: z.string(), paths: z.record(z.string(), z.unknown()) }).passthrough();
+
+/** How often a reminder to re-check comes, in weeks. Reminders are off until the person turns them on. */
+export const REMINDER_INTERVAL_WEEKS = [2, 4] as const;
+export const ReminderIntervalSchema = z.union([z.literal(2), z.literal(4)]);
+export type ReminderInterval = z.infer<typeof ReminderIntervalSchema>;
+
+/**
+ * A mobile number for text reminders, in international form (`+` and 8 to 15 digits). The phone strips spaces and dashes
+ * before it checks. It exists only when the person opts into reminders and chooses to give one, and it never joins a screening record.
+ */
+export const PhoneNumberSchema = z.string().regex(/^\+[1-9]\d{7,14}$/);
+export type PhoneNumber = z.infer<typeof PhoneNumberSchema>;
+
+/** PUT /me/reminder-phone: the optional number for text reminders and the interval it is used at. */
+export const ReminderPhoneRequestSchema = z.object({ phone: PhoneNumberSchema, intervalWeeks: ReminderIntervalSchema }).strict();
+export type ReminderPhoneRequest = z.infer<typeof ReminderPhoneRequestSchema>;
+
+/** What the server answers about the number it holds: that it holds one, never the number. */
+export const ReminderPhoneResultSchema = z.object({ stored: z.boolean(), intervalWeeks: ReminderIntervalSchema.nullable() });
+export type ReminderPhoneResult = z.infer<typeof ReminderPhoneResultSchema>;

@@ -52,10 +52,24 @@ describe('download and delete', () => {
     const { storage } = memoryStorage(full);
     const json = await exportDeviceData(storage, () => new Date('2026-11-02T08:00:00+04:00'));
     const parsed = JSON.parse(json);
-    expect(Object.keys(parsed).sort()).toEqual(['choice', 'crisis', 'exportedAt', 'insurance', 'preferences', 'screenings', 'sharing', 'tickets']);
+    expect(Object.keys(parsed).sort()).toEqual(['choice', 'crisis', 'exportedAt', 'insurance', 'preferences', 'reminders', 'screenings', 'sharing', 'tickets']);
     expect(parsed.screenings).toEqual(full.screenings);
+    expect(parsed.reminders).toBeNull();
     expect(json).not.toContain('device-secret-value');
     expect(json).not.toContain('queued');
+  });
+
+  it('exports the reminder settings the person holds, number included, apart from the check-ins', async () => {
+    const reminders = { intervalWeeks: 2, since: '2026-11-01T08:00:00+04:00', notifiedFor: null, phone: '+971501234567' };
+    const parsed = JSON.parse(await exportDeviceData(memoryStorage({ ...full, reminders }).storage, () => new Date('2026-11-02T08:00:00+04:00')));
+    expect(parsed.reminders).toEqual(reminders);
+    expect(JSON.stringify(parsed.screenings)).not.toContain('+971501234567');
+  });
+
+  it('deletes the reminder settings with everything else on the device', async () => {
+    const { storage, data } = memoryStorage({ ...full, reminders: { intervalWeeks: 4, since: '2026-11-01T08:00:00+04:00', notifiedFor: null, phone: '+971501234567' } });
+    await deleteDeviceData(storage);
+    expect(data.has('reminders')).toBe(false);
   });
 
   it('deleting everything also clears the tab\'s crisis mark, so nothing is left that could hold a block', async () => {

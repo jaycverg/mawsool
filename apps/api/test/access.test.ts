@@ -43,6 +43,8 @@ const REVIEWED: Record<string, { access: RouteAccess; kind: Kind }> = {
   'DELETE /consents/:id': { access: 'person', kind: 'person-own' },
   'DELETE /me/data': { access: 'person', kind: 'person-own' },
   'PUT /me/equity': { access: 'person', kind: 'person-own' },
+  'PUT /me/reminder-phone': { access: 'person', kind: 'person-own' },
+  'DELETE /me/reminder-phone': { access: 'person', kind: 'person-own' },
   'POST /summary/draft': { access: 'person', kind: 'person-own' },
   'POST /me/invites/claim': { access: 'person', kind: 'person-own' },
   'GET /tickets': { access: 'clinician', kind: 'clinician-scoped' },
@@ -120,6 +122,7 @@ describe('no employer or insurer access (MW-505)', () => {
       'POST /me/tickets/:id/reroute': { ...ticketRequest('00000000-0000-4000-8000-000000000001'), reason: 'cost' },
       'POST /consents': { ticketId, element: 'scores', content: {} },
       'PUT /me/equity': { optIn: false },
+      'PUT /me/reminder-phone': { phone: '+971501234567', intervalWeeks: 4 },
       'POST /summary/draft': { requestId: crypto.randomUUID(), locale: 'en', useAi: false, consented: [], content: {} },
       'POST /tickets/:id/events': { to: 'acknowledged' },
     };

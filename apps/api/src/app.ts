@@ -26,6 +26,7 @@ import { registerHealthRoutes } from './routes/health';
 import { registerInboundRoutes } from './routes/inbound';
 import { registerPersonDataRoutes } from './routes/person-data';
 import { registerPersonRoutes } from './routes/persons';
+import { registerReminderRoutes } from './routes/reminders';
 import { registerServiceRoutes } from './routes/services';
 import { registerTicketFlowRoutes } from './routes/ticket-routes';
 import { registerTicketRoutes } from './routes/tickets';
@@ -108,6 +109,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerInboundRoutes(app, { db: deps.db, clock, securityClock, personAppUrl: deps.config.personAppUrl ?? 'http://localhost:3000' });
   const consentDeps = { db: deps.db, cipher, clock };
   registerTicketFlowRoutes(app, consentDeps);
+  registerReminderRoutes(app, consentDeps);
   registerPersonDataRoutes(app, { ...consentDeps, summary: { enabled: deps.config.summaryLlmEnabled, provider: deps.summaryProvider ?? null } });
   registerClockRoute(app, { demoClock });
   registerMetricsRoutes(app, { db: deps.db, clock, encryptionKey: deps.config.encryptionKey });

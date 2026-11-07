@@ -1,5 +1,6 @@
 'use client';
 
+import { REMINDER_INTERVAL_WEEKS, type ReminderInterval } from '@mawsool/types';
 import { isLocale } from '@mawsool/ui';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
@@ -10,11 +11,27 @@ import { crisisLines } from '../lib/crisis-numbers';
 import { flushOutbox } from '../lib/crisis-outbox';
 import { exportDeviceData } from '../lib/device-data';
 import { eraseEverything, type EraseOutcome } from '../lib/erase';
-import { callServer, markServerFootprint } from '../lib/server';
+import { deviceNotifications } from '../lib/notify';
+import {
+  enableReminders,
+  loadReminders,
+  removeReminderNumber,
+  saveReminderNumber,
+  setReminderInterval,
+  turnOffReminders,
+  type ReminderChange,
+  type ReminderSettings,
+} from '../lib/reminders';
+import { callServer, markServerFootprint, type ServerDeps } from '../lib/server';
 import { loadEquity, saveEquity } from '../lib/share';
-import { useDevice } from '../lib/use-device';
+import { useDevice, type Device } from '../lib/use-device';
 import { BottomNav } from './BottomNav';
 import { HomeHeader } from './HomeHeader';
+
+type ReminderNote = 'none' | 'working' | 'failed' | 'blocked' | 'invalid' | 'denied';
+
+/** The note a reminder change leaves on screen: nothing when it was saved. */
+const noteOf = (change: ReminderChange): ReminderNote => (change === 'saved' ? 'none' : change);
 
 type Delete = 'idle' | 'confirming' | 'working' | 'blocked' | 'failed' | { done: Extract<EraseOutcome, { status: 'erased' }> };
 
@@ -36,11 +53,44 @@ export function SettingsScreen() {
   const usable = device !== null && device !== 'unavailable';
   const [equityOn, setEquityOn] = useState<boolean | null>(null);
   const [equityState, setEquityState] = useState<'idle' | 'working' | 'removed' | 'failed'>('idle');
+  const [reminders, setReminders] = useState<ReminderSettings | null>(null);
+  const [reminderNote, setReminderNote] = useState<ReminderNote>('none');
+  const [phoneInput, setPhoneInput] = useState('');
 
   useEffect(() => {
     if (!usable) return;
     void loadEquity(device.storage).then((stored) => setEquityOn(stored.optIn), () => setEquityOn(null));
+    void loadReminders(device.storage).then(setReminders, () => setReminders(null));
   }, [device, usable]);
+
+  const serverFor = (d: Device): ServerDeps => ({ storage: d.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, random: window.crypto });
+
+  /** Runs one reminder change, re-reads the saved settings and shows how it ended. A saved number field is cleared. */
+  async function changeReminders(run: (d: Device) => Promise<ReminderNote>) {
+    if (!usable) return;
+    setReminderNote('working');
+    let note: ReminderNote;
+    try {
+      note = await run(device);
+    } catch {
+      note = 'failed';
+    }
+    setReminders(await loadReminders(device.storage).catch(() => null));
+    setReminderNote(note);
+    if (note === 'none') setPhoneInput('');
+  }
+
+  const toggleReminders = (on: boolean) =>
+    changeReminders(async (d) => {
+      if (on) return (await enableReminders({ storage: d.storage, notifications: await deviceNotifications(), now: deviceNow })) === 'granted' ? 'none' : 'denied';
+      if (!reminders) return 'none';
+      const outcome = await turnOffReminders({ server: serverFor(d) }, reminders);
+      return outcome === 'off' ? 'none' : outcome;
+    });
+
+  const chooseInterval = (weeks: ReminderInterval) => changeReminders(async (d) => noteOf(await setReminderInterval({ server: serverFor(d), now: deviceNow }, reminders!, weeks)));
+  const saveNumber = () => changeReminders(async (d) => noteOf(await saveReminderNumber({ server: serverFor(d), now: deviceNow }, reminders!, phoneInput)));
+  const removeNumber = () => changeReminders(async (d) => noteOf(await removeReminderNumber({ server: serverFor(d) }, reminders!)));
 
   /** Takes the person out of the equity group totals: the server clears the four buckets, then the phone remembers it. */
   async function optOut() {
@@ -128,6 +178,83 @@ export function SettingsScreen() {
               {copy !== 'idle' && <p role="status" className="t-small text-muted">{t(copy === 'copied' ? 'copied' : 'copyFailed')}</p>}
             </>
           )}
+        </section>
+
+        <section className="flex flex-col gap-2.5 rounded-card border border-border bg-surface p-5" data-panel="reminders">
+          <h2 className="text-[16px] font-semibold">{t('remindersTitle')}</h2>
+          <p className="t-body text-muted">{t('remindersBody')}</p>
+          <label className="flex min-h-tap cursor-pointer items-center justify-between gap-3 text-[15px] font-semibold">
+            {t('remindersSwitch')}
+            <input
+              type="checkbox"
+              role="switch"
+              checked={reminders !== null}
+              disabled={!usable || reminderNote === 'working'}
+              onChange={(event) => void toggleReminders(event.target.checked)}
+              className="size-[22px] accent-accent"
+              data-reminders-switch
+            />
+          </label>
+          {reminders !== null && (
+            <>
+              <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">
+                <legend className="mb-1 p-0 text-[13px] font-semibold text-muted">{t('remindersEvery')}</legend>
+                {REMINDER_INTERVAL_WEEKS.map((weeks) => (
+                  <label key={weeks} className="flex min-h-tap cursor-pointer items-center gap-3 text-[15px]">
+                    <input
+                      type="radio"
+                      name="reminder-interval"
+                      value={weeks}
+                      checked={reminders.intervalWeeks === weeks}
+                      disabled={reminderNote === 'working'}
+                      onChange={() => void chooseInterval(weeks)}
+                      className="size-[22px] accent-accent"
+                    />
+                    {t('remindersWeeks', { count: weeks })}
+                  </label>
+                ))}
+              </fieldset>
+              <p className="t-small text-muted" data-reminders-limit>{t('remindersLimit')}</p>
+
+              <div className="flex flex-col gap-2 border-t border-border pt-2.5" data-panel="reminder-number">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-[15px] font-semibold">{t('remindersTextTitle')}</h3>
+                  <span className="inline-flex whitespace-nowrap rounded-chip bg-mock px-2 py-[3px] text-[12px] font-semibold text-mock-ink" data-sample>{t('remindersSample')}</span>
+                </div>
+                <p className="t-small text-muted">{t('remindersTextBody')}</p>
+                {reminders.phone !== null ? (
+                  <>
+                    <p className="text-[15px]" dir="ltr" data-reminder-number>{reminders.phone}</p>
+                    <button type="button" className="tap rounded-pill border-[1.5px] border-danger px-4 font-semibold text-danger" disabled={reminderNote === 'working'} onClick={() => void removeNumber()}>
+                      {t('remindersRemoveNumber')}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <label htmlFor="reminder-phone" className="text-[13px] font-semibold text-muted">{t('remindersNumberLabel')}</label>
+                    <input
+                      id="reminder-phone"
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="off"
+                      dir="ltr"
+                      placeholder="+971 5X XXX XXXX"
+                      value={phoneInput}
+                      onChange={(event) => setPhoneInput(event.target.value)}
+                      className="min-h-tap w-full rounded-input border border-[#9AAAA7] bg-ground px-3 text-[15px]"
+                    />
+                    <button type="button" className="tap rounded-pill border-[1.5px] border-accent px-4 font-semibold text-accent" disabled={phoneInput.trim() === '' || reminderNote === 'working'} onClick={() => void saveNumber()}>
+                      {t('remindersSaveNumber')}
+                    </button>
+                  </>
+                )}
+              </div>
+            </>
+          )}
+          {reminderNote === 'denied' && <p role="status" className="t-small text-muted" data-reminder-note="denied">{t('remindersDenied')}</p>}
+          {reminderNote === 'invalid' && <p role="alert" className="text-[15px] font-semibold text-danger" data-reminder-note="invalid">{t('remindersInvalid')}</p>}
+          {reminderNote === 'failed' && <p role="alert" className="text-[15px] font-semibold text-danger" data-reminder-note="failed">{t('remindersFailed')}</p>}
+          {reminderNote === 'blocked' && <p role="alert" className="text-[15px] font-semibold text-danger" data-reminder-note="blocked">{t('remindersBlocked')}</p>}
         </section>
 
         {(equityOn || equityState === 'removed' || equityState === 'failed') && (

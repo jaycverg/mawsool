@@ -31,6 +31,14 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// Tapping a reminder notification brings the app forward, or opens it if it was closed.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => (windows.length > 0 ? windows[0].focus() : self.clients.openWindow('/'))),
+  );
+});
+
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   if (request.method !== 'GET') return;

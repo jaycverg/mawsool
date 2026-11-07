@@ -323,6 +323,26 @@ export const inboundNonces = pgTable(
   (t) => [primaryKey({ columns: [t.source, t.nonce] })],
 );
 
+/**
+ * The optional mobile number for text reminders, one row per person, kept apart from tickets, bundles and anything the
+ * person screened. The number is AES-256-GCM ciphertext bound to this person's row (`reminderPhoneContext`), so a value
+ * copied onto another row does not decrypt. The row exists only while the person has reminders on and a number given;
+ * turning reminders off, removing the number and "Delete everything" all delete it.
+ */
+export const reminderPhones = pgTable(
+  'reminder_phones',
+  {
+    personId: uuid('person_id')
+      .primaryKey()
+      .references(() => persons.id),
+    intervalWeeks: integer('interval_weeks').notNull(),
+    phoneCiphertext: text('phone_ciphertext').notNull(),
+    createdAt: at('created_at').notNull(),
+    updatedAt: at('updated_at').notNull(),
+  },
+  (t) => [check('reminder_phones_interval', sql`${t.intervalWeeks} IN (2, 4)`)],
+);
+
 /** Carries no person id and no item answers, so a crisis can never be traced to a ticket. */
 export const crisisEvents = pgTable(
   'crisis_events',
@@ -383,6 +403,7 @@ export const ALL_TABLE_NAMES = [
   'consents',
   'ticket_events',
   'tickets',
+  'reminder_phones',
   'staff_sessions',
   'staff_magic_links',
   'staff_users',

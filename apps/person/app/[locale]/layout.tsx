@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { LOCALES, htmlAttributes } from '@mawsool/ui';
 import { CrisisGuard } from '../../components/CrisisGuard';
 import { DeviceSync } from '../../components/DeviceSync';
+import { ReminderNotifier } from '../../components/ReminderNotifier';
 import { ServiceWorkerRegistration } from '../../components/ServiceWorkerRegistration';
 import '../globals.css';
 
@@ -41,6 +42,7 @@ export default async function LocaleLayout({ children, params }: { children: Rea
         <NextIntlClientProvider locale={locale} messages={messages}>
           <CrisisGuard>{children}</CrisisGuard>
           <DeviceSync />
+          <ReminderNotifier />
           <ServiceWorkerRegistration />
         </NextIntlClientProvider>
       </body>

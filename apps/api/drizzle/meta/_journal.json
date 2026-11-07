@@ -50,6 +50,13 @@
       "when": 1794014372041,
       "tag": "0006_demo_clock",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794026211583,
+      "tag": "0007_reminder_phones",
+      "breakpoints": true
     }
   ]
 }
