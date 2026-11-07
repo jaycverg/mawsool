@@ -197,7 +197,7 @@ describe('seeded database', () => {
   it('holds the same data in two separate databases seeded at different times', async () => {
     const [a, b] = await Promise.all([dumpDatabase(first.db), dumpDatabase(second.db)]);
     expect(Object.keys(a)).toHaveLength(ALL_TABLE_NAMES.length);
-    expect(ALL_TABLE_NAMES).toHaveLength(16);
+    expect(ALL_TABLE_NAMES).toHaveLength(17);
     expect(a['tickets']).toHaveLength(TICKET_COUNT);
     expect(b).toEqual(a);
   });

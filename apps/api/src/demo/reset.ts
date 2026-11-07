@@ -8,7 +8,7 @@ import { readStaffAccess, runSeed } from '../seed/run';
 /**
  * Puts the demo back to its start, in one call.
  *
- * - The clock offset goes to zero.
+ * - The clock offset goes to zero, in memory and in the database.
  * - The database is reloaded from the deterministic seed, anchored on the start of today (Dubai), so the seeded history
  *   ends where the demo begins, "the last 90 days" holds all of it and the seeded open invites are unexpired now. The same
  *   day gives the same rows. Staff who are signed in stay signed in.
@@ -19,9 +19,11 @@ import { readStaffAccess, runSeed } from '../seed/run';
  * and the phone re-registers itself the next time the server answers 401 (`callServer`).
  */
 export async function resetDemo(deps: { db: Db; clock: OffsetClock; personAppUrl: string }): Promise<DemoResetResult> {
-  deps.clock.reset();
-  const now = deps.clock.now();
+  const now = deps.clock.baseNow();
+  // The reload empties the stored offset with every other table, in the same transaction, so the stored value and the
+  // clock cannot disagree after a reload that failed: the clock is only zeroed once the reload has gone through.
   await runSeed(deps.db, startOfDubaiDay(now), await readStaffAccess(deps.db));
+  deps.clock.reset();
   const invite = await createInvite(deps.db, deps.clock, 'tamm', { result: 'positive', screenedAt: now.toISOString(), locale: 'ar' });
   const code = formatInviteCode(invite.code);
   const tammUrl = (locale: 'ar' | 'en') => `${deps.personAppUrl}/${locale}/tamm/?code=${encodeURIComponent(code)}`;

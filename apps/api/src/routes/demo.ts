@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Clock, OffsetClock } from '../clock';
 import type { Db } from '../db/client';
+import { createClockMover } from '../demo/clock-store';
 import { resetDemo } from '../demo/reset';
 import { sweep } from '../sweep';
 
@@ -40,12 +41,13 @@ export interface DemoRouteDeps {
  */
 export function registerDemoRoutes(app: FastifyInstance, deps: DemoRouteDeps): void {
   const typed = app.withTypeProvider<ZodTypeProvider>();
+  const move = createClockMover(deps.db, deps.clock);
 
   typed.post(
     '/demo/clock/advance',
     { config: { access: 'admin' }, schema: { body: AdvanceClockRequestSchema, response: { 200: AdvanceClockResultSchema, 400: ErrorResponseSchema } } },
     async (request) => {
-      deps.clock.advance(ADVANCE_MS[request.body.by]);
+      await move(ADVANCE_MS[request.body.by]);
       const swept = await sweep(deps.db, deps.clock, {}, deps.securityClock);
       return { demoMode: true, offsetMs: deps.clock.offset, now: deps.clock.now().toISOString(), markedOverdue: swept.marked };
     },

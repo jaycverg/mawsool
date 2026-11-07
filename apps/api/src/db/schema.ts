@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
+  bigint,
   boolean,
   check,
   index,
@@ -355,9 +356,24 @@ export const adverseEvents = pgTable('adverse_events', {
   at: at('at').notNull(),
 });
 
+/**
+ * The demo clock's offset from the wall clock, in milliseconds: one row (`id` = 1), absent while the clock has not moved.
+ * It is written by the demo's clock controls and read once when the API starts, so a restart keeps the demo's date; the
+ * reload of the seed truncates it with everything else. It holds no person data and no timestamp.
+ */
+export const demoClock = pgTable(
+  'demo_clock',
+  {
+    id: integer('id').primaryKey(),
+    offsetMs: bigint('offset_ms', { mode: 'number' }).notNull(),
+  },
+  (t) => [check('demo_clock_single_row', sql`${t.id} = 1`), check('demo_clock_forward', sql`${t.offsetMs} >= 0`)],
+);
+
 /** Names of every table, in an order that is safe to truncate in one statement. */
 export const ALL_TABLE_NAMES = [
   'adverse_events',
+  'demo_clock',
   'inbound_invites',
   'inbound_nonces',
   'bundle_reads',

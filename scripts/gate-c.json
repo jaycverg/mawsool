@@ -374,6 +374,38 @@
     "browser": "overdue-ticket-prompts-the-person-to-reroute"
   },
   {
+    "id": "demo-clock-offset-survives-a-restart",
+    "sentence": "The demo clock's offset is kept in the database as the clock controls move it and read when the API starts, so a restart keeps the demo's date; a reset empties it; with the demo unset it is left alone; a failed write leaves the clock where it was and two moves at once both count",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/demo-clock.test.ts",
+        "name": "keeps the demo date: the offset the clock was moved to"
+      },
+      {
+        "file": "test/demo-clock.test.ts",
+        "name": "starts at zero after a reset, because the reload empties the stored offset"
+      },
+      {
+        "file": "test/demo-clock.test.ts",
+        "name": "leaves the stored offset alone when DEMO_MODE is unset"
+      },
+      {
+        "file": "test/demo-clock.test.ts",
+        "name": "writes the offset before it moves the clock"
+      },
+      {
+        "file": "test/demo-clock.test.ts",
+        "name": "counts two moves made at once"
+      }
+    ]
+  },
+  {
+    "id": "reset-leaves-the-phone-registered-afresh",
+    "sentence": "After a reset from the admin panel, the same phone registers as the same person again, drops the ticket the server no longer holds without asking for it a second time, and keeps its check-in history",
+    "browser": "reset-leaves-a-phone-registered-afresh-without-its-ticket"
+  },
+  {
     "id": "seam-equity-opt-in-to-dashboard-row",
     "sentence": "An equity opt-in made on the phone reaches the dashboard: the person's age-band row gains one ticket and no other row moves",
     "browser": "seam-equity-opt-in-reaches-the-dashboard-row"
