@@ -33,6 +33,11 @@ test('the arguments name the gates and the platform, and refuse anything else', 
   assert.equal(parseArgs(['--run=pnpm test']).run, 'pnpm test');
   assert.throws(() => parseArgs(['phase9']), /unknown argument/);
   assert.throws(() => parseArgs(['--platform=darwin/arm64']), /linux\/amd64 or linux\/arm64/);
+  // A baseline is only written by the build CI draws with: a check may run on arm64, an update may not.
+  assert.deepEqual(parseArgs(['--platform=linux/arm64', 'c']), { update: false, platform: 'linux/arm64', gates: ['c'], run: null });
+  assert.throws(() => parseArgs(['--update', '--platform=linux/arm64']), /only writes baselines on linux\/amd64/);
+  assert.throws(() => parseArgs(['--platform=linux/arm64', '--update', 'phase2']), /only writes baselines on linux\/amd64/);
+  assert.equal(parseArgs(['--update', '--platform=linux/amd64']).update, true);
   // One command runs on its own: it is not a gate, and it never rewrites a baseline.
   assert.throws(() => parseArgs(['--run=pnpm test', '--update']), /takes no gate/);
   assert.throws(() => parseArgs(['--run=pnpm test', 'c']), /takes no gate/);

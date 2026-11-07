@@ -28,6 +28,14 @@ cp .env.example .env
 pnpm install --frozen-lockfile --store-dir /pnpm-store
 
 status=0
+
+# One gate's exit code, as this run counts it. A gate that rewrote the baselines and otherwise passed exits 3 (an update run
+# is never an acceptance result), which only a run that asked for the rewrite accepts.
+gate_status() {
+  if [ "$1" -eq 3 ] && [ "${E2E_UPDATE_SNAPSHOTS:-}" = "1" ]; then return 0; fi
+  return "$1"
+}
+
 if [ -n "${RUN_COMMAND:-}" ]; then
   # To look closer at one thing in the same container (`pnpm e2e:linux --run="pnpm --filter @mawsool/api test"`).
   echo "== ${RUN_COMMAND} (node $(node -v), $(uname -m))"
@@ -35,7 +43,7 @@ if [ -n "${RUN_COMMAND:-}" ]; then
 else
   for gate in $GATES; do
     echo "== gate:$gate (node $(node -v), $(uname -m))"
-    pnpm "gate:$gate" || status=1
+    pnpm "gate:$gate" || gate_status $? || status=1
   done
 fi
 

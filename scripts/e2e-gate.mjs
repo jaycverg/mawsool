@@ -18,10 +18,12 @@
 // the suite, 16 minutes in all.
 //
 // `E2E_GREP=<text>` runs only the tests whose title contains the text, to work on one test. A subset run checks
-// nothing against the registry, prints that it is not an acceptance result and exits non-zero.
+// nothing against the registry, prints that it is not an acceptance result and exits non-zero. So does a run with
+// `E2E_UPDATE_SNAPSHOTS=1`, which rewrites the pixel baselines instead of comparing against them (exit 3 when it otherwise passed).
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { gateOutcome, isUpdateRun } from './e2e-gate-lib.mjs';
 import { ROOT, killTree, resolveEnv } from './lib.mjs';
 
 const DEFAULT_TOTAL_LIMIT_MS = 16 * 60_000;
@@ -184,7 +186,9 @@ try {
   for (const problem of problems) log(problem);
   const passed = [...expected].filter((title) => outcomes.get(title) === 'expected').length;
   log(`${passed} of ${expected.size} registered tests passed (playwright exit ${status})`);
-  await finish(status === 0 && problems.length === 0 ? 0 : 1);
+  const outcome = gateOutcome({ updating: isUpdateRun(env), playwrightStatus: status, problems });
+  if (outcome.note) log(outcome.note);
+  await finish(outcome.code);
 } catch (error) {
   log(`failed: ${error instanceof Error ? error.stack : String(error)}`);
   await finish(1);

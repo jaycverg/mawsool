@@ -21,8 +21,10 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   forbidOnly: true,
-  // Screenshot baselines are committed beside the spec, one per platform (`-chromium-darwin.png`). A missing baseline
-  // fails the run instead of writing one; `E2E_UPDATE_SNAPSHOTS=1 pnpm gate:phase2` rewrites them on purpose.
+  // Screenshot baselines are committed beside the spec, one per platform (`-chromium-darwin.png` for a Mac,
+  // `-chromium-linux.png` for CI and `pnpm e2e:linux`). A missing baseline fails the run instead of writing one;
+  // `E2E_UPDATE_SNAPSHOTS=1 pnpm gate:phase2` rewrites a Mac's on purpose and `pnpm e2e:linux --update` the Linux ones. A gate
+  // run with it set is never an acceptance result (scripts/e2e-gate-lib.mjs).
   updateSnapshots: process.env.E2E_UPDATE_SNAPSHOTS === '1' ? 'all' : 'none',
   reporter: [['list'], ['json', { outputFile: 'test-results/e2e-report.json' }]],
   outputDir: 'test-results/e2e',

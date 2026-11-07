@@ -131,7 +131,8 @@ async function blockSurvivesFailingStorage({ page, locale }: Context, mode: IdbM
 
 /**
  * Pixel snapshots of the key screens at 390 x 844, in both languages, from the same stored data and a clock fixed
- * at 29 Oct 2026 08:00 Dubai: a GAD-7 of 9 three weeks before one of 14. The baselines are for Chromium on macOS.
+ * at 29 Oct 2026 08:00 Dubai: a GAD-7 of 9 three weeks before one of 14. The baselines are for Chromium on macOS and on Linux,
+ * one file each (see docs/browser-baselines.md).
  */
 function screenSnapshot(screen: string, open: (ctx: Context) => Promise<void>): (ctx: Context) => Promise<void> {
   return async (ctx) => {

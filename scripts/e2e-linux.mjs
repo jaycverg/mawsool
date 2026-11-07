@@ -11,9 +11,10 @@
 //     by platform, so a Linux run can only read and write the Linux ones.
 //
 // The image is `mcr.microsoft.com/playwright:v<exact Playwright version>-noble`, Node is the one in `.nvmrc` and pnpm the one
-// `packageManager` pins; the CI workflow uses the same three, and `scripts/lib.test.mjs` fails when it does not. The default
-// platform is linux/amd64, the architecture of GitHub's `ubuntu-latest`, so a baseline made on an Apple Silicon Mac is drawn
-// by the same build of Chromium that CI will use (it runs emulated and takes longer). The working copy is the repository's
+// `packageManager` pins; the CI workflow uses the same three, and `scripts/e2e-linux-lib.test.mjs` fails when it does not. The
+// default platform is linux/amd64, the architecture of GitHub's `ubuntu-latest`, so a baseline made on an Apple Silicon Mac is
+// drawn by the same build of Chromium that CI will use (it runs emulated and takes longer). `--platform=linux/arm64` can check
+// but `--update` refuses it, so no committed baseline is drawn by another build. The working copy is the repository's
 // tracked and not-ignored files, copied in, so the host's node_modules and .env never reach the container.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
