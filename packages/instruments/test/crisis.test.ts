@@ -96,10 +96,10 @@ describe('evaluateCrisisForAnswers', () => {
     expect(evaluateCrisisForAnswers('phq9', []).triggered).toBe(false);
   });
 
-  it('does not throw for a row that lost its answers altogether, and does not fire for it', () => {
+  it('does not throw for a row that lost its answers altogether: a C-SSRS row fires as an invalid answer, the other instruments do not', () => {
     for (const lost of [null, undefined]) {
-      expect(evaluateCrisisForAnswers('phq9', lost)).toMatchObject({ triggered: false, reason: 'no_trigger' });
-      expect(evaluateCrisisForAnswers('cssrs', lost)).toMatchObject({ triggered: false, reason: 'no_trigger' });
+      expect(evaluateCrisisForAnswers('cssrs', lost)).toEqual({ triggered: true, trigger: 'cssrs', reason: 'invalid_answer' });
+      for (const instrument of ['phq9', 'gad7', 'who5'] as const) expect(evaluateCrisisForAnswers(instrument, lost)).toMatchObject({ triggered: false, reason: 'no_trigger' });
     }
   });
 });

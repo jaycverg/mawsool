@@ -169,6 +169,19 @@ describe('crisis takes precedence', () => {
     expect(run([flagged, phq9(12)])[0]?.kind).toBe('crisis');
   });
 
+  it('fails safe for a positive C-SSRS row that lost its answers: it has no stored flag, so it returns the crisis option until resolved', () => {
+    const cssrsYes = screening('cssrs', 1, '2026-10-01T08:00:00+04:00', [1, 0, 0, 0, 0, 0]);
+    const lost = { ...cssrsYes, band: 'positive', item9Flag: false, answers: null } as unknown as Screening;
+    expect(run([lost])[0]?.kind).toBe('crisis');
+    expect(run([lost, phq9(12)])[0]?.kind).toBe('crisis');
+    expect(run([lost], { crisisResolvedAt: '2026-10-01T09:00:00+04:00' })[0]?.kind).toBe('recommended');
+  });
+
+  it('does not fire for a PHQ-9 row that lost its answers when its item 9 flag is false: nothing was recorded as a trigger', () => {
+    const lost = { ...phq9(25, '2026-10-02T08:00:00+04:00'), item9Flag: false, answers: null } as unknown as Screening;
+    expect(run([lost, phq9(12)])[0]?.kind).toBe('recommended');
+  });
+
   it('is not triggered by a later check-in that answers item 9 with 0 once the earlier one is resolved', () => {
     const clean = phq9(8, '2026-10-15T08:00:00+04:00', 0);
     expect(run([item9, clean], { crisisResolvedAt: '2026-10-01T08:10:00+04:00' })[0]?.kind).toBe('recommended');
