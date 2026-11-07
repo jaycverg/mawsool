@@ -12,7 +12,7 @@ export type RemeasureOutcome =
   | { kind: 'illegal' }
   /** Six weeks have not passed since the ticket was seen: 409. */
   | { kind: 'too_early'; availableAt: Date }
-  /** A total's `takenAt` is before the repeat check opened or in the future: 400, nothing written. */
+  /** A total's `takenAt` is before the repeat check opened: 400, nothing written. */
   | { kind: 'invalid_scores' }
   /** The stored totals leave no room for these: 409, nothing written (a repeat check without totals still works). */
   | { kind: 'share_full' }
@@ -50,8 +50,8 @@ export async function remeasureTicket(deps: ConsentDeps, ticket: { id: string; p
   const availableAt = remeasureAvailableAt(seenAt);
   if (now.getTime() < availableAt.getTime()) return { kind: 'too_early', availableAt };
 
-  // A total must come from the repeat check itself: taken once it opened, and not after now. A screening started before care, or one dated ahead, is refused.
-  if (request.scores.some((score) => Date.parse(score.takenAt) < availableAt.getTime() || Date.parse(score.takenAt) > now.getTime())) return { kind: 'invalid_scores' };
+  // A total must come from the repeat check itself: taken once it opened. A screening started before care is refused. There is no upper bound: the phone stamps `takenAt` with its own clock, which may run ahead of the server's.
+  if (request.scores.some((score) => Date.parse(score.takenAt) < availableAt.getTime())) return { kind: 'invalid_scores' };
   await hooks.afterRead?.();
   try {
     return await db.transaction(async (tx) => {

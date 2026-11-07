@@ -402,14 +402,14 @@ describe('the repeat check at six weeks', () => {
       expect(await stateOf(id)).toBe('closed'); // the data goes, a terminal state stays
     });
 
-    it('refuses a total taken before the repeat check opened, or dated after now (400), and writes no event, no ledger row and no bundle change', async () => {
+    it('refuses a total taken before the repeat check opened (400), and writes no event, no ledger row and no bundle change', async () => {
       const { id, seenAt } = await seen(['ticket', 'free_text']);
       at(seenAt, SIX_WEEKS);
       const opens = ctx.clock.now().getTime();
       const bundleBefore = (await rawBundle(testDb.db, id)).contentCiphertext;
       const ledgerBefore = await ledger(id);
       const eventsBefore = await eventStates(testDb.db, id);
-      const stamps = [new Date(opens - 1), new Date(seenAt.getTime()), new Date('2020-01-01T00:00:00Z'), new Date(opens + 1)];
+      const stamps = [new Date(opens - 1), new Date(seenAt.getTime()), new Date('2020-01-01T00:00:00Z')];
       for (const takenAt of stamps) {
         const res = await remeasure(id, { scores: [{ ...PHQ, takenAt: takenAt.toISOString() }] });
         expect(res.statusCode, takenAt.toISOString()).toBe(400);
@@ -420,8 +420,16 @@ describe('the repeat check at six weeks', () => {
       expect(await ledger(id)).toEqual(ledgerBefore);
       expect((await rawBundle(testDb.db, id)).contentCiphertext).toBe(bundleBefore);
       expect(await stateOf(id)).toBe('seen');
-      // Exactly when the repeat check opened is the earliest accepted, and now the latest.
+      // Exactly when the repeat check opened is the earliest accepted.
       expect((await remeasure(id, { scores: [{ ...PHQ, takenAt: new Date(opens).toISOString() }] })).statusCode).toBe(200);
+    });
+
+    it('accepts a total stamped a minute ahead of the server, since the phone stamps it with its own clock', async () => {
+      const { id, seenAt } = await seen(['ticket', 'free_text']);
+      at(seenAt, SIX_WEEKS);
+      const ahead = { ...PHQ, takenAt: new Date(ctx.clock.now().getTime() + 60_000).toISOString() };
+      expect((await remeasure(id, { scores: [ahead] })).statusCode).toBe(200);
+      expect((await storedContent(testDb.db, id))!.scores).toContainEqual(ahead);
     });
 
     it('answers 409 and moves nothing when the stored totals leave no room for the new ones; without totals the move still works', async () => {
