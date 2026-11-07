@@ -3,6 +3,9 @@ import {
   CONSENT_ELEMENTS,
   CrisisEventSchema,
   DemographicsSchema,
+  PhoneNumberSchema,
+  REMINDER_INTERVAL_WEEKS,
+  ReminderPhoneRequestSchema,
   RegisterPersonRequestSchema,
   ROUTE_ACCESS,
   SHORT_CODE_ALPHABET,
@@ -76,5 +79,19 @@ describe('CrisisEvent', () => {
     const keys = Object.keys(CrisisEventSchema.shape);
     expect(keys).not.toContain('personId');
     expect(keys).not.toContain('answers');
+  });
+});
+
+describe('the number for text reminders', () => {
+  it('accepts an international number and nothing else', () => {
+    for (const good of ['+971501234567', '+14155550123', '+12345678']) expect(PhoneNumberSchema.safeParse(good).success, good).toBe(true);
+    for (const bad of ['971501234567', '0501234567', '+0501234567', '+1234567', '+1234567890123456', '+971 50 123 4567', '+97150abc', '']) expect(PhoneNumberSchema.safeParse(bad).success, bad).toBe(false);
+  });
+
+  it('offers 2 or 4 weeks and refuses an extra field on the request', () => {
+    expect([...REMINDER_INTERVAL_WEEKS]).toEqual([2, 4]);
+    expect(ReminderPhoneRequestSchema.safeParse({ phone: '+971501234567', intervalWeeks: 2 }).success).toBe(true);
+    expect(ReminderPhoneRequestSchema.safeParse({ phone: '+971501234567', intervalWeeks: 3 }).success).toBe(false);
+    expect(ReminderPhoneRequestSchema.safeParse({ phone: '+971501234567', intervalWeeks: 4, name: 'x' }).success).toBe(false);
   });
 });

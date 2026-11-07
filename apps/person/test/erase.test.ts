@@ -3,6 +3,7 @@ import { createTabMark } from '@mawsool/ui';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { eraseEverything, type EraseDeps } from '../lib/erase';
 import { claimInvite } from '../lib/invite';
+import { saveReminderNumber } from '../lib/reminders';
 import { forgetRegistration, markServerFootprint } from '../lib/server';
 import en from '../messages/en.json';
 import ar from '../messages/ar.json';
@@ -185,5 +186,45 @@ describe('Delete everything', () => {
     await s.prepare();
     s.deps.crisisIsOpen = async () => Promise.reject(new Error('unreadable'));
     expect(await eraseEverything(s.deps)).toMatchObject({ status: 'erased', crisisWasOpen: false });
+  });
+});
+
+describe('Delete everything on a phone that gave a number for text reminders', () => {
+  const settings = { intervalWeeks: 4 as const, since: '2026-11-01T08:00:00+04:00', notifiedFor: null, phone: null };
+
+  it('asks the server to delete the number before the wipe, then leaves no reminder record on the phone', async () => {
+    const s = setup();
+    s.store.data.set('reminders', settings);
+    forgetRegistration(s.store.storage);
+    expect(await saveReminderNumber({ server: s.deps.server, now: NOW }, settings, '+971501234567')).toBe('saved');
+    expect(s.store.data.get('reminders')).toMatchObject({ phone: '+971501234567' });
+    s.calls.length = 0;
+    s.wipedBefore.length = 0;
+    expect((await eraseEverything(s.deps)).status).toBe('erased');
+    expect(s.calls).toEqual(['DELETE /me/data', 'CLEAR']);
+    expect(s.wipedBefore).toEqual([false]);
+    expect(s.store.data.has('reminders')).toBe(false);
+    expect(s.store.data.size).toBe(0);
+  });
+
+  it('offline, deletes nothing, so the number can still be removed from the server later', async () => {
+    const s = setup();
+    s.store.data.set('reminders', settings);
+    forgetRegistration(s.store.storage);
+    expect(await saveReminderNumber({ server: s.deps.server, now: NOW }, settings, '+971501234567')).toBe('saved');
+    s.deps.server.fetch = (async () => {
+      throw new TypeError('network down');
+    }) as unknown as typeof fetch;
+    expect(await eraseEverything(s.deps)).toEqual({ status: 'blocked' });
+    expect(s.store.data.get('reminders')).toMatchObject({ phone: '+971501234567' });
+  });
+
+  it('wipes reminders that never had a number without any network call', async () => {
+    const s = setup();
+    s.store.data.set('reminders', settings);
+    await s.prepare();
+    expect((await eraseEverything(s.deps)).status).toBe('erased');
+    expect(s.calls).toEqual(['CLEAR']);
+    expect(s.store.data.has('reminders')).toBe(false);
   });
 });
