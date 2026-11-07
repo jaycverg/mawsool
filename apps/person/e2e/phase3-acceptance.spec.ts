@@ -14,6 +14,7 @@ import {
   setIdbMode,
   snapshot,
   takeCheckIn,
+  tapOwners,
   triggerCrisis,
   visitOnline,
   type Locale,
@@ -133,6 +134,15 @@ async function expectDeclineWords(page: Page, locale: Locale, id: string): Promi
   // Body text: 15 px on 22 in English and 24 in Arabic. The link is a 44 px target, as every control is.
   expect(await computed(page, '#decline-text', ['font-size', 'line-height'])).toMatchObject({ 'font-size': '15px', 'line-height': locale === 'ar' ? '24px' : '22px' });
   expect((await computed(page, '#decline-text [data-stop-sharing-link]', [])).height).toBeGreaterThanOrEqual(44);
+  // The link's 44 px target is padding, so its box reaches under "Yes, decline" below it. Asked of the browser pixel by pixel: the
+  // destructive button wins every pixel it shares with the link and loses none of its own, and the link answers everywhere
+  // above it. What the link keeps is 40 px in English and 42 in Arabic, not the 44 its box measures: the button covers the rest.
+  const taps = await tapOwners(page, '#decline-text [data-stop-sharing-link]', '[role="alertdialog"] button.bg-danger');
+  expect(taps.ownerBox, 'the link box').toBeGreaterThanOrEqual(44);
+  // The link answers from its top, then "Yes, decline" answers for every row they share: never the link on top of the button, never a gap.
+  expect(taps.rows, 'who answers at each row of the link, from its top').toMatch(/^O+B+$/);
+  expect(taps.otherLost, 'the button keeps every pixel of its own').toBe(0);
+  expect(taps.rows.replaceAll('B', '').length, 'what a finger reaches of the link').toBeGreaterThanOrEqual(40);
   await page.getByRole('button', { name: msg(locale, 'ticket.declineYes'), exact: true }).click();
 
   await expect(page.locator('[data-step="declined"]')).toHaveAttribute('data-done', 'true');
@@ -270,6 +280,34 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await page.locator('input[data-element="scores"]').uncheck();
     await expect(page.locator('[data-preview]')).not.toContainText('PHQ-9');
     expect(toApi.every((entry) => entry === 'GET /services' || entry === 'GET /clock')).toBe(true);
+  },
+
+  async 'consent-send-needs-a-chosen-service'({ page, locale }) {
+    await toOptions(page, locale);
+    // The directory the consent screen reads no longer holds the service the person chose (a copy that moved on).
+    let holdsService = false;
+    await page.route(`${API}/services*`, async (route) => {
+      const real = await route.fetch();
+      await route.fulfill({ response: real, json: holdsService ? await real.json() : [] });
+    });
+    const sent: string[] = [];
+    page.on('request', (request) => void (request.url() === `${API}/tickets` && sent.push(request.method())));
+    await page.locator('[data-tier][data-lead]').getByRole('button', { name: msg(locale, 'options.choose'), exact: true }).click();
+    await expect(page).toHaveURL(consentUrl(locale));
+    const sendButton = page.getByRole('button', { name: msg(locale, 'consent.send'), exact: true });
+    await expect(page.locator('[data-service-missing]')).toHaveText(msg(locale, 'consent.serviceMissing'));
+    await expect(sendButton).toBeDisabled();
+    // A click that gets through anyway (the page is scripted, not tapped) sends nothing.
+    await sendButton.dispatchEvent('click');
+    await expect(page.locator('[data-service-missing]')).toBeVisible();
+    expect(sent).toEqual([]);
+
+    // With the service back in the directory the same screen can send.
+    holdsService = true;
+    await page.reload();
+    await expect(page.locator('[data-service-name]')).not.toHaveText('');
+    await expect(page.locator('[data-service-missing]')).toHaveCount(0);
+    await expect(sendButton).toBeEnabled();
   },
 
   async 'ticket-sends-only-ticked-and-stores-ciphertext'({ page, locale }) {

@@ -412,6 +412,11 @@
     "browser": "consent-defaults-off-and-previews"
   },
   {
+    "id": "browser-consent-send-needs-a-chosen-service",
+    "sentence": "Send is disabled and the screen says why when the service the person chose is not in the directory, and a scripted click sends nothing (browser)",
+    "browser": "consent-send-needs-a-chosen-service"
+  },
+  {
     "id": "browser-ticket-sends-only-ticked-and-stores-ciphertext",
     "sentence": "The browser request carries only the ticked elements and the stored bundle is ciphertext holding only those (browser)",
     "browser": "ticket-sends-only-ticked-and-stores-ciphertext"

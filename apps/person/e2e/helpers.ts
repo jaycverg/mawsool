@@ -202,6 +202,51 @@ export async function computed(page: Page, selector: string, properties: string[
   }, properties);
 }
 
+/** What `tapOwners` found. */
+export interface TapOwners {
+  /** The height of the owner's box on its last line, in pixels. */
+  ownerBox: number;
+  /**
+   * Who answers at each pixel row of that box from its top: `O` the owner, `B` the other element, `?` anything else. Read
+   * `OOOOBBB` as "the owner's first four rows are its own, the last three belong to the other element".
+   */
+  rows: string;
+  /** Points across the other element's whole box (clear of a pill's rounded ends) that answer with anything but it. */
+  otherLost: number;
+}
+
+/**
+ * Who a tap reaches where two controls meet. A link inside a sentence gets its 44 px target from vertical padding, so its
+ * box can reach under the button that follows it; a box is not what the finger reaches, the topmost element at the point is.
+ * This asks the browser (`document.elementFromPoint`) at every pixel row of the `owner`'s last line, and across the whole
+ * of the `other` element whether anything but it answers. Both are given as selectors; the owner may be an inline element.
+ */
+export async function tapOwners(page: Page, owner: string, other: string): Promise<TapOwners> {
+  await expect(page.locator(owner).first()).toBeVisible();
+  await expect(page.locator(other).first()).toBeVisible();
+  return page.evaluate(
+    ([ownerSelector, otherSelector]) => {
+      const ownerElement = document.querySelector(ownerSelector!)!;
+      const otherElement = document.querySelector(otherSelector!)!;
+      ownerElement.scrollIntoView({ block: 'center' });
+      const who = (x: number, y: number): 'O' | 'B' | '?' => {
+        const element = document.elementFromPoint(x, y);
+        return element?.closest(ownerSelector!) ? 'O' : element?.closest(otherSelector!) ? 'B' : '?';
+      };
+      const line = [...ownerElement.getClientRects()].at(-1)!;
+      const box = otherElement.getBoundingClientRect();
+      let rows = '';
+      for (let y = Math.ceil(line.top) + 0.5; y < line.bottom; y += 1) rows += who(line.left + line.width / 2, y);
+      let otherLost = 0;
+      for (const across of [box.left + box.height, box.left + box.width / 2, box.right - box.height]) {
+        for (let y = Math.ceil(box.top) + 0.5; y < box.bottom; y += 1) if (who(across, y) !== 'B') otherLost += 1;
+      }
+      return { ownerBox: Math.round(line.height), rows, otherLost };
+    },
+    [owner, other] as const,
+  );
+}
+
 /**
  * Stores a GAD-7 of 9 three weeks before one of 14, with the page clock fixed at each, so the result, the trend and
  * the options all have the same data in every run.

@@ -297,8 +297,9 @@ export function ConsentScreen() {
           <span>{t('privacy')}</span>
         </p>
 
+        {service === null && <p role="alert" className="t-body text-danger" data-service-missing>{t('serviceMissing')}</p>}
         {problem && <p role="alert" className="t-body text-danger">{t(problem)}</p>}
-        <button type="button" className="btn-primary" disabled={sending || screenings === null} onClick={() => void send()}>
+        <button type="button" className="btn-primary" disabled={sending || screenings === null || service === null} onClick={() => void send()}>
           {sending ? t('sending') : t('send')}
         </button>
       </main>
