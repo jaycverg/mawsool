@@ -8,7 +8,7 @@ import { readStaffAccess, runSeed } from '../seed/run';
 /**
  * Puts the demo back to its start, in one call.
  *
- * - The clock offset goes to zero, in memory and in the database.
+ * - The clock offset goes to zero, in memory and in the database. The routes run this through the clock mover's queue.
  * - The database is reloaded from the deterministic seed, anchored on the start of today (Dubai), so the seeded history
  *   ends where the demo begins, "the last 90 days" holds all of it and the seeded open invites are unexpired now. The same
  *   day gives the same rows. Staff who are signed in stay signed in.
@@ -19,11 +19,18 @@ import { readStaffAccess, runSeed } from '../seed/run';
  * and the phone re-registers itself the next time the server answers 401 (`callServer`).
  */
 export async function resetDemo(deps: { db: Db; clock: OffsetClock; personAppUrl: string }): Promise<DemoResetResult> {
-  const now = deps.clock.baseNow();
-  // The reload empties the stored offset with every other table, in the same transaction, so the stored value and the
-  // clock cannot disagree after a reload that failed: the clock is only zeroed once the reload has gone through.
-  await runSeed(deps.db, startOfDubaiDay(now), await readStaffAccess(deps.db));
+  // The clock is zeroed before the reload, so a sweep that starts during it reads the fresh seed at real time and cannot mark
+  // the new tickets overdue at a demo date. The reload rolls back whole if it fails, so the stored offset still holds the
+  // previous value: put the clock back to it, and the clock and the row agree.
+  const previousOffset = deps.clock.offset;
   deps.clock.reset();
+  const now = deps.clock.now();
+  try {
+    await runSeed(deps.db, startOfDubaiDay(now), await readStaffAccess(deps.db));
+  } catch (error) {
+    deps.clock.setOffset(previousOffset);
+    throw error;
+  }
   const invite = await createInvite(deps.db, deps.clock, 'tamm', { result: 'positive', screenedAt: now.toISOString(), locale: 'ar' });
   const code = formatInviteCode(invite.code);
   const tammUrl = (locale: 'ar' | 'en') => `${deps.personAppUrl}/${locale}/tamm/?code=${encodeURIComponent(code)}`;

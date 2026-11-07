@@ -41,13 +41,13 @@ export interface DemoRouteDeps {
  */
 export function registerDemoRoutes(app: FastifyInstance, deps: DemoRouteDeps): void {
   const typed = app.withTypeProvider<ZodTypeProvider>();
-  const move = createClockMover(deps.db, deps.clock);
+  const mover = createClockMover(deps.db, deps.clock);
 
   typed.post(
     '/demo/clock/advance',
     { config: { access: 'admin' }, schema: { body: AdvanceClockRequestSchema, response: { 200: AdvanceClockResultSchema, 400: ErrorResponseSchema } } },
     async (request) => {
-      await move(ADVANCE_MS[request.body.by]);
+      await mover.advance(ADVANCE_MS[request.body.by]);
       const swept = await sweep(deps.db, deps.clock, {}, deps.securityClock);
       return { demoMode: true, offsetMs: deps.clock.offset, now: deps.clock.now().toISOString(), markedOverdue: swept.marked };
     },
@@ -56,6 +56,6 @@ export function registerDemoRoutes(app: FastifyInstance, deps: DemoRouteDeps): v
   typed.post(
     '/demo/reset',
     { config: { access: 'admin' }, schema: { response: { 200: DemoResetResultSchema } } },
-    async () => resetDemo({ db: deps.db, clock: deps.clock, personAppUrl: deps.personAppUrl }),
+    async () => mover.exclusive(() => resetDemo({ db: deps.db, clock: deps.clock, personAppUrl: deps.personAppUrl })),
   );
 }

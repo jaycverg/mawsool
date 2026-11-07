@@ -23,21 +23,35 @@ export async function restoreDemoClock(db: Db, clock: OffsetClock): Promise<void
   clock.setOffset(await readDemoOffset(db));
 }
 
+/** What moves the demo clock: one queue, so no two moves overlap. */
+export interface ClockMover {
+  /** Moves the care clock forward by `ms` and stores the new offset; resolves to the new offset. */
+  advance(ms: number): Promise<number>;
+  /** Runs a task (the reset) after every move queued before it, and holds every move queued after it until it is done. */
+  exclusive<T>(task: () => Promise<T>): Promise<T>;
+}
+
 /**
  * Moves the care clock forward and stores the new offset. The write comes first, so a failed write leaves the clock where
- * it was; the moves run one at a time, so two requests at once both count (the stored offset is a copy of this clock's
- * offset, not a counter of its own).
+ * it was. Moves and exclusive tasks run one at a time, so two moves at once both count and an advance cannot interleave
+ * with a reset and leave the stored row and the clock disagreeing (the stored offset is a copy of this clock's offset, not
+ * a counter of its own). A task or move that fails does not stop the queue.
  */
-export function createClockMover(db: Db, clock: OffsetClock): (ms: number) => Promise<number> {
+export function createClockMover(db: Db, clock: OffsetClock): ClockMover {
   let tail: Promise<unknown> = Promise.resolve();
-  return (ms) => {
-    const move = tail.then(async () => {
-      const next = clock.offset + ms;
-      await writeDemoOffset(db, next);
-      clock.advance(ms);
-      return clock.offset;
-    });
-    tail = move.catch(() => undefined);
-    return move;
+  const exclusive = <T>(task: () => Promise<T>): Promise<T> => {
+    const run = tail.then(task);
+    tail = run.catch(() => undefined);
+    return run;
+  };
+  return {
+    exclusive,
+    advance: (ms) =>
+      exclusive(async () => {
+        const next = clock.offset + ms;
+        await writeDemoOffset(db, next);
+        clock.advance(ms);
+        return clock.offset;
+      }),
   };
 }

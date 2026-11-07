@@ -3,7 +3,8 @@ import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ManualClock, OffsetClock } from '../src/clock';
 import { schema, type Db } from '../src/db/client';
-import { createClockMover } from '../src/demo/clock-store';
+import { createClockMover, readDemoOffset } from '../src/demo/clock-store';
+import { resetDemo } from '../src/demo/reset';
 import { signInbound } from '../src/inbound/signing';
 import { INVITE_TTL_MS, inviteCodeHash } from '../src/inbound/service';
 import { runSeed } from '../src/seed/run';
@@ -59,7 +60,7 @@ describe('the clock mover', () => {
         }),
       }),
     } as unknown as Db;
-    const move = createClockMover(db, clock);
+    const move = createClockMover(db, clock).advance;
     await expect(move(DAY)).rejects.toThrow('the database is down');
     expect(clock.offset).toBe(0);
     expect(await move(DAY)).toBe(DAY);
@@ -79,10 +80,144 @@ describe('the clock mover', () => {
         }),
       }),
     } as unknown as Db;
-    const move = createClockMover(db, clock);
+    const move = createClockMover(db, clock).advance;
     await Promise.all([move(DAY), move(7 * DAY)]);
     expect(clock.offset).toBe(8 * DAY);
     expect(writes).toEqual([DAY, 8 * DAY]);
+  });
+});
+
+describe('the clock mover with a reset', () => {
+  const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const slowDb = (order: string[]) =>
+    ({
+      insert: () => ({
+        values: ({ offsetMs }: { offsetMs: number }) => ({
+          onConflictDoUpdate: async () => {
+            await delay(10);
+            order.push(`write ${offsetMs / DAY}d`);
+          },
+        }),
+      }),
+    }) as unknown as Db;
+
+  it('runs an exclusive task after the moves queued before it and holds the moves queued after it until it is done', async () => {
+    const order: string[] = [];
+    const mover = createClockMover(slowDb(order), new OffsetClock(new ManualClock(new Date('2026-11-01T00:00:00Z'))));
+    await Promise.all([
+      mover.advance(DAY),
+      mover.exclusive(async () => {
+        order.push('reset starts');
+        await delay(10);
+        order.push('reset ends');
+      }),
+      mover.advance(DAY),
+    ]);
+    expect(order).toEqual(['write 1d', 'reset starts', 'reset ends', 'write 2d']);
+  });
+
+  it('goes on after an exclusive task that failed', async () => {
+    const clock = new OffsetClock(new ManualClock(new Date('2026-11-01T00:00:00Z')));
+    const mover = createClockMover(slowDb([]), clock);
+    await expect(mover.exclusive(async () => Promise.reject(new Error('the reset failed')))).rejects.toThrow('the reset failed');
+    expect(await mover.advance(DAY)).toBe(DAY);
+  });
+});
+
+describe('resetting the demo', () => {
+  let testDb: TestDb;
+  let clock: OffsetClock;
+  beforeEach(async () => {
+    testDb = await createTestDb();
+    await runSeed(testDb.db);
+    clock = new OffsetClock(new ManualClock(TEST_START));
+    await createClockMover(testDb.db, clock).advance(21 * DAY);
+  });
+  afterEach(async () => {
+    await testDb.close();
+  });
+
+  /** The same database with its reload (a transaction) replaced by `onReload`. */
+  const withReload = (onReload: () => Promise<never>) => Object.assign(Object.create(testDb.db), { transaction: onReload }) as Db;
+
+  it('leaves the clock and the stored offset both at the previous value when the reload fails', async () => {
+    const failing = withReload(async () => {
+      throw new Error('the reload failed');
+    });
+    await expect(resetDemo({ db: failing, clock, personAppUrl: 'http://localhost:3000' })).rejects.toThrow('the reload failed');
+    expect(clock.offset).toBe(21 * DAY);
+    expect(await readDemoOffset(testDb.db)).toBe(21 * DAY);
+  });
+
+  it('has the clock at zero while the reload runs, so a sweep that starts then cannot read the new tickets at a demo date', async () => {
+    let seenDuringReload: number | null = null;
+    const watching = withReload(async () => {
+      seenDuringReload = clock.offset;
+      throw new Error('stop after looking');
+    });
+    await expect(resetDemo({ db: watching, clock, personAppUrl: 'http://localhost:3000' })).rejects.toThrow('stop after looking');
+    expect(seenDuringReload).toBe(0);
+  });
+
+  it('serves a reset asked for while an advance is being written over HTTP after it: the demo ends at zero in the clock and in the stored row', async () => {
+    // Every write of the clock offset is slow, and says when it has begun, so the reset is asked for with the advance's write under way.
+    let writeBegan: () => void = () => undefined;
+    const began = new Promise<void>((resolve) => (writeBegan = resolve));
+    const slow = Object.assign(Object.create(testDb.db), {
+      insert: (table: unknown) => {
+        const real = testDb.db.insert(table as never) as unknown as { values: (row: unknown) => { onConflictDoUpdate: (config: unknown) => Promise<unknown> } };
+        if (table !== schema.demoClock) return real;
+        return {
+          values: (row: unknown) => ({
+            onConflictDoUpdate: async (config: unknown) => {
+              writeBegan();
+              await new Promise((resolve) => setTimeout(resolve, 50));
+              return real.values(row).onConflictDoUpdate(config);
+            },
+          }),
+        };
+      },
+    }) as Db;
+    const ctx = await createTestApp(slow, { demoMode: true });
+    try {
+      expect((await ctx.app.inject({ method: 'GET', url: '/clock' })).json().offsetMs).toBe(21 * DAY);
+      const headers = { authorization: `Bearer ${await signIn(ctx, 'admin@demo.mawsool.test')}` };
+      const advance = ctx.app.inject({ method: 'POST', url: '/demo/clock/advance', headers, payload: { by: '7d' } });
+      await began;
+      const reset = ctx.app.inject({ method: 'POST', url: '/demo/reset', headers });
+      expect([(await advance).statusCode, (await reset).statusCode]).toEqual([200, 200]);
+      expect((await ctx.app.inject({ method: 'GET', url: '/clock' })).json().offsetMs).toBe(0);
+      expect(await readDemoOffset(testDb.db)).toBe(0);
+    } finally {
+      await ctx.app.close();
+    }
+  });
+
+  it('ends at zero in the clock and in the stored row when it follows an advance that is still being written', async () => {
+    const order: string[] = [];
+    // The write of the advance is slow, as a loaded database's can be; the reset is asked for while it is under way.
+    const slow = Object.assign(Object.create(testDb.db), {
+      insert: (table: unknown) => {
+        const real = testDb.db.insert(table as never) as unknown as { values: (row: { offsetMs: number }) => { onConflictDoUpdate: (config: unknown) => Promise<unknown> } };
+        if (table !== schema.demoClock) return real;
+        return {
+          values: (row: { offsetMs: number }) => ({
+            onConflictDoUpdate: async (config: unknown) => {
+              await new Promise((resolve) => setTimeout(resolve, 50));
+              order.push(`write ${row.offsetMs / DAY}d`);
+              return real.values(row).onConflictDoUpdate(config);
+            },
+          }),
+        };
+      },
+    }) as Db;
+    const mover = createClockMover(slow, clock);
+    const advance = mover.advance(7 * DAY);
+    const reset = mover.exclusive(() => resetDemo({ db: testDb.db, clock, personAppUrl: 'http://localhost:3000' }));
+    await Promise.all([advance, reset]);
+    expect(order).toEqual(['write 28d']);
+    expect(clock.offset).toBe(0);
+    expect(await readDemoOffset(testDb.db)).toBe(0);
   });
 });
 
