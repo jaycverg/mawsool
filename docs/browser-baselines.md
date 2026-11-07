@@ -36,8 +36,13 @@ go in), installs Node and pnpm at the pinned versions, runs `pnpm install --froz
 platform is `linux/amd64`, the architecture of GitHub's `ubuntu-latest`, so a baseline made on an Apple Silicon Mac is drawn
 by the same build of Chromium CI uses; Docker runs it emulated, which is slow (the four gates take roughly 20 minutes) and may
 make the CPU-heavy unit tests inside `gate:c`'s server half time out on a busy machine. `--platform=linux/arm64` is faster and
-is for looking, not for making the committed baselines. On a failure it prints where the screenshots and traces of the failed
-tests were left.
+is for checking only: `--update` refuses it, so a committed baseline is never drawn by anything but the build CI uses. On a
+failure it prints where the screenshots and traces of the failed tests were left.
+
+A run with `E2E_UPDATE_SNAPSHOTS=1` (a Mac's `E2E_UPDATE_SNAPSHOTS=1 pnpm gate:phase2`, or what `pnpm e2e:linux --update` sets
+inside the container) rewrites baselines instead of comparing against them, so it is never an acceptance result: the gate
+prints that and exits 3 when everything else passed (1 when anything failed), never 0. `pnpm e2e:linux --update` counts 3 as a
+pass for that run only. Run the gate again without the variable to check the new baselines.
 
 Commit the changed `*-chromium-linux.png` files with the change that caused them, and look at each one first: a baseline
 is an assertion about what the screen looks like.

@@ -64,6 +64,9 @@ export function parseArgs(args) {
     else throw new Error(`unknown argument "${arg}"; use --update, --platform=linux/amd64|linux/arm64, --run=<command> and any of ${BROWSER_GATES.join(', ')}`);
   }
   if (!['linux/amd64', 'linux/arm64'].includes(platform)) throw new Error(`--platform must be linux/amd64 or linux/arm64, found ${platform}`);
+  // A committed baseline must come from the build CI draws with (amd64). An arm64 container is not that build, so it can be
+  // used to look (a check run) but never to write the committed files.
+  if (update && platform !== 'linux/amd64') throw new Error(`--update only writes baselines on linux/amd64, the architecture CI draws them on; ${platform} is for checking`);
   if (run !== null && (run.trim() === '' || update || gates.length > 0)) throw new Error('--run=<command> runs one command in the container and takes no gate and no --update');
   return { update, platform, gates: gates.length > 0 ? gates : [...BROWSER_GATES], run };
 }
