@@ -113,17 +113,25 @@ describe('requesting a sign-in link', () => {
     expect(screen.queryByLabelText(labels.emailLabel)).toBeNull();
   });
 
-  it('gives the same message for any address, so it cannot be used to find out who has an account', async () => {
-    const texts: string[] = [];
-    for (const email of ['clinician.a@demo.mawsool.test', 'nobody@example.test']) {
-      vi.stubGlobal('fetch', reply(202, { status: 'accepted' }));
+  it('shows the same page for any address, so it cannot be used to find out who has an account', async () => {
+    // The API answers 202 either way; here its body differs too, as a leaky server's could. The page after the request must
+    // be the same markup for both: not just the same message text, but nothing else that depends on the address or the body.
+    const pages: string[] = [];
+    for (const [email, body] of [
+      ['clinician.a@demo.mawsool.test', { status: 'accepted', account: 'exists' }],
+      ['nobody@example.test', { status: 'accepted' }],
+    ] as const) {
+      vi.stubGlobal('fetch', reply(202, body));
       const view = show(null);
       fireEvent.change(screen.getByLabelText(labels.emailLabel), { target: { value: email } });
       fireEvent.click(screen.getByRole('button', { name: labels.requestAction }));
-      texts.push((await screen.findByText(labels.requestSent)).textContent ?? '');
+      await screen.findByText(labels.requestSent);
+      pages.push(view.container.innerHTML);
       view.unmount();
     }
-    expect(texts[0]).toBe(texts[1]);
+    expect(pages[0]).toContain(labels.requestSent);
+    expect(pages[0]).not.toContain('demo.mawsool.test');
+    expect(pages[0]).toBe(pages[1]);
   });
 
   it('is offered again after a failed link, and says plainly when the request could not be sent', async () => {
