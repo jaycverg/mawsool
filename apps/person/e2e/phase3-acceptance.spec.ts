@@ -125,6 +125,8 @@ async function storedReminderNumbers(): Promise<{ personId: string; intervalWeek
 const SEEN_TICKET_ID = '9a9d2f6e-0a0e-4a45-9d2c-3c7e1a4e9b11';
 const SEEN_AT_MS = Date.parse('2026-10-01T10:00:00+04:00');
 const SIX_WEEKS_MS = 42 * DAY_MS;
+/** The moment the repeat check opens for the ticket the stub serves: the exact value every start link must carry as `since`. */
+const OPENS_MS = SEEN_AT_MS + SIX_WEEKS_MS;
 
 /**
  * A ticket the clinic saw on 1 October, as the API serves it, for the screens that depend on a date six weeks on: the API's
@@ -152,11 +154,11 @@ async function stubSeenTicket(page: Page, locale: Locale, ticketConsentLive = tr
 /** The repeat check taken through the screens: the PHQ-9 and the GAD-7, every answer "not at all", ending on the totals. */
 async function takeRepeatCheck(page: Page, locale: Locale, id: string): Promise<void> {
   await page.getByRole('link', { name: msg(locale, 'ticket.remeasureStart'), exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/${locale}/check-in/\\?i=phq9&rm=${id}`));
+  await expect(page).toHaveURL(new RegExp(`/${locale}/check-in/\\?i=phq9&rm=${id}&since=${OPENS_MS}$`));
   await expect(page.locator('[data-repeat-step]')).toHaveText(msg(locale, 'checkIn.repeatStep').replace('{current}', '1').replace('{total}', '2'));
   await answerAll(page, locale, [0, 0, 0, 0, 0, 0, 0, 0, 0]);
   await page.getByRole('button', { name: msg(locale, 'flow.next'), exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/${locale}/check-in/\\?i=gad7&rm=${id}&p=`));
+  await expect(page).toHaveURL(new RegExp(`/${locale}/check-in/\\?i=gad7&rm=${id}&p=[0-9a-f-]{36}&since=${OPENS_MS}$`));
   await answerAll(page, locale, [0, 0, 0, 0, 0, 0, 0]);
   await page.getByRole('button', { name: msg(locale, 'checkIn.finishRepeat'), exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/${locale}/remeasure/\\?id=${id}&p=[0-9a-f-]{36}&g=[0-9a-f-]{36}`));
@@ -1246,8 +1248,15 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await page.reload();
     await expect(page.locator('[data-prompt="remeasure"]')).toBeVisible();
     await expect(page.locator('[data-remeasure-wait]')).toHaveCount(0);
-    await page.getByRole('link', { name: msg(locale, 'ticket.remeasureStart'), exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/${locale}/check-in/\\?i=phq9&rm=${id}`));
+    const start = page.getByRole('link', { name: msg(locale, 'ticket.remeasureStart'), exact: true });
+    // The link carries the exact moment the check opened, which the questionnaire uses to leave any older unfinished check-in alone.
+    await expect(start).toHaveAttribute('href', `/${locale}/check-in/?i=phq9&rm=${id}&since=${OPENS_MS}`);
+    await start.click();
+    await expect(page).toHaveURL(new RegExp(`/${locale}/check-in/\\?i=phq9&rm=${id}&since=${OPENS_MS}$`));
+
+    // The repeat check screen offers the same start, with the same moment, once it is open.
+    await page.goto(`/${locale}/remeasure/?id=${id}`);
+    await expect(page.locator('[data-remeasure-start]')).toHaveAttribute('href', `/${locale}/check-in/?i=phq9&rm=${id}&since=${OPENS_MS}`);
 
     // The repeat check screen itself says the same before the date.
     await context.clock.setFixedTime(new Date(SEEN_AT_MS + 10 * DAY_MS));
@@ -1292,6 +1301,30 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await page.goto(summary);
     await expect(page.locator('[data-share-unavailable]')).toBeVisible();
     await expect(share).toHaveCount(0);
+  },
+
+  async 'repeat-check-starts-a-fresh-check-in-and-never-finishes-an-old-one'({ page, context, locale }) {
+    await visitOnline(page, locale);
+    const id = await stubSeenTicket(page, locale);
+    // An unfinished PHQ-9 from three weeks before the clinic saw the person: three answers given.
+    await context.clock.setFixedTime(new Date(SEEN_AT_MS - 21 * DAY_MS));
+    await page.goto(`/${locale}/check-in/?i=phq9`);
+    await answerAll(page, locale, [1, 1, 1]);
+    const progress = page.getByRole('progressbar');
+    // An ordinary check-in picks it up at question 4 (so the old draft is really there to be resumed).
+    await page.goto(`/${locale}/check-in/?i=phq9`);
+    await expect(progress).toHaveAttribute('aria-valuenow', '4');
+
+    // The repeat check, from the ticket, starts at question 1 with nothing chosen.
+    await context.clock.setFixedTime(new Date(OPENS_MS));
+    await page.goto(`/${locale}/ticket/?id=${id}`);
+    await page.getByRole('link', { name: msg(locale, 'ticket.remeasureStart'), exact: true }).click();
+    await expect(progress).toHaveAttribute('aria-valuenow', '1');
+    await expect(page.locator('input[type="radio"]:checked')).toHaveCount(0);
+    // Its own first answer is a new check-in, not the old one continued: reloading resumes it at question 2.
+    await answerAll(page, locale, [2]);
+    await page.reload();
+    await expect(progress).toHaveAttribute('aria-valuenow', '2');
   },
 
   async 'repeat-check-item-9-opens-the-crisis-screen'({ page, context, locale }) {

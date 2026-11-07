@@ -154,5 +154,9 @@
   {
     "id": "person-ending-a-seen-ticket-closes-it",
     "sentence": "The person's control to end a seen ticket moves it from seen to closed with the person as actor, and nothing is offered to end a ticket that has not been seen"
+  },
+  {
+    "id": "repeat-check-starts-a-fresh-check-in-and-never-finishes-an-old-one",
+    "sentence": "The repeat check starts a fresh PHQ-9 at question 1 even when an unfinished one from before the clinic saw the person is on the phone, and both start links, and the link to the GAD-7, carry the exact moment the check opened"
   }
 ]

@@ -856,12 +856,12 @@
   },
   {
     "id": "repeat-check-total-must-come-from-the-repeat-check",
-    "sentence": "A total taken before the repeat check opened, or dated after now, is refused with nothing written; the repeat check starts a fresh check-in and never finishes an old one",
+    "sentence": "A total taken before the repeat check opened is refused with nothing written, one stamped a minute ahead of the server is accepted, and the repeat check starts a fresh check-in and never finishes an old one: the start links and the GAD-7 link carry the exact opening moment, and a browser test shows a PHQ-9 left unfinished before the clinic saw the person is not resumed",
     "tests": [
       {
         "project": "apps/api",
         "file": "test/remeasure.test.ts",
-        "name": "refuses a total taken before the repeat check opened, or dated after now (400)"
+        "name": "refuses a total taken before the repeat check opened (400)"
       },
       {
         "project": "apps/person",
@@ -877,8 +877,14 @@
         "project": "apps/person",
         "file": "test/remeasure.test.ts",
         "name": "refuse a screening started before the repeat check opened, to the millisecond"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/remeasure.test.ts",
+        "name": "accepts a total stamped a minute ahead of the server"
       }
-    ]
+    ],
+    "browser": "repeat-check-starts-a-fresh-check-in-and-never-finishes-an-old-one"
   },
   {
     "id": "stored-totals-have-a-cap-the-inputs-do-not-exceed",
