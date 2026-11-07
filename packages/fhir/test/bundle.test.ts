@@ -42,6 +42,22 @@ describe('the FHIR R4 export', () => {
     expect(typesOf(bundle)).toEqual(['ServiceRequest', 'QuestionnaireResponse', 'QuestionnaireResponse', 'QuestionnaireResponse', 'Condition', 'Condition']);
   });
 
+  it('exports the totals of a repeat check beside the referral\'s own: two entries for one instrument each become their own response, with distinct ids, and the bundle still validates', () => {
+    const repeated: BundleContent = {
+      ...CONTENT,
+      scores: [
+        ...CONTENT.scores!,
+        { instrument: 'phq9', total: 4, band: 'minimal', takenAt: '2026-12-21T09:00:00+04:00' },
+        { instrument: 'gad7', total: 3, band: 'minimal', takenAt: '2026-12-21T09:05:00+04:00' },
+      ],
+    };
+    const bundle = buildFhirBundle(input(['ticket', 'scores'], { content: repeated }));
+    expect(validateFhir(bundle)).toEqual({ valid: true });
+    const responses = resources(bundle).filter((resource) => resource['resourceType'] === 'QuestionnaireResponse');
+    expect(responses).toHaveLength(4);
+    expect(new Set(responses.map((resource) => resource['id'])).size).toBe(4);
+  });
+
   it('validates with only the required ticket element, holding just the ServiceRequest and the approved summary', () => {
     const bundle = buildFhirBundle(input(['ticket']));
     expect(validateFhir(bundle)).toEqual({ valid: true });

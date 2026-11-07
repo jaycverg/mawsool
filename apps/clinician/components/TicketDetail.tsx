@@ -282,7 +282,7 @@ function Shared({ t, root, lang, bundle }: { t: Translate; root: Translate; lang
       </Section>
 
       <Section title={t('scoresTitle')} data="scores">
-        {missing('scores') ? <NotShared t={t} /> : (content.scores ?? []).length === 0 ? <Empty t={t} /> : <ul className="m-0 flex list-none flex-col gap-1 p-0">{(content.scores ?? []).map((score) => <li key={`${score.instrument}-${score.takenAt}`} className="text-[15px]"><b>{t('scoreLine', { instrument: t(`instrument.${score.instrument}`), total: score.total })}</b>{score.band && <> · {t.has(`band.${score.band}`) ? t(`band.${score.band as 'mild'}`) : score.band}</>}</li>)}</ul>}
+        {missing('scores') ? <NotShared t={t} /> : (content.scores ?? []).length === 0 ? <Empty t={t} /> : <ul className="m-0 flex list-none flex-col gap-1 p-0">{(content.scores ?? []).map((score) => <li key={`${score.instrument}-${score.takenAt}`} className="text-[15px]"><b>{t('scoreLine', { instrument: t(`instrument.${score.instrument}`), total: score.total })}</b>{score.band && <> · {t.has(`band.${score.band}`) ? t(`band.${score.band as 'mild'}`) : score.band}</>}{(content.scores ?? []).filter((other) => other.instrument === score.instrument).length > 1 && <span className="text-muted"> · {formatDate(score.takenAt, lang)}</span>}</li>)}</ul>}
       </Section>
 
       <Section title={t('trajectoryTitle')} data="trajectory">
