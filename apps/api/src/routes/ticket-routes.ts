@@ -7,6 +7,8 @@ import {
   LocaleQuerySchema,
   PersonTicketListSchema,
   PersonTicketViewSchema,
+  RemeasureRequestSchema,
+  RemeasureResultSchema,
   RerouteRequestSchema,
   StaffBundleViewSchema,
   TicketEventRequestSchema,
@@ -28,6 +30,7 @@ import { personIdOf, sendError } from '../plugins/auth';
 import { facilityScopedTicket } from '../plugins/facility-scope';
 import { ownedTicket } from '../plugins/ownership';
 import { lastEvent, moveTicket } from '../tickets/events';
+import { remeasureTicket } from '../tickets/remeasure';
 import { issueTicket, personTicketView, type IssueResult, type TicketDeps } from '../tickets/service';
 import { evaluateUnable } from '../tickets/transitions';
 
@@ -48,6 +51,7 @@ function statusOf(verdict: 'forbidden' | 'illegal') {
  *  - A person withdrawing is a revoke, and a live `ticket` consent decides it before the state machine does: it ends
  *    the share and deletes the data from any state, and from a terminal state it changes no state.
  *  - `rerouted` is fired only by the reroute route, which also makes the child ticket and takes its consent.
+ *  - `remeasured` is fired only by the re-measure route, which holds the six-week wait and closes the ticket in the same transaction.
  */
 async function applyEvent(deps: ConsentDeps, reply: FastifyReply, ticket: { id: string; personId: string }, actor: Actor, body: TicketEventRequest) {
   const last = await lastEvent(deps.db, ticket.id);
@@ -74,7 +78,7 @@ async function applyEvent(deps: ConsentDeps, reply: FastifyReply, ticket: { id: 
       return result(deps, ticket.id);
     }
   }
-  if (actor === 'person' && body.to === 'rerouted') return sendError(reply, 409, 'conflict', 'That change is not allowed from the current state');
+  if (actor === 'person' && (body.to === 'rerouted' || body.to === 'remeasured')) return sendError(reply, 409, 'conflict', 'That change is not allowed from the current state');
 
   return finish(
     deps,
@@ -177,6 +181,26 @@ export function registerTicketFlowRoutes(app: FastifyInstance, deps: ConsentDeps
     '/me/tickets/:id/events',
     { config: { access: 'person' }, preHandler: ownedTicket(deps.db), schema: { params: Params, body: TicketEventRequestSchema, response: { 200: TicketEventResultSchema, ...Errors } } },
     async (request, reply) => applyEvent(deps, reply, request.ownTicket!, 'person', request.body),
+  );
+
+  typed.post(
+    '/me/tickets/:id/remeasure',
+    { config: { access: 'person' }, preHandler: ownedTicket(deps.db), schema: { params: Params, body: RemeasureRequestSchema, response: { 200: RemeasureResultSchema, ...Errors } } },
+    async (request, reply) => {
+      const outcome = await remeasureTicket(deps, request.ownTicket!, request.body);
+      switch (outcome.kind) {
+        case 'illegal':
+          return sendError(reply, 409, 'conflict', 'That change is not allowed from the current state');
+        case 'too_early':
+          return sendError(reply, 409, 'too_early', 'A repeat check opens six weeks after the clinic saw you');
+        case 'no_share':
+          return sendError(reply, 409, 'conflict', 'Nothing is shared for this ticket');
+        case 'lost_race':
+          return sendError(reply, 409, 'conflict', 'The ticket changed; try again');
+        case 'done':
+          return { state: outcome.events.at(-1)!.toState, scoresShared: outcome.scoresShared, events: outcome.events };
+      }
+    },
   );
 
   typed.post(

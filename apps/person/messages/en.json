@@ -51,7 +51,9 @@
     "note": "This is a screening questionnaire. There are no right or wrong answers, and you can stop at any time.",
     "saved": "Answers are saved on this phone only.",
     "saveFailed": "This answer could not be saved on this phone. Try again.",
-    "unavailable": "This browser cannot keep your answers private on this phone, so the check-in cannot start. If you need help now, tap Help now."
+    "unavailable": "This browser cannot keep your answers private on this phone, so the check-in cannot start. If you need help now, tap Help now.",
+    "repeatStep": "Repeat check, part {current} of {total}",
+    "finishRepeat": "See my totals"
   },
   "wording": {
     "unverifiedTitle": "Wording not verified",
@@ -472,7 +474,15 @@
     "earlier": "Earlier referral",
     "savedWarning": "Your referral was sent, but this phone could not keep a note of it. Open it from the Ticket tab.",
     "currentReferral": "Open now",
-    "unablePrompt": "The clinic could not see you this time. You can choose another option. Your earlier referral stays as it is until you send a new one."
+    "unablePrompt": "The clinic could not see you this time. You can choose another option. Your earlier referral stays as it is until you send a new one.",
+    "remeasureTitle": "Time for a repeat check",
+    "remeasureBody": "It has been six weeks since the clinic saw you. Two short questionnaires show how things have changed. Your answers stay on this phone.",
+    "remeasureStart": "Start the repeat check",
+    "remeasureWait": "A repeat check opens on {date}, six weeks after the clinic saw you.",
+    "endTicket": "End this referral",
+    "endConfirm": "End this referral? It will be closed, and you can start a new one later. The clinic can still read what you shared until you <stop>stop sharing</stop>.",
+    "endYes": "Yes, end it",
+    "closedNote": "This referral is closed. The clinic can still read what you shared until you <stop>stop sharing</stop>."
   },
   "claim": {
     "title": "Your screen result",
@@ -513,5 +523,28 @@
     "title": "Time for your check-in",
     "body": "Open the app whenever you're ready. It takes about two minutes.",
     "action": "Start a check-in"
+  },
+  "remeasure": {
+    "heading": "Repeat check",
+    "back": "Back to my referral",
+    "unavailable": "This browser cannot keep your answers private on this phone, so the repeat check cannot start.",
+    "missing": "We could not find that referral.",
+    "loadFailed": "The repeat check could not be loaded. Check your connection and try again.",
+    "opensOn": "A repeat check opens on {date}, six weeks after the clinic saw you.",
+    "notWaiting": "This referral is not waiting for a repeat check.",
+    "introTitle": "Repeat check",
+    "intro": "Two short questionnaires, the same ones as before, show how things have changed since the clinic saw you. Your answers stay on this phone.",
+    "start": "Start the repeat check",
+    "toTicket": "Back to my referral",
+    "summaryTitle": "Your repeat check",
+    "total": "Total {total}",
+    "shareLabel": "Send these two totals to my clinic",
+    "shareHelp": "Off unless you tick it. The clinic sees only the two totals, not your answers, and you can stop sharing them at any time from your referral.",
+    "shareUnavailable": "You are not sharing this referral with a clinic any more, so there is nothing to send.",
+    "stays": "Your answers stay on this phone. Finishing closes this referral.",
+    "sending": "Sending…",
+    "finish": "Finish",
+    "failed": "That did not work. Check your connection and try again.",
+    "conflict": "This referral has already moved on. Open it to see where it stands."
   }
 }

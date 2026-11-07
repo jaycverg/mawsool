@@ -130,5 +130,29 @@
   {
     "id": "ticket-tab-finds-a-ticket-after-a-failed-local-save",
     "sentence": "After a send whose local note failed, the ticket tab finds the ticket from the server's list; a failed list is an error, and a phone that never shared makes no request"
+  },
+  {
+    "id": "reminders-are-off-until-turned-on-and-the-card-shows-neutral-words-when-due",
+    "sentence": "Reminders are off until the person turns them on, come every 4 weeks to start and every 2 weeks if chosen, and a due one shows on the home screen in the reminder words alone until the next check-in is finished"
+  },
+  {
+    "id": "reminder-number-is-optional-stored-apart-and-deleted-with-the-reminders",
+    "sentence": "The number for text reminders is optional, refused unless international, held by the server only as ciphertext in its own row, labelled a sample, and deleted by removing it, by turning reminders off and by Delete everything"
+  },
+  {
+    "id": "repeat-check-opens-six-weeks-after-the-clinic-saw-the-person",
+    "sentence": "The repeat check is offered on the ticket exactly six weeks after the clinic saw the person and not a minute before, and its screen says when it opens until then"
+  },
+  {
+    "id": "repeat-check-sends-the-totals-only-when-ticked",
+    "sentence": "The repeat check ends on the two totals with the box to send them to the clinic unticked; finishing without it sends no totals, ticking it sends exactly the two totals and no answers, and a share the person ended offers nothing to tick"
+  },
+  {
+    "id": "repeat-check-item-9-opens-the-crisis-screen",
+    "sentence": "An answer above zero to item 9 of the repeat PHQ-9 opens the crisis screen as in any check-in, and the repeat check screen is then closed to the person until the crisis is resolved"
+  },
+  {
+    "id": "person-ending-a-seen-ticket-closes-it",
+    "sentence": "The person's control to end a seen ticket moves it from seen to closed with the person as actor, and nothing is offered to end a ticket that has not been seen"
   }
 ]

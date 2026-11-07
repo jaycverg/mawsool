@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { computeDeadline } from '../src';
+import { REMEASURE_DELAY_DAYS, computeDeadline, remeasureAvailableAt } from '../src';
 
 const DAY_MS = 86_400_000;
 
@@ -39,5 +39,14 @@ describe('computeDeadline', () => {
         },
       ),
     );
+  });
+});
+
+describe('remeasureAvailableAt', () => {
+  it('is six weeks to the millisecond after the seen event', () => {
+    expect(REMEASURE_DELAY_DAYS).toBe(42);
+    const seen = new Date('2026-11-09T10:15:30.250+04:00');
+    expect(remeasureAvailableAt(seen).toISOString()).toBe(new Date('2026-12-21T10:15:30.250+04:00').toISOString());
+    expect(remeasureAvailableAt(seen).getTime() - seen.getTime()).toBe(42 * 86_400_000);
   });
 });

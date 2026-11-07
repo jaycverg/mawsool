@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { INSTRUMENT_TAG } from '../lib/bands';
 import { deviceNow } from '../lib/clock';
 import { recordAnswer } from '../lib/record-answer';
+import { idFrom } from '../lib/remeasure';
 import { href } from '../lib/routes';
 import { findDraft, loadScreenings } from '../lib/screening-store';
 import { useDevice, type Device } from '../lib/use-device';
@@ -27,9 +28,16 @@ function instrumentFrom(param: string | null): Instrument {
  * moment it is chosen, so closing the screen loses nothing. A PHQ-9 item 9 answer above zero is evaluated on the
  * spot by `packages/instruments`: the block is set, the answer is saved, and the person goes to the crisis screen
  * before they can press Next.
+ *
+ * The same flow carries the repeat check at six weeks: `?rm=<ticket id>` makes the PHQ-9 lead to the GAD-7 (`&p=` holds the
+ * PHQ-9 just finished) and the GAD-7 lead to the repeat check screen. Every answer goes through the same `recordAnswer`, so item 9 fires the crisis path here exactly as it does in any check-in.
  */
 export function CheckInFlow() {
-  const instrument = instrumentFrom(useSearchParams().get('i'));
+  const params = useSearchParams();
+  const instrument = instrumentFrom(params.get('i'));
+  /** The ticket this check-in is the repeat check for, if it is one. */
+  const repeatFor = idFrom(params.get('rm'));
+  const phq9Done = idFrom(params.get('p'));
   const locale = useLocale();
   const lang = isLocale(locale) ? locale : 'en';
   const t = useTranslations('checkIn');
@@ -66,7 +74,7 @@ export function CheckInFlow() {
   const wording = wordingFor(instrument, lang);
   const total = itemCount(instrument);
   const item = wording.items[index];
-  const back = index === 0 ? href(lang, '') : undefined;
+  const back = index === 0 ? (repeatFor ? href(lang, 'ticket', { id: repeatFor }) : href(lang, '')) : undefined;
   const title = ti(`${instrument}Title`);
 
   if (device === 'unavailable') {
@@ -107,6 +115,11 @@ export function CheckInFlow() {
           <p className="t-body text-muted" aria-busy="true" />
         ) : (
           <>
+            {repeatFor && (instrument === 'phq9' || instrument === 'gad7') && (
+              <p className="t-small font-semibold text-accent-dark" data-repeat-step>
+                {t('repeatStep', { current: instrument === 'phq9' ? 1 : 2, total: 2 })}
+              </p>
+            )}
             <div className="flex flex-col gap-2">
               <div className="flex justify-between text-[14px] text-muted">
                 <span>{t('progress', { current: index + 1, total })}</span>
@@ -169,12 +182,14 @@ export function CheckInFlow() {
                 type="button"
                 disabled={selected === undefined}
                 onClick={() => {
-                  if (last) window.location.assign(href(lang, 'result', { id: screeningId ?? '' }));
-                  else setIndex(index + 1);
+                  if (!last) setIndex(index + 1);
+                  else if (repeatFor && instrument === 'phq9') window.location.assign(href(lang, 'check-in', { i: 'gad7', rm: repeatFor, p: screeningId ?? '' }));
+                  else if (repeatFor && instrument === 'gad7') window.location.assign(href(lang, 'remeasure', { id: repeatFor, p: phq9Done ?? '', g: screeningId ?? '' }));
+                  else window.location.assign(href(lang, 'result', { id: screeningId ?? '' }));
                 }}
                 className="btn-primary px-0"
               >
-                {last ? t('finish') : tf('next')}
+                {!last ? tf('next') : repeatFor ? (instrument === 'phq9' ? tf('next') : t('finishRepeat')) : t('finish')}
               </button>
             </div>
             <p className="flex items-center gap-2 t-small text-muted">

@@ -33,8 +33,8 @@ const ALLOWED: [TicketState, TicketState, Actor[]][] = [
   ['seen', 'withdrawn', ['person']],
   ['remeasured', 'withdrawn', ['person']],
   ['seen', 'remeasured', ['person']],
-  ['seen', 'closed', ['person', 'system']],
-  ['remeasured', 'closed', ['person', 'system']],
+  ['seen', 'closed', ['person']],
+  ['remeasured', 'closed', ['system']],
 ];
 
 describe('the transition table', () => {
@@ -48,6 +48,20 @@ describe('the transition table', () => {
         }
       }
     }
+  });
+
+  it('ends the loop for exactly these actors: remeasured and closed-from-seen are the person\'s, closed-from-remeasured is the system\'s', () => {
+    expect(evaluate('seen', 'remeasured', 'person')).toBe('ok');
+    expect(evaluate('seen', 'closed', 'person')).toBe('ok');
+    expect(evaluate('remeasured', 'closed', 'system')).toBe('ok');
+    for (const actor of ['clinic', 'system'] as const) {
+      expect(evaluate('seen', 'remeasured', actor), `seen -> remeasured by ${actor}`).toBe('forbidden');
+      expect(evaluate('seen', 'closed', actor), `seen -> closed by ${actor}`).toBe('forbidden');
+    }
+    for (const actor of ['person', 'clinic'] as const) expect(evaluate('remeasured', 'closed', actor), `remeasured -> closed by ${actor}`).toBe('forbidden');
+    // Nothing else reaches either state, from any state, by any actor.
+    for (const from of TICKET_STATES.filter((state) => state !== 'seen')) for (const actor of ACTORS) expect(evaluate(from, 'remeasured', actor), `${from} -> remeasured by ${actor}`).toBe('illegal');
+    for (const from of TICKET_STATES.filter((state) => state !== 'seen' && state !== 'remeasured')) for (const actor of ACTORS) expect(evaluate(from, 'closed', actor), `${from} -> closed by ${actor}`).toBe('illegal');
   });
 
   it('lets nothing leave a terminal state', () => {
