@@ -79,7 +79,7 @@ export function selectRow(screenings: readonly Screening[]): RowSelection {
 export function hasUnresolvedCrisis(screenings: readonly Screening[], crisisResolvedAt: string | null): boolean {
   const resolvedMs = crisisResolvedAt === null ? Number.NaN : Date.parse(crisisResolvedAt);
   return screenings.some((screening) => {
-    // The stored flag counts as a trigger on its own, so a screening that lost its answers cannot hide item 9.
+    // The stored flag counts as a trigger on its own, so a PHQ-9 that lost its answers cannot hide item 9; a C-SSRS that lost its answers fires from its answers (it has no flag).
     const fired = screening.item9Flag || evaluateCrisisForAnswers(screening.instrument, screening.answers).triggered;
     if (!fired) return false;
     return !(Date.parse(screening.takenAt) <= resolvedMs);

@@ -32,12 +32,17 @@ export function evaluateCrisis(answer: ItemAnswer): CrisisEvaluation {
 
 /**
  * Evaluates a full set of answers for one instrument, as when a stored check-in is re-read.
- * Returns the first triggering answer, or the not-triggered result when none fires. A stored row that lost its answers
- * altogether (null or missing, as a damaged row can be) has none to evaluate and does not fire here; the row's stored
- * item 9 flag is what still counts for it where the rows are read.
+ * Returns the first triggering answer, or the not-triggered result when none fires.
+ *
+ * A stored row that lost its answers altogether (null or missing, as a damaged row can be) fails safe the way an invalid
+ * trigger answer does, where the answers are the only record of a trigger: a C-SSRS row has no stored flag (every yes is an
+ * answer), so with its answers gone it fires as `invalid_answer` and the person is shown help, which one tap resolves. A
+ * PHQ-9 row does not fire: the store sets its item 9 flag whenever item 9 is answered above 0, so a row whose flag is
+ * false and whose answers are gone has no recorded trigger, and a row with the flag true fires from the flag where rows
+ * are read (`hasUnresolvedCrisis`).
  */
 export function evaluateCrisisForAnswers(instrument: ItemAnswer['instrument'], answers: readonly number[] | null | undefined): CrisisEvaluation {
-  if (!Array.isArray(answers)) return NOT_TRIGGERED;
+  if (!Array.isArray(answers)) return instrument === 'cssrs' ? { triggered: true, trigger: 'cssrs', reason: 'invalid_answer' } : NOT_TRIGGERED;
   for (const [index, value] of answers.entries()) {
     const result = evaluateCrisis({ instrument, itemNumber: index + 1, value });
     if (result.triggered) return result;
