@@ -47,9 +47,12 @@ export function registerDemoRoutes(app: FastifyInstance, deps: DemoRouteDeps): v
     '/demo/clock/advance',
     { config: { access: 'admin' }, schema: { body: AdvanceClockRequestSchema, response: { 200: AdvanceClockResultSchema, 400: ErrorResponseSchema } } },
     async (request) => {
-      await mover.advance(ADVANCE_MS[request.body.by]);
-      const swept = await sweep(deps.db, deps.clock, {}, deps.securityClock);
-      return { demoMode: true, offsetMs: deps.clock.offset, now: deps.clock.now().toISOString(), markedOverdue: swept.marked };
+      // The move and its sweep are one task on the queue, and the answer is read inside it, so a reset waits for both and
+      // the figures in the answer are the ones this advance made.
+      return mover.advanceThen(ADVANCE_MS[request.body.by], async () => {
+        const swept = await sweep(deps.db, deps.clock, {}, deps.securityClock);
+        return { demoMode: true as const, offsetMs: deps.clock.offset, now: deps.clock.now().toISOString(), markedOverdue: swept.marked };
+      });
     },
   );
 
