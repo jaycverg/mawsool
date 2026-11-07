@@ -146,6 +146,18 @@ describe('with the network down after one online visit', () => {
     await expect(request({ url: abs('/other.txt'), mode: 'navigate' })).rejects.toThrow('offline');
   });
 
+  it('matches a request that is not a page navigation on its whole address, so one query string never gets another one’s answer', async () => {
+    const { install, request, stores, fetch } = load({ network: async (req) => ({ ok: true, clone: () => 'clone', body: `fresh:${(req as { url: string }).url}` }) });
+    await install();
+    // An API served from this origin: the English directory is cached, and the Arabic reader asks for hers.
+    stores.set('mawsool-runtime-v-test', new Map([[abs('/services?locale=en'), 'english-copy']]));
+    const answer = (await request({ url: abs('/services?locale=ar'), mode: 'cors' })) as { body: string };
+    expect(answer.body).toBe(`fresh:${abs('/services?locale=ar')}`);
+    expect(fetch).toHaveBeenCalledWith(expect.objectContaining({ url: abs('/services?locale=ar') }));
+    // The same address is still served from the cache.
+    expect(await request({ url: abs('/services?locale=en'), mode: 'cors' })).toBe('english-copy');
+  });
+
   it('serves anything the runtime cache saved earlier', async () => {
     const { stores, request } = load({ network: offline });
     stores.set('mawsool-runtime-v-test', new Map([[abs('/fonts/extra.woff2'), 'runtime-hit']]));

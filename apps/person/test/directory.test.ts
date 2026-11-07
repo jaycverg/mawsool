@@ -84,6 +84,16 @@ describe('loadDirectory', () => {
     expect(await loadDirectory({ ...base, storage: broken.storage, fetch: offline() })).toBeNull();
   });
 
+  it('drops a copy saved in the old shape (one list, no language): offline it is no directory, and the next online visit replaces it', async () => {
+    const oldShape = { fetchedAt: '2026-10-30T08:00:00+04:00', services: [SERVICE] };
+    const kept = memoryStorage({ directory: oldShape });
+    expect(await loadDirectory({ ...base, storage: kept.storage, fetch: offline() })).toBeNull();
+    expect((await loadDirectory({ ...base, locale: 'ar', storage: kept.storage, fetch: respond([SERVICE_AR]) }))?.source).toBe('network');
+    // Only the new copy is there, in its language: the old list is not served as the other language's.
+    expect((await loadDirectory({ ...base, locale: 'en', storage: kept.storage, fetch: offline() }))?.services).toEqual([SERVICE_AR]);
+    expect(await kept.storage.get('directory')).toEqual({ ar: { fetchedAt: now().toISOString(), services: [SERVICE_AR] } });
+  });
+
   it('still returns the fresh list when the copy cannot be saved', async () => {
     const { storage, failures } = memoryStorage();
     failures.write = true;
