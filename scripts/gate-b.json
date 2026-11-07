@@ -677,5 +677,144 @@
     "id": "browser-no-longer-wanted-says-the-same-as-decline",
     "sentence": "\"I don't want this any more\" on the day-7 check declines with the same words, link and effect (browser)",
     "browser": "no-longer-wanted-says-the-same-as-decline"
+  },
+  {
+    "id": "repeat-check-reaches-remeasured-then-closed",
+    "sentence": "A repeat check, six weeks after the ticket was seen, moves it to remeasured (person) and then to closed (system) in one request",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/remeasure.test.ts",
+        "name": "does both in one request: the person fires remeasured"
+      }
+    ]
+  },
+  {
+    "id": "repeat-check-is-refused-early-and-from-other-states",
+    "sentence": "A repeat check is refused (409) one millisecond before six weeks after the seen event, and from every state but seen",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/remeasure.test.ts",
+        "name": "is open to the millisecond"
+      },
+      {
+        "file": "test/remeasure.test.ts",
+        "name": "a ticket that is declined answers 409 to a repeat check"
+      }
+    ]
+  },
+  {
+    "id": "person-end-control-moves-seen-to-closed",
+    "sentence": "The person's control to end a ticket moves it from seen to closed, and nothing else fires closed",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/remeasure.test.ts",
+        "name": "moves seen to closed with the person as actor"
+      },
+      {
+        "file": "test/transitions.test.ts",
+        "name": "ends the loop for exactly these actors"
+      }
+    ]
+  },
+  {
+    "id": "sweep-leaves-a-seen-ticket-unchanged",
+    "sentence": "A sweep leaves a seen ticket unchanged, also after the clock moves past six weeks",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/remeasure.test.ts",
+        "name": "before six weeks, at six weeks, and long after the clock has moved past them"
+      }
+    ]
+  },
+  {
+    "id": "repeat-check-totals-follow-the-consent-ledger",
+    "sentence": "New totals leave the phone only when ticked, are recorded in the consent ledger, and are reached by a stop, a withdrawal and Delete everything",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/remeasure.test.ts",
+        "name": "sends nothing when the box is not ticked"
+      },
+      {
+        "file": "test/remeasure.test.ts",
+        "name": "records a new ledger row for scores when they were not shared"
+      },
+      {
+        "file": "test/remeasure.test.ts",
+        "name": "is reached by withdrawing and by Delete everything"
+      }
+    ]
+  },
+  {
+    "id": "reminder-number-is-erased-and-kept-apart",
+    "sentence": "The reminder number is ciphertext bound to the person, in its own table, and the raw row is gone after removal, turning reminders off or Delete everything",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/reminders.test.ts",
+        "name": "stores the number as ciphertext bound to the person"
+      },
+      {
+        "file": "test/reminders.test.ts",
+        "name": "Delete everything removes the row, as the raw table shows"
+      },
+      {
+        "file": "test/erase-reach.test.ts",
+        "name": "has a reviewed fate and a proof for each person-linked table"
+      }
+    ]
+  },
+  {
+    "id": "reminder-text-carries-no-clinical-content",
+    "sentence": "The reminder text, in both languages and as handed to the notification adapter, carries no clinical content",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/reminders.test.ts",
+        "name": "holds none of the banned words or any number in the en reminder"
+      },
+      {
+        "file": "test/reminders.test.ts",
+        "name": "holds none of the banned words or any number in the ar reminder"
+      },
+      {
+        "file": "test/reminders.test.ts",
+        "name": "hands the notification adapter exactly the title and body"
+      }
+    ]
+  },
+  {
+    "id": "browser-reminders-off-until-turned-on",
+    "sentence": "Reminders are off until turned on, every 4 weeks or 2, and a due one shows in the reminder words alone (browser)",
+    "browser": "reminders-are-off-until-turned-on-and-the-card-shows-neutral-words-when-due"
+  },
+  {
+    "id": "browser-reminder-number-erased",
+    "sentence": "The reminder number is optional, a labelled sample, and deleted by removing it, by turning reminders off and by Delete everything (browser)",
+    "browser": "reminder-number-is-optional-stored-apart-and-deleted-with-the-reminders"
+  },
+  {
+    "id": "browser-repeat-check-opens-at-six-weeks",
+    "sentence": "The repeat check opens exactly six weeks after the clinic saw the person (browser)",
+    "browser": "repeat-check-opens-six-weeks-after-the-clinic-saw-the-person"
+  },
+  {
+    "id": "browser-repeat-check-sends-totals-only-when-ticked",
+    "sentence": "The repeat check sends the two totals only when ticked (browser)",
+    "browser": "repeat-check-sends-the-totals-only-when-ticked"
+  },
+  {
+    "id": "browser-repeat-check-item-9-opens-crisis",
+    "sentence": "Item 9 of the repeat PHQ-9 opens the crisis screen (browser)",
+    "browser": "repeat-check-item-9-opens-the-crisis-screen"
+  },
+  {
+    "id": "browser-person-ending-closes-a-seen-ticket",
+    "sentence": "The person's end control moves a seen ticket to closed (browser)",
+    "browser": "person-ending-a-seen-ticket-closes-it"
   }
 ]
