@@ -75,12 +75,12 @@ const DIAGNOSTIC_LABELS: Record<Locale, string[]> = {
  * name a band ("mild") and say what the score suggests, never join the two. Named in the checklist, like the labels.
  */
 const BAND_WORDS: Record<Locale, string[]> = {
-  en: ['minimal', 'mild', 'moderate', 'moderately', 'severe', 'severely'],
-  ar: ['طفيف', 'بسيط', 'بسيطة', 'خفيف', 'خفيفة', 'متوسط', 'متوسطة', 'شديد', 'شديدة', 'حاد', 'حادة'],
+  en: ['minimal', 'minimally', 'mild', 'mildly', 'slight', 'slightly', 'moderate', 'moderately', 'severe', 'severely', 'serious', 'seriously'],
+  ar: ['طفيف', 'طفيفة', 'بسيط', 'بسيطة', 'خفيف', 'خفيفة', 'متوسط', 'متوسطة', 'معتدل', 'معتدلة', 'شديد', 'شديدة', 'حاد', 'حادة'],
 };
 const CONDITION_WORDS: Record<Locale, string[]> = {
-  en: ['depression', 'depressed', 'depressive', 'anxiety', 'anxious'],
-  ar: ['اكتئاب', 'اكتئابي', 'مكتئب', 'قلق'],
+  en: ['depression', 'depressed', 'depressive', 'anxiety', 'anxious', 'melancholia'],
+  ar: ['اكتئاب', 'اكتئابي', 'مكتئب', 'قلق', 'كآبة'],
 };
 const BAND_WINDOW = 3;
 
@@ -94,18 +94,59 @@ function normalise(text: string): string {
     .replace(/\s+/g, ' ');
 }
 
-/** The labels from the fixed list that a text contains. */
-function labelsIn(text: string, locale: Locale): string[] {
-  const body = normalise(text);
-  return DIAGNOSTIC_LABELS[locale].filter((label) => body.includes(normalise(label)));
+/**
+ * What Arabic attaches to a word: a conjunction (و, ف), a preposition (ب, ك, ل) with or without the article (بال, كال, لل
+ * for ل + ال), and at the end the accusative alef, the plural and the possessive pronouns. "باكتئاب" (with depression),
+ * "للقلق" (to the anxiety), "اكتئابًا" (accusative, after normalising: اكتئابا) and "اكتئابك" (your depression) are all
+ * the word "اكتئاب" with something attached, and must not slip past a list written with the bare word.
+ */
+const ARABIC_CONJUNCTIONS = ['', 'و', 'ف'];
+const ARABIC_PREFIXES = ['', 'ب', 'ك', 'ل', 'ال', 'بال', 'كال', 'لل'];
+const ARABIC_SUFFIXES = ['', 'ا', 'ات', 'ك', 'ه', 'ها', 'نا', 'كم', 'هم', 'هن', 'ي'];
+/** A word is never cut down to fewer letters than this, so a short word does not become another word. */
+const MIN_STEM = 3;
+
+/** A word of a text, as itself and as each shorter word it can be with something attached: its stems. */
+function stems(token: string): Set<string> {
+  const found = new Set([token]);
+  if (!/\p{Script=Arabic}/u.test(token)) return found;
+  for (const conjunction of ARABIC_CONJUNCTIONS) {
+    for (const prefix of ARABIC_PREFIXES) {
+      for (const suffix of ARABIC_SUFFIXES) {
+        const head = conjunction + prefix;
+        if (!token.startsWith(head) || !token.endsWith(suffix)) continue;
+        const stem = token.slice(head.length, token.length - suffix.length);
+        if (stem.length >= MIN_STEM) found.add(stem);
+      }
+    }
+  }
+  return found;
 }
 
-/** The words of a text, normalised, with the Arabic definite article (and a one-letter preposition before it) taken off. */
+/** The words of a text, normalised. */
 function words(text: string): string[] {
   return normalise(text)
     .split(/[^\p{L}]+/u)
-    .filter((word) => word !== '')
-    .map((word) => word.replace(/^[وفبل]?ال(?=\p{L}{2})/u, ''));
+    .filter((word) => word !== '');
+}
+
+/** The labels from the fixed list that a text contains, as a phrase of its words or (in Arabic) as the same words with something attached. */
+function labelsIn(text: string, locale: Locale): string[] {
+  const body = normalise(text);
+  const tokens = words(text);
+  return DIAGNOSTIC_LABELS[locale].filter((label) => {
+    if (body.includes(normalise(label))) return true;
+    if (locale !== 'ar') return false;
+    // The label's own words are the fixed side (with the article taken off: "بالاكتئاب" is "اكتئاب"); the text's words may
+    // carry anything Arabic attaches. A label's own possessive stays on it: "تشخيصك" (your diagnosis) is not "تشخيصا" (a diagnosis).
+    const phrase = words(label).map((word) => word.replace(/^(?:بال|كال|لل|ال)(?=\p{L}{3})/u, ''));
+    return tokens.some((_, at) => phrase.every((word, offset) => tokens[at + offset] !== undefined && stems(tokens[at + offset]!).has(word)));
+  });
+}
+
+/** The word of a list that a token is, with or without something attached; undefined when it is none of them. */
+function listed(token: string, list: ReadonlySet<string>): string | undefined {
+  return [...stems(token)].find((stem) => list.has(stem));
 }
 
 /** Each band word that stands within `BAND_WINDOW` words of a condition word, as "band condition" pairs. */
@@ -115,9 +156,11 @@ function bandedConditionsIn(text: string, locale: Locale): string[] {
   const condition = new Set(CONDITION_WORDS[locale].map(normalise));
   const hits: string[] = [];
   tokens.forEach((token, at) => {
-    if (!band.has(token)) return;
+    const grade = listed(token, band);
+    if (grade === undefined) return;
     for (let other = Math.max(0, at - BAND_WINDOW); other <= Math.min(tokens.length - 1, at + BAND_WINDOW); other += 1) {
-      if (other !== at && condition.has(tokens[other]!)) hits.push(`${token} ${tokens[other]}`);
+      const name = other === at ? undefined : listed(tokens[other]!, condition);
+      if (name !== undefined) hits.push(`${grade} ${name}`);
     }
   });
   return hits;
@@ -205,6 +248,43 @@ describe('no diagnostic label in a message a person reads (MW-103)', () => {
     for (const [text, locale] of [['You have moderate depression', 'en'], ['Moderate depression', 'en'], ['Severe anxiety', 'en'], ['اكتئاب متوسط', 'ar']] as const) {
       expect(violationsIn(text, locale), text).not.toEqual([]);
     }
+  });
+
+  /**
+   * One text per form a word takes that a list written with the bare word would miss. Each is a violation, with the
+   * entry it is found as; none of them was found before the attached forms were read.
+   */
+  const MUST_FAIL: [form: string, text: string, locale: Locale, found: string[]][] = [
+    ['a bare preposition before a band and a condition', 'باكتئاب شديد', 'ar', ['شديد اكتئاب']],
+    ['a bare preposition inside a label (no article)', 'مصاب باكتئاب', 'ar', ['مصاب بالاكتئاب']],
+    ['a bare preposition and "to" with the article, in a label', 'تعاني من اكتئاب', 'ar', ['تعاني من الاكتئاب']],
+    ['a conjunction and a preposition before the condition', 'وبقلق متوسط', 'ar', ['متوسط قلق']],
+    ['the accusative (tanween) on both words', 'قلقًا شديدًا', 'ar', ['شديد قلق']],
+    ['the accusative with the alef before the tanween', 'اكتئابًا متوسطًا', 'ar', ['متوسط اكتئاب']],
+    ['a possessive suffix on the condition', 'اكتئابك الشديد', 'ar', ['شديد اكتئاب']],
+    ['a possessive suffix on the condition, band first', 'المتوسط في قلقها', 'ar', ['متوسط قلق']],
+    ['a synonym for the condition', 'كآبة متوسطة', 'ar', ['متوسطة كابة']],
+    ['a synonym for the band', 'قلق معتدل', 'ar', ['معتدل قلق']],
+    ['the adverb "mildly"', 'You are mildly anxious.', 'en', ['mildly anxious']],
+    ['the adverb "mildly" before a different condition word', 'Mildly depressed', 'en', ['mildly depressed']],
+    ['a synonym for the band', 'serious depression', 'en', ['serious depression']],
+    ['a synonym for the condition', 'a moderate melancholia', 'en', ['moderate melancholia']],
+  ];
+  for (const [form, text, locale, found] of MUST_FAIL) {
+    it(`finds ${form}: "${text}"`, () => {
+      expect(violationsIn(text, locale)).toEqual(found);
+    });
+  }
+
+  it('lets through a plain diagnosis word an attached ending does not turn into "your diagnosis", and a band or condition word apart from the other', () => {
+    expect(labelsIn('هذا استبيان فحص وليس تشخيصًا.', 'ar')).toEqual([]);
+    expect(labelsIn('تشخيصه', 'ar')).toEqual([]);
+    expect(labelsIn('تشخيصك', 'ar')).toEqual(['تشخيصك']);
+    expect(violationsIn('باكتئاب', 'ar')).toEqual([]);
+    expect(violationsIn('قلقك', 'ar')).toEqual([]);
+    expect(violationsIn('درجة متوسطة', 'ar')).toEqual([]);
+    expect(violationsIn('mildly', 'en')).toEqual([]);
+    expect(violationsIn('Your answers suggest a slightly higher score than last time.', 'en')).toEqual([]);
   });
 
   it('lets through a band named on its own and a condition word that is not graded, and words too far apart to be one phrase', () => {
