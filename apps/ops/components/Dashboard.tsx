@@ -5,7 +5,8 @@ import { isLocale } from '@mawsool/ui';
 import { BrandMark } from '@mawsool/ui/components';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
-import { DEFAULT_FILTERS, TIER_TARGET_DAYS, isSuppressed, loadDashboard, numberFormat, type Dashboard as DashboardData, type Filters } from '../lib/metrics';
+import { TIER_TARGET_DAYS } from '@mawsool/rules';
+import { DEFAULT_FILTERS, isSuppressed, loadDashboard, numberFormat, type Dashboard as DashboardData, type Filters } from '../lib/metrics';
 
 type Load = { k: 'loading' } | { k: 'failed' } | { k: 'ready'; data: DashboardData };
 

@@ -85,6 +85,12 @@ export const HANDOFF_WINDOWS_DAYS: readonly number[] = [
   ...new Set([...STEP_ROWS.flatMap((row) => (row.handoffWindowDays === null ? [] : [row.handoffWindowDays])), FALLBACK_HANDOFF_WINDOW_DAYS]),
 ].sort((a, b) => a - b);
 
+/**
+ * The days a tier's hand-off is usually promised within (the spec's stepped-care table); a ticket may carry the other window.
+ * The ops dashboard shows it as the tier's target. Every value is one of `HANDOFF_WINDOWS_DAYS`.
+ */
+export const TIER_TARGET_DAYS = { community: 14, tele: 7, gp: 7, specialist: 14 } as const satisfies Partial<Record<Tier, number>>;
+
 /** Aggregates over fewer people than this are never shown (k-anonymity). */
 export const SUPPRESSION_THRESHOLD = 10;
 
