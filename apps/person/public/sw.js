@@ -47,14 +47,17 @@ self.addEventListener('fetch', (event) => {
 });
 
 /**
- * Any cache this worker owns, shell or runtime. A page's query string (?id=) does not change which page it is, and
- * neither does a missing trailing slash: the export holds /en/options/, and /en/options is the same page, so a
- * navigation without the slash is looked up with it. Without that, a typed or deep-linked address would miss the
- * cache offline and show the browser's error page.
+ * Any cache this worker owns, shell or runtime. For a page navigation, a query string (?id=) does not change which page
+ * it is, and neither does a missing trailing slash: the export holds /en/options/, and /en/options is the same page, so a
+ * navigation without the slash is looked up with it. Without that, a typed or deep-linked address would miss the cache
+ * offline and show the browser's error page. Any other request is matched on its whole address: when the API is served
+ * from this origin, /services?locale=ar and /services?locale=en are different answers, and a lookup that ignored the
+ * query string would give the Arabic reader the English copy.
  */
 async function cached(request) {
-  const hit = await caches.match(request, { ignoreSearch: true });
-  if (hit || request.mode !== 'navigate') return hit;
+  const navigation = request.mode === 'navigate';
+  const hit = await caches.match(request, { ignoreSearch: navigation });
+  if (hit || !navigation) return hit;
   const url = new URL(request.url);
   if (url.pathname.endsWith('/') || /\.[a-z0-9]+$/i.test(url.pathname)) return hit;
   return caches.match(new URL(`${url.pathname}/`, url.origin).href, { ignoreSearch: true });

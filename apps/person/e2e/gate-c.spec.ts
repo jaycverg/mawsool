@@ -748,24 +748,34 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
   async 'seam-equity-opt-in-reaches-the-dashboard-row'({ page, context, browser, locale }) {
     test.setTimeout(300_000);
     await resetFromPanel(await signedInPage(context, OPS, ADMIN), locale);
-    /** The number of tickets the age-band row for a band shows, with the row read as a figure and not as "suppressed". */
-    const groupSize = async (dash: Page, band: string): Promise<number> => {
+    /** Every row of the age-band table as the dashboard shows it, by band: the text of a figure, or "suppressed". */
+    const ageRows = async (dash: Page): Promise<Record<string, string>> => {
       await dash.locator('[data-dimension="age_band"]').click();
-      const row = dash.locator(`[data-equity-rows="age_band"] [data-equity-row="${band}"]`);
-      await expect(row, `the ${band} row is a figure`).toBeVisible();
-      await expect(row).not.toHaveAttribute('data-suppressed', /.*/);
-      const text = await row.locator(':scope > span:last-child').innerText();
-      return numbersIn(text).at(-1)!;
+      const rows = dash.locator('[data-equity-rows="age_band"] [data-equity-row]');
+      await expect(rows.first()).toBeVisible();
+      const read: Record<string, string> = {};
+      for (const row of await rows.all()) {
+        const band = (await row.getAttribute('data-equity-row'))!;
+        read[band] = (await row.getAttribute('data-suppressed')) !== null ? 'suppressed' : (await row.innerText()).replace(/\s+/g, ' ').trim();
+      }
+      return read;
     };
-    const before = await dashboard(browser, locale);
-    const [chosenBefore, otherBefore] = [await groupSize(before, '25_34'), await groupSize(before, '35_44')];
+    /** The number of tickets a row's text shows ("57% · 28 tickets" gives 28), with the row read as a figure and not as "suppressed". */
+    const tickets = (row: string | undefined): number => {
+      expect(row, 'the row is a figure').not.toBe('suppressed');
+      return numbersIn(row!).at(-1)!;
+    };
+    const before = await ageRows(await dashboard(browser, locale));
+    expect(Object.keys(before), 'the age bands and "no answer"').toEqual(expect.arrayContaining(['under_18', '18_24', '25_34', '35_44', '45_54', '55_plus', 'not_given']));
 
     // On the phone: opt in to the group totals with the age band 25 to 34, and send a referral.
     await referralFromPhone(page, locale, { equityAgeBand: '25_34' });
 
-    const after = await dashboard(browser, locale);
-    expect(await groupSize(after, '25_34'), 'the chosen age band gains the ticket').toBe(chosenBefore + 1);
-    expect(await groupSize(after, '35_44'), 'another age band does not move').toBe(otherBefore);
+    const after = await ageRows(await dashboard(browser, locale));
+    expect(tickets(after['25_34']), 'the chosen age band gains the ticket').toBe(tickets(before['25_34']) + 1);
+    // Every other row, suppressed or not, reads exactly as it did.
+    const others = (rows: Record<string, string>) => Object.fromEntries(Object.entries(rows).filter(([band]) => band !== '25_34'));
+    expect(others(after), 'no other age-band row moves').toEqual(others(before));
   },
 
   async 'seam-crisis-contact-reaches-the-crisis-figures'({ context, browser, locale }) {
