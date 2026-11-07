@@ -47,7 +47,7 @@ export class ConsoleGuard {
 
   private strict = false;
 
-  /** Gate C: nothing may be excused. After this, `allow` throws. */
+  /** Gate C: nothing may be excused, bar the one test that does not call this (`PROVOKES_AN_ERROR` in its spec). After this, `allow` throws. */
   forbidAllowances(): void {
     this.strict = true;
   }

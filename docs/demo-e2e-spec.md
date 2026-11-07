@@ -50,7 +50,8 @@ import opsEn from '../../ops/messages/en.json';
 /**
  * Gate C: the whole demo script, steps 1 to 12, in Arabic and in English, against the real API with `DEMO_MODE` on, the
  * real person export and the real clinician and ops production builds, in a real Chromium. The browser fails on any
- * console error and this gate allows none: no URL, no status, no test is excused.
+ * console error and this gate excuses none, with one exception: the test of a phone opening its ticket after a real reset
+ * (`PROVOKES_AN_ERROR` below) names the two 404s it provokes by exact URL and status, and an allowance nothing matched fails.
  *
  * `acceptance-c.json` is the registry. The sentences of the exit acceptance that a server test can prove are in
  * `scripts/gate-c.json`, which `pnpm gate:c` checks first.
@@ -658,7 +659,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await dash.unroute(`${API}/metrics/equity*`);
 
     // A tier whose within-target share is ten points or more under the overall one is marked (the board's 58% against 71%).
-    const cell =(within: number) => ({ tickets: 40, withinTarget: { count: Math.round(within * 0.4), of: 40, percent: within }, medianDaysToSeen: 6, p90DaysToSeen: 12 });
+    const cell = (within: number) => ({ tickets: 40, withinTarget: { count: Math.round(within * 0.4), of: 40, percent: within }, medianDaysToSeen: 6, p90DaysToSeen: 12 });
     await dash.route(`${API}/metrics/timeliness*`, (route) =>
       route.fulfill({
         json: {
