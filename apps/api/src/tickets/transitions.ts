@@ -19,6 +19,10 @@ interface Rule {
  * The whole state machine. The spec's table, widened where its stories need more (see the plan's decisions):
  * `declined`, `rerouted` and `seen` can also fire from `acknowledged`, `overdue` or `issued`, and `withdrawn` from
  * every state that is not terminal. A move to a state that has no rule from the current state is illegal (409).
+ *
+ * The end of the loop is exact: `remeasured` is the person's, from `seen` only (through the re-measure route, which
+ * also holds the six-week wait); `closed` from `seen` is the person ending the ticket; `closed` from `remeasured` is the
+ * system's, appended in the same transaction as the re-measure. Nobody else can fire either, and nothing else fires `closed`.
  */
 export const RULES: readonly Rule[] = [
   { to: 'acknowledged', from: ['issued'], actors: ['clinic'] },
@@ -28,7 +32,8 @@ export const RULES: readonly Rule[] = [
   { to: 'declined', from: REROUTABLE_STATES, actors: ['person'] },
   { to: 'withdrawn', from: OPEN_STATES, actors: ['person'] },
   { to: 'remeasured', from: ['seen'], actors: ['person'] },
-  { to: 'closed', from: ['seen', 'remeasured'], actors: ['person', 'system'] },
+  { to: 'closed', from: ['seen'], actors: ['person'] },
+  { to: 'closed', from: ['remeasured'], actors: ['system'] },
 ];
 
 export type Verdict =

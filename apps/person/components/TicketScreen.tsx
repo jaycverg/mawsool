@@ -1,5 +1,6 @@
 'use client';
 
+import { REMEASURE_DELAY_DAYS } from '@mawsool/rules';
 import { PersonTicketListSchema, PersonTicketViewSchema, REROUTE_REASONS, type ConsentElement, type PersonTicketView, type RerouteReason, type TicketEventView } from '@mawsool/types';
 import { isLocale } from '@mawsool/ui';
 import { useDemoOffsetMs } from '@mawsool/ui/components';
@@ -11,6 +12,7 @@ import { API_URL } from '../lib/api';
 import { deviceNow } from '../lib/clock';
 import { clinicCouldNotSee, followUpAt, followUpDue } from '../lib/day7';
 import { calendarDaysLeft, formatDate } from '../lib/format';
+import { remeasureDue, remeasureOpensAt } from '../lib/remeasure';
 import { href } from '../lib/routes';
 import { callServer, type ServerDeps } from '../lib/server';
 import { forgetTicket, loadTickets } from '../lib/share';
@@ -23,7 +25,7 @@ import { QrCode } from './QrCode';
 type Translate = ReturnType<typeof useTranslations>;
 type Reads = { at: string; facilityName: string }[] | 'failed';
 type Load = { status: 'loading' } | { status: 'none' } | { status: 'failed' } | { status: 'ready'; ticket: PersonTicketView; reads: Reads; all: PersonTicketView[] };
-type Panel = 'none' | 'reason' | 'declining' | 'withdrawing';
+type Panel = 'none' | 'reason' | 'declining' | 'withdrawing' | 'ending';
 
 /**
  * Turns the `<stop>` part of a message into a link to the sharing panel, where each "Stop sharing" control and "Withdraw" live.
@@ -143,6 +145,7 @@ export function TicketScreen() {
             failed={failed}
             onSeen={() => void act((d) => post(d, load.ticket.id, { to: 'seen', selfConfirmed: true }))}
             onDecline={() => void act((d) => post(d, load.ticket.id, { to: 'declined' }))}
+            onEnd={() => void act((d) => post(d, load.ticket.id, { to: 'closed' }))}
             onWithdraw={() => void act((d) => post(d, load.ticket.id, { to: 'withdrawn' }))}
             all={load.all}
             savedWarning={unsavedLocally}
@@ -177,12 +180,13 @@ interface ReadyProps {
   failed: boolean;
   onSeen: () => void;
   onDecline: () => void;
+  onEnd: () => void;
   onWithdraw: () => void;
   onStop: (consentId: string) => void;
   onReroute: (reason: RerouteReason) => void;
 }
 
-function Ready({ t, lang, ticket, reads, all, savedWarning, notice, panel, setPanel, busy, failed, onSeen, onDecline, onWithdraw, onStop, onReroute }: ReadyProps) {
+function Ready({ t, lang, ticket, reads, all, savedWarning, notice, panel, setPanel, busy, failed, onSeen, onDecline, onEnd, onWithdraw, onStop, onReroute }: ReadyProps) {
   // Re-render when the demo clock moves, so the countdown and the day-7 prompt follow it.
   useDemoOffsetMs();
   const now = deviceNow();
@@ -193,6 +197,11 @@ function Ready({ t, lang, ticket, reads, all, savedWarning, notice, panel, setPa
   const due = followUpDue(ticket, now);
   /** Declining ends the referral but not the share: the clinic can read the bundle until the person stops sharing it. */
   const declinedButShared = ticket.state === 'declined' && !shareEnded;
+  /** Closing, like declining, ends the referral but not the share. */
+  const closedButShared = ticket.state === 'closed' && !shareEnded;
+  const seenByClinic = ticket.state === 'seen';
+  const repeatOpensAt = remeasureOpensAt(ticket);
+  const repeatOpen = remeasureDue(ticket, now);
   return (
     <>
       <section className="overflow-hidden rounded-ticket border border-border bg-surface" data-ticket={ticket.shortCode}>
@@ -226,6 +235,7 @@ function Ready({ t, lang, ticket, reads, all, savedWarning, notice, panel, setPa
       {savedWarning && <p role="status" className="rounded-staff bg-warning px-3.5 py-3 text-[14px] text-warning-ink">{t('savedWarning')}</p>}
       {shareEnded && <p role="status" className="rounded-staff bg-accent-tint px-3.5 py-3 text-[14px]" data-share-ended>{t('withdrawnNote')}</p>}
       {declinedButShared && <p role="status" className="rounded-staff bg-accent-tint px-3.5 py-3 text-[14px] leading-5" data-declined-note>{t.rich('declinedNote', { stop: stopSharingLink })}</p>}
+      {closedButShared && <p role="status" className="rounded-staff bg-accent-tint px-3.5 py-3 text-[14px] leading-5" data-closed-note>{t.rich('closedNote', { stop: stopSharingLink })}</p>}
       {earlier && (
         <p className="t-small text-muted" data-earlier>
           {t('earlier')} · <a className="inline-flex min-h-tap items-center font-semibold text-accent" href={href(lang, 'ticket', { id: earlier.id })}>{`${earlier.shortCode.slice(0, 2)}-${earlier.shortCode.slice(2)}`}</a>
@@ -269,6 +279,15 @@ function Ready({ t, lang, ticket, reads, all, savedWarning, notice, panel, setPa
         </section>
       )}
 
+      {repeatOpen && (
+        <section className="flex flex-col gap-2 rounded-card border-2 border-accent bg-surface p-4" data-prompt="remeasure">
+          <h2 className="text-[16px] font-semibold">{t('remeasureTitle')}</h2>
+          <p className="t-body text-muted">{t('remeasureBody')}</p>
+          <a className="btn-primary" href={href(lang, 'check-in', { i: 'phq9', rm: ticket.id })} data-remeasure-start>{t('remeasureStart')}</a>
+        </section>
+      )}
+      {seenByClinic && !repeatOpen && repeatOpensAt && <p className="t-small text-muted" data-remeasure-wait>{t('remeasureWait', { date: formatDate(repeatOpensAt.toISOString(), lang, 'long') })}</p>}
+
       <section className="flex flex-col gap-1 rounded-staff bg-accent-tint px-3.5 py-3">
         <h2 className="text-[13px] font-semibold">{t('clinicContact')}</h2>
         <p className="text-[14px]" data-clinic-contact dir="auto">{ticket.clinicContact}</p>
@@ -282,6 +301,16 @@ function Ready({ t, lang, ticket, reads, all, savedWarning, notice, panel, setPa
           <button type="button" className="flex h-12 flex-1 items-center justify-center rounded-[24px] border-[1.5px] border-accent px-3 text-[15px] font-semibold text-accent" onClick={() => onReroute('change_option')}>{t('changeOption')}</button>
           <button type="button" className="flex h-12 flex-1 items-center justify-center rounded-[24px] px-3 text-[15px] font-semibold text-accent" onClick={() => setPanel('declining')}>{t('decline')}</button>
         </div>
+      )}
+      {seenByClinic && panel !== 'ending' && (
+        <button type="button" className="tap rounded-pill border-[1.5px] border-border px-4 font-semibold" onClick={() => setPanel('ending')} data-control="end-ticket">{t('endTicket')}</button>
+      )}
+      {panel === 'ending' && (
+        <section role="alertdialog" aria-labelledby="end-text" className="flex flex-col gap-2 rounded-staff border border-border p-3">
+          <p id="end-text" className="t-body font-semibold">{t.rich('endConfirm', { stop: stopSharingLink })}</p>
+          <button type="button" className="btn-primary" disabled={busy} onClick={onEnd} data-control="end-ticket-yes">{t('endYes')}</button>
+          <button type="button" className="tap rounded-pill border-[1.5px] border-border px-4 font-semibold" onClick={() => setPanel('none')}>{t('keep')}</button>
+        </section>
       )}
       {panel === 'declining' && (
         <section role="alertdialog" aria-labelledby="decline-text" className="flex flex-col gap-2 rounded-staff border border-danger p-3">
@@ -349,13 +378,15 @@ function Timeline({ t, lang, ticket }: { t: Translate; lang: 'ar' | 'en'; ticket
   const issued = at('issued');
   const acknowledged = at('acknowledged');
   const seen = at('seen');
+  const remeasured = at('remeasured');
   const ended = (['rerouted', 'declined', 'withdrawn', 'closed'] as const).map((state) => at(state)).find(Boolean);
   const all: { key: string; title: string; detail: string; done: boolean }[] = [
     { key: 'issued', title: t('step.issued'), detail: issued ? formatDate(issued.at, lang, 'long') : '', done: true },
     { key: 'acknowledged', title: t('step.acknowledged'), detail: acknowledged ? t('acknowledgedDetail', { date: formatDate(acknowledged.at, lang, 'long') }) : '', done: Boolean(acknowledged) },
     ...(ticket.events.some((event) => event.toState === 'overdue') ? [{ key: 'overdue', title: t('step.overdue'), detail: formatDate(at('overdue')!.at, lang, 'long'), done: true }] : []),
     { key: 'seen', title: t('step.seen'), detail: seen ? (seen.selfConfirmed ? t('selfConfirmed', { date: formatDate(seen.at, lang, 'long') }) : formatDate(seen.at, lang, 'long')) : t('byDate', { date: formatDate(ticket.deadlineAt, lang, 'long') }), done: Boolean(seen) },
-    ...(ended ? [{ key: ended.toState, title: t(`step.${ended.toState as 'closed'}`), detail: formatDate(ended.at, lang, 'long'), done: true }] : [{ key: 'followUp', title: t('step.followUp'), detail: t('aroundDate', { date: formatDate(new Date(Date.parse((seen ?? issued)!.at) + 42 * DAY_MS).toISOString(), lang, 'long') }), done: false }]),
+    ...(remeasured ? [{ key: 'remeasured', title: t('step.remeasured'), detail: formatDate(remeasured.at, lang, 'long'), done: true }] : []),
+    ...(ended ? [{ key: ended.toState, title: t(`step.${ended.toState as 'closed'}`), detail: formatDate(ended.at, lang, 'long'), done: true }] : [{ key: 'followUp', title: t('step.followUp'), detail: t('aroundDate', { date: formatDate(new Date(Date.parse((seen ?? issued)!.at) + REMEASURE_DELAY_DAYS * DAY_MS).toISOString(), lang, 'long') }), done: false }]),
   ];
   // Once the ticket has ended, steps that were never reached are not shown as still to come.
   const steps = ended ? all.filter((step) => step.done) : all;

@@ -1,5 +1,5 @@
 import { UnableReasonSchema, type Actor, type TicketState, type UnableReason } from '@mawsool/types';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { schema, type Db } from '../db/client';
 import { evaluate, evaluateUnable, type Verdict } from './transitions';
 
@@ -20,6 +20,20 @@ export async function lastEvent(executor: Executor, ticketId: string): Promise<L
     .orderBy(desc(schema.ticketEvents.seq))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * When the ticket most recently moved into `state`: the newest event that entered it from another state, so a same-state
+ * event ("unable to see") never counts. Null if it never did.
+ */
+export async function lastEntryInto(executor: Executor, ticketId: string, state: TicketState): Promise<Date | null> {
+  const [row] = await executor
+    .select({ at: schema.ticketEvents.at })
+    .from(schema.ticketEvents)
+    .where(and(eq(schema.ticketEvents.ticketId, ticketId), eq(schema.ticketEvents.toState, state), sql`${schema.ticketEvents.fromState} IS DISTINCT FROM ${schema.ticketEvents.toState}`))
+    .orderBy(desc(schema.ticketEvents.seq))
+    .limit(1);
+  return row?.at ?? null;
 }
 
 /**

@@ -6,6 +6,7 @@ import {
   BASE,
   INSPECT,
   LOCALES,
+  answerAll,
   computed,
   crisisUrl,
   installFailingIndexedDb,
@@ -115,6 +116,52 @@ const confirmDelete = (page: Page, locale: Locale) => page.getByRole('button', {
 
 /** A message with its rich-text tags removed, as the person reads it. */
 const plain = (text: string) => text.replace(/<\/?\w+>/g, '');
+
+/** The reminder numbers the API holds, as the inspect listener shows them: the raw ciphertext and the number decrypted with the harness's key. */
+async function storedReminderNumbers(): Promise<{ personId: string; intervalWeeks: number; ciphertext: string; phone: string }[]> {
+  return (await (await fetch(`${INSPECT}/reminder-phones`)).json()) as { personId: string; intervalWeeks: number; ciphertext: string; phone: string }[];
+}
+
+const SEEN_TICKET_ID = '9a9d2f6e-0a0e-4a45-9d2c-3c7e1a4e9b11';
+const SEEN_AT_MS = Date.parse('2026-10-01T10:00:00+04:00');
+const SIX_WEEKS_MS = 42 * DAY_MS;
+
+/**
+ * A ticket the clinic saw on 1 October, as the API serves it, for the screens that depend on a date six weeks on: the API's
+ * own clock cannot be moved outside the demo gate, and the server's side of the six weeks has its own tests. `ticketConsentLive`
+ * false stands for a share the person ended.
+ */
+async function stubSeenTicket(page: Page, locale: Locale, ticketConsentLive = true): Promise<string> {
+  const id = SEEN_TICKET_ID;
+  const ticket = {
+    id, shortCode: 'MW4K7Q', qrPayload: 'MAWSOOL:TICKET:MW4K7Q', tier: 'gp', state: 'seen', language: locale, deadlineAt: '2026-10-08T23:59:59+04:00', source: 'app',
+    serviceId: '6c6d2f6e-0a0e-4a45-9d2c-3c7e1a4e9a22', serviceName: 'Sample primary care centre 1', clinicName: 'Sample PHC, Khalifa City', clinicContact: 'Sample clinic.',
+    parentTicketId: null, createdAt: '2026-09-28T08:00:00+04:00',
+    events: [
+      { seq: 1, fromState: null, toState: 'issued', actor: 'person', reason: null, selfConfirmed: false, at: '2026-09-28T08:00:00+04:00' },
+      { seq: 2, fromState: 'issued', toState: 'seen', actor: 'clinic', reason: null, selfConfirmed: false, at: new Date(SEEN_AT_MS).toISOString() },
+    ],
+    consents: [{ id: '7d7d2f6e-0a0e-4a45-9d2c-3c7e1a4e9a33', element: 'ticket', recipient: 'x', grantedAt: '2026-09-28T08:00:00+04:00', revokedAt: ticketConsentLive ? null : '2026-10-02T08:00:00+04:00' }],
+  };
+  await page.route(`${API}/me/tickets/${id}?locale=${locale}`, (route) => route.fulfill({ json: ticket }));
+  await page.route(`${API}/me/tickets/${id}/reads?locale=${locale}`, (route) => route.fulfill({ json: [] }));
+  await page.route(`${API}/me/tickets?locale=${locale}`, (route) => route.fulfill({ json: [ticket] }));
+  return id;
+}
+
+/** The repeat check taken through the screens: the PHQ-9 and the GAD-7, every answer "not at all", ending on the totals. */
+async function takeRepeatCheck(page: Page, locale: Locale, id: string): Promise<void> {
+  await page.getByRole('link', { name: msg(locale, 'ticket.remeasureStart'), exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/${locale}/check-in/\\?i=phq9&rm=${id}`));
+  await expect(page.locator('[data-repeat-step]')).toHaveText(msg(locale, 'checkIn.repeatStep').replace('{current}', '1').replace('{total}', '2'));
+  await answerAll(page, locale, [0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  await page.getByRole('button', { name: msg(locale, 'flow.next'), exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/${locale}/check-in/\\?i=gad7&rm=${id}&p=`));
+  await answerAll(page, locale, [0, 0, 0, 0, 0, 0, 0]);
+  await page.getByRole('button', { name: msg(locale, 'checkIn.finishRepeat'), exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/${locale}/remeasure/\\?id=${id}&p=[0-9a-f-]{36}&g=[0-9a-f-]{36}`));
+  await expect(page.locator('[data-totals]')).toBeVisible();
+}
 
 const LATIN = /[A-Za-z]/;
 const ARABIC = /[؀-ۿ]/;
@@ -1084,6 +1131,204 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     }
     for (const button of await page.locator('main button').all()) expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  },
+
+  async 'reminders-are-off-until-turned-on-and-the-card-shows-neutral-words-when-due'({ page, context, locale }) {
+    await visitOnline(page, locale);
+    await page.goto(`/${locale}/`);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await expect(page.locator('[data-prompt="reminder"]')).toHaveCount(0);
+
+    await page.goto(`/${locale}/settings/`);
+    const toggle = page.locator('[data-reminders-switch]');
+    await expect(toggle).not.toBeChecked();
+    await expect(page.locator('input[name="reminder-interval"]')).toHaveCount(0);
+    await toggle.click();
+    await expect(toggle).toBeChecked();
+    await expect(page.locator('input[name="reminder-interval"][value="4"]')).toBeChecked();
+    await expect(page.locator('input[name="reminder-interval"]')).toHaveCount(2);
+    await expect(page.locator('[data-reminders-limit]')).toHaveText(msg(locale, 'settings.remindersLimit'));
+
+    // Every 4 weeks to start: not yet due at 15 days; every 2 weeks: due at 15 days.
+    const turnedOn = Date.now();
+    await context.clock.setFixedTime(new Date(turnedOn + 15 * DAY_MS));
+    await page.goto(`/${locale}/`);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await expect(page.locator('[data-prompt="reminder"]')).toHaveCount(0);
+    await page.goto(`/${locale}/settings/`);
+    await page.locator('input[name="reminder-interval"][value="2"]').click();
+    await expect(page.locator('input[name="reminder-interval"][value="2"]')).toBeChecked();
+    await page.goto(`/${locale}/`);
+    const card = page.locator('[data-prompt="reminder"]');
+    await expect(card).toBeVisible();
+    await expect(card.locator('h2')).toHaveText(msg(locale, 'reminder.title'));
+    await expect(card.locator('p')).toHaveText(msg(locale, 'reminder.body'));
+    expect((await card.innerText()).replace(msg(locale, 'reminder.title'), '').replace(msg(locale, 'reminder.body'), '').trim()).toBe(msg(locale, 'reminder.action'));
+
+    // Finishing a check-in pushes the next reminder a whole interval out.
+    await takeCheckIn(page, locale, 'who5', [3, 3, 3, 3, 3]);
+    await page.goto(`/${locale}/`);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await expect(page.locator('[data-prompt="reminder"]')).toHaveCount(0);
+  },
+
+  async 'reminder-number-is-optional-stored-apart-and-deleted-with-the-reminders'({ page, locale }) {
+    await visitOnline(page, locale);
+    await page.goto(`/${locale}/settings/`);
+    const before = (await storedReminderNumbers()).length;
+    await page.locator('[data-reminders-switch]').click();
+    await expect(page.locator('[data-reminders-switch]')).toBeChecked();
+    await expect(page.locator('[data-panel="reminder-number"] [data-sample]')).toHaveText(msg(locale, 'settings.remindersSample'));
+    await expect(page.locator('[data-panel="reminder-number"]')).toContainText(msg(locale, 'settings.remindersTextBody'));
+
+    // Reminders on without a number put no row on the server.
+    expect(await storedReminderNumbers()).toHaveLength(before);
+    const sent: string[] = [];
+    page.on('request', (request) => void (request.url().startsWith(`${API}/me/reminder-phone`) && sent.push(request.method())));
+
+    // A number that is not international is refused on the phone, and nothing is sent.
+    await page.locator('#reminder-phone').fill('0501234567');
+    await page.getByRole('button', { name: msg(locale, 'settings.remindersSaveNumber'), exact: true }).click();
+    await expect(page.locator('[data-reminder-note="invalid"]')).toHaveText(msg(locale, 'settings.remindersInvalid'));
+    expect(sent).toEqual([]);
+
+    const number = `+9715${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`;
+    await page.locator('#reminder-phone').fill(number.replace('+971', '+971 ').replace(/(\d{3})(\d{4})$/, '$1 $2'));
+    await page.getByRole('button', { name: msg(locale, 'settings.remindersSaveNumber'), exact: true }).click();
+    await expect(page.locator('[data-reminder-number]')).toHaveText(number);
+    const held = (await storedReminderNumbers()).filter((row) => row.phone === number);
+    expect(held).toHaveLength(1);
+    expect(held[0]!.intervalWeeks).toBe(4);
+    expect(held[0]!.ciphertext).not.toContain(number.slice(4));
+    expect(await rawStoreKeys(page)).toContain('reminders');
+
+    // Removing the number deletes the row and keeps reminders on.
+    await page.getByRole('button', { name: msg(locale, 'settings.remindersRemoveNumber'), exact: true }).click();
+    await expect(page.locator('#reminder-phone')).toBeVisible();
+    expect((await storedReminderNumbers()).filter((row) => row.phone === number)).toEqual([]);
+    await expect(page.locator('[data-reminders-switch]')).toBeChecked();
+
+    // Turning reminders off deletes the row too.
+    await page.locator('#reminder-phone').fill(number);
+    await page.getByRole('button', { name: msg(locale, 'settings.remindersSaveNumber'), exact: true }).click();
+    await expect(page.locator('[data-reminder-number]')).toHaveText(number);
+    expect((await storedReminderNumbers()).filter((row) => row.phone === number)).toHaveLength(1);
+    await page.locator('[data-reminders-switch]').click();
+    await expect(page.locator('[data-reminders-switch]')).not.toBeChecked();
+    expect((await storedReminderNumbers()).filter((row) => row.phone === number)).toEqual([]);
+    expect(await rawStoreKeys(page)).not.toContain('reminders');
+
+    // Delete everything removes it as well.
+    await page.locator('[data-reminders-switch]').click();
+    await expect(page.locator('[data-reminders-switch]')).toBeChecked();
+    await page.locator('#reminder-phone').fill(number);
+    await page.getByRole('button', { name: msg(locale, 'settings.remindersSaveNumber'), exact: true }).click();
+    await expect(page.locator('[data-reminder-number]')).toHaveText(number);
+    expect((await storedReminderNumbers()).filter((row) => row.phone === number)).toHaveLength(1);
+    await openSettingsAndConfirmDelete(page, locale);
+    await confirmDelete(page, locale);
+    await expect(page.locator('[data-erased]')).toBeVisible();
+    expect((await storedReminderNumbers()).filter((row) => row.phone === number)).toEqual([]);
+    await expect.poll(() => rawStoreKeys(page), { timeout: 10_000 }).toEqual([]);
+  },
+
+  async 'repeat-check-opens-six-weeks-after-the-clinic-saw-the-person'({ page, context, locale }) {
+    await visitOnline(page, locale);
+    const id = await stubSeenTicket(page, locale);
+    await context.clock.setFixedTime(new Date(SEEN_AT_MS + SIX_WEEKS_MS - 60_000));
+    await page.goto(`/${locale}/ticket/?id=${id}`);
+    await expect(page.locator('[data-ticket]')).toBeVisible();
+    await expect(page.locator('[data-prompt="remeasure"]')).toHaveCount(0);
+    await expect(page.locator('[data-remeasure-wait]')).toBeVisible();
+    await expect(page.locator('[data-control="end-ticket"]')).toBeVisible();
+
+    await context.clock.setFixedTime(new Date(SEEN_AT_MS + SIX_WEEKS_MS));
+    await page.reload();
+    await expect(page.locator('[data-prompt="remeasure"]')).toBeVisible();
+    await expect(page.locator('[data-remeasure-wait]')).toHaveCount(0);
+    await page.getByRole('link', { name: msg(locale, 'ticket.remeasureStart'), exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/${locale}/check-in/\\?i=phq9&rm=${id}`));
+
+    // The repeat check screen itself says the same before the date.
+    await context.clock.setFixedTime(new Date(SEEN_AT_MS + 10 * DAY_MS));
+    await page.goto(`/${locale}/remeasure/?id=${id}`);
+    await expect(page.locator('[data-remeasure-state="not-open"]')).toBeVisible();
+    await expect(page.locator('[data-remeasure-start]')).toHaveCount(0);
+  },
+
+  async 'repeat-check-sends-the-totals-only-when-ticked'({ page, context, locale }) {
+    await visitOnline(page, locale);
+    const id = await stubSeenTicket(page, locale);
+    const bodies: { scores: { instrument: string; total: number }[] }[] = [];
+    await page.route(`${API}/me/tickets/${id}/remeasure`, async (route) => {
+      bodies.push(route.request().postDataJSON());
+      await route.fulfill({ json: { state: 'closed', scoresShared: bodies.at(-1)!.scores.length > 0, events: [] } });
+    });
+    await context.clock.setFixedTime(new Date(SEEN_AT_MS + SIX_WEEKS_MS));
+    await page.goto(`/${locale}/ticket/?id=${id}`);
+    await takeRepeatCheck(page, locale, id);
+    await expect(page.locator('[data-total="phq9"]')).toContainText('PHQ-9');
+    await expect(page.locator('[data-total="gad7"]')).toContainText('GAD-7');
+    const summary = page.url();
+
+    // Default off: finishing without the tick sends the move and no totals.
+    const share = page.locator('[data-control="share-totals"]');
+    await expect(share).not.toBeChecked();
+    await page.getByRole('button', { name: msg(locale, 'remeasure.finish'), exact: true }).click();
+    await expect(page).toHaveURL(ticketUrl(locale));
+    expect(bodies).toEqual([{ scores: [] }]);
+
+    // Ticked: exactly the two totals, with no answers.
+    await page.goto(summary);
+    await share.check();
+    await page.getByRole('button', { name: msg(locale, 'remeasure.finish'), exact: true }).click();
+    await expect(page).toHaveURL(ticketUrl(locale));
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]!.scores.map((score) => [score.instrument, score.total])).toEqual([['phq9', 0], ['gad7', 0]]);
+    expect(JSON.stringify(bodies[1])).not.toContain('answers');
+
+    // A share the person ended offers nothing to tick.
+    await stubSeenTicket(page, locale, false);
+    await page.goto(summary);
+    await expect(page.locator('[data-share-unavailable]')).toBeVisible();
+    await expect(share).toHaveCount(0);
+  },
+
+  async 'repeat-check-item-9-opens-the-crisis-screen'({ page, context, locale }) {
+    await visitOnline(page, locale);
+    const id = await stubSeenTicket(page, locale);
+    await context.clock.setFixedTime(new Date(SEEN_AT_MS + SIX_WEEKS_MS));
+    await page.goto(`/${locale}/check-in/?i=phq9&rm=${id}`);
+    await answerAll(page, locale, [0, 0, 0, 0, 0, 0, 0, 0, 2], { lastLeavesPage: true });
+    await expect(page).toHaveURL(crisisUrl(locale));
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(msg(locale, 'crisis.heading'));
+    // While the block stands the repeat check screen sends the person back to the crisis screen.
+    await page.goto(`/${locale}/remeasure/?id=${id}`);
+    await expect(page).toHaveURL(crisisUrl(locale), { timeout: 15_000 });
+    await expect(page.locator('[data-screen="remeasure"]')).toHaveCount(0);
+  },
+
+  async 'person-ending-a-seen-ticket-closes-it'({ page, context, locale }) {
+    const id = await issueTicket(page, locale);
+    await expect(page.locator('[data-control="end-ticket"]')).toHaveCount(0); // nothing to end before the ticket is seen
+    await context.clock.setFixedTime(new Date(Date.now() + 8 * DAY_MS));
+    await page.reload();
+    await page.getByRole('button', { name: msg(locale, 'ticket.followUpYes'), exact: true }).click();
+    await expect(page.locator('[data-step="seen"]')).toHaveAttribute('data-done', 'true');
+    await expect(page.locator('[data-prompt="remeasure"]')).toHaveCount(0); // six weeks have not passed
+    await page.locator('[data-control="end-ticket"]').click();
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+    await page.locator('[data-control="end-ticket-yes"]').click();
+    await expect(page.locator('[data-step="closed"]')).toHaveAttribute('data-done', 'true');
+    await expect(page.locator('[data-control="end-ticket"]')).toHaveCount(0);
+    await expect(page.locator('[data-closed-note]')).toBeVisible();
+    const row = await stored(id);
+    expect(row.ticket.state).toBe('closed');
+    expect(row.events.map((event) => [event.fromState, event.toState, event.actor])).toEqual([
+      [null, 'issued', 'person'],
+      ['issued', 'seen', 'person'],
+      ['seen', 'closed', 'person'],
+    ]);
   },
 };
 

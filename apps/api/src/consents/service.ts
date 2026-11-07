@@ -1,5 +1,5 @@
 import { notShared, redact, withoutElement } from '@mawsool/consent';
-import { BundleContentSchema, type BundleContent, type ConsentElement, type ConsentRecord, type GrantConsentRequest, type StaffBundleView, type TicketState } from '@mawsool/types';
+import { BundleContentSchema, type BundleContent, type ConsentElement, type ConsentRecord, type GrantConsentRequest, type RemeasureRequest, type StaffBundleView, type TicketState } from '@mawsool/types';
 import { type AnyColumn, type SQL, and, arrayContains, eq, isNull, or, sql } from 'drizzle-orm';
 import type { Clock } from '../clock';
 import type { Cipher } from '../crypto';
@@ -171,6 +171,27 @@ export async function grantConsent(deps: ConsentDeps, personId: string, request:
     await tx.update(schema.sharedBundles).set({ contentCiphertext: cipher.encrypt(JSON.stringify(content), bundleContext(ticket.id)) }).where(eq(schema.sharedBundles.id, bundle.id));
     return { kind: 'granted' as const, consent: record(row!) };
   });
+}
+
+/**
+ * Sends the totals of a repeat check to the ticket's clinic, inside the caller's transaction. It is the person's explicit
+ * choice on that screen, so it is recorded the way every consent is: if `scores` is not shared right now, a ledger row
+ * grants it (a person who stopped sharing scores earlier is asked again by the tick, never re-granted silently), and the
+ * totals join the bundle's `scores` ciphertext next to the referral's own. The one element means a later "stop sharing
+ * scores", the ticket's withdrawal and "Delete everything" take these totals out exactly as they take out the rest.
+ * Returns the new ledger row (null when `scores` was already shared), or `'none'` when nothing is shared for the ticket,
+ * which the caller must treat as a reason to abandon the transaction.
+ */
+export async function shareRemeasureScores(tx: Executor, cipher: Cipher, input: { personId: string; ticketId: string; scores: RemeasureRequest['scores']; now: Date }): Promise<ConsentRecord | null | 'none'> {
+  const { personId, ticketId, scores, now } = input;
+  const [bundle] = await tx.select().from(schema.sharedBundles).where(eq(schema.sharedBundles.ticketId, ticketId)).for('update');
+  const live = await liveElements(tx, ticketId);
+  if (!bundle || bundle.deletedAt !== null || !live.includes('ticket')) return 'none';
+  const granted = live.includes('scores') ? null : (await tx.insert(schema.consents).values({ personId, ticketId, recipient: bundle.recipient, element: 'scores', grantedAt: now }).returning())[0]!;
+  const existing = readContent(cipher, ticketId, bundle.contentCiphertext);
+  const content: BundleContent = { ...existing, scores: [...(existing.scores ?? []), ...scores] };
+  await tx.update(schema.sharedBundles).set({ contentCiphertext: cipher.encrypt(JSON.stringify(content), bundleContext(ticketId)) }).where(eq(schema.sharedBundles.id, bundle.id));
+  return granted ? record(granted) : null;
 }
 
 /** `granted` is the elements consented to at the moment of the read, for a caller that builds something else from the bundle (the FHIR export). */

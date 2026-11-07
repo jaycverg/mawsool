@@ -206,11 +206,12 @@ export type ScoreEntry = z.infer<typeof ScoreEntrySchema>;
 
 /**
  * What a bundle can hold, keyed by consent element. The required `ticket` element has no entry: it is the ticket's own
- * fields. Item answers have no place here, so no consent can send them.
+ * fields. Item answers have no place here, so no consent can send them. `scores` holds up to three totals from the referral
+ * and, if the person chooses to send them, the two totals of a repeat check (each entry carries its own `takenAt`).
  */
 export const BundleContentSchema = z
   .object({
-    scores: z.array(ScoreEntrySchema).max(3).optional(),
+    scores: z.array(ScoreEntrySchema).max(5).optional(),
     trajectory: z.array(ScoreEntrySchema).max(120).optional(),
     free_text: z.string().max(2000).optional(),
     conditions: z.array(z.string().min(1).max(80)).max(20).optional(),
@@ -259,6 +260,19 @@ export const TicketEventViewSchema = z.object({
 });
 export type TicketEventView = z.infer<typeof TicketEventViewSchema>;
 
+/** The totals a repeat check can send: the PHQ-9 and the GAD-7, never the WHO-5 and never item answers. */
+export const RemeasureScoreSchema = ScoreEntrySchema.extend({ instrument: z.enum(['phq9', 'gad7']) });
+
+/**
+ * POST /me/tickets/:id/remeasure: the person finished a repeat PHQ-9 and GAD-7. `scores` is empty unless they ticked "send
+ * these totals to the clinic" on that screen, and then holds at most one total per instrument. Without it nothing leaves the phone.
+ */
+export const RemeasureRequestSchema = z
+  .object({ scores: z.array(RemeasureScoreSchema).max(2).default([]) })
+  .strict()
+  .refine((request) => new Set(request.scores.map((score) => score.instrument)).size === request.scores.length, { message: 'One total per instrument' });
+export type RemeasureRequest = z.infer<typeof RemeasureRequestSchema>;
+
 /** A person's own ticket, with its timeline, the clinic's contact and the consents that stand behind it. */
 export const PersonTicketViewSchema = z.object({
   id: z.uuid(),
@@ -279,6 +293,10 @@ export const PersonTicketViewSchema = z.object({
   consents: z.array(ConsentRecordSchema),
 });
 export type PersonTicketView = z.infer<typeof PersonTicketViewSchema>;
+
+/** The ticket after a repeat check: it is `closed`, its two new events are listed, and `scoresShared` says whether the totals were sent. */
+export const RemeasureResultSchema = z.object({ state: TicketStateSchema, scoresShared: z.boolean(), events: z.array(TicketEventViewSchema) });
+export type RemeasureResult = z.infer<typeof RemeasureResultSchema>;
 
 export const CreatedTicketSchema = z.object({ created: z.boolean(), ticket: PersonTicketViewSchema });
 export type CreatedTicket = z.infer<typeof CreatedTicketSchema>;
