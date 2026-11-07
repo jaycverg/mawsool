@@ -46,10 +46,23 @@ The test reads the bullets under the six headings below, and only those, and com
 entry added here and not in the test, or left in the test and removed here, fails it, whatever the prose says.
 
 A band word within three words of a condition word, in either order, is a label too, because it grades a condition the
-person is told they have ("Moderate depression", "you have moderate depression", "severe anxiety", "اكتئاب متوسط",
-"القلق الشديد"). The definite article is ignored in Arabic. The band and condition words are the lists headed "Band words"
-and "Condition words" below; a result names a band on its own ("mild", "moderate") and says what the score suggests, but
-never joins it to the condition's name.
+person is told they have ("Moderate depression", "you have moderate depression", "severe anxiety", "mildly anxious",
+"اكتئاب متوسط", "القلق الشديد"). The band and condition words are the lists headed "Band words" and "Condition words"
+below, with their adverbs and a few synonyms ("mildly", "slight", "serious", "melancholia", "معتدل", "كآبة").
+
+In Arabic the test also reads a word with something attached as the word itself: a conjunction (و, ف), a preposition
+(ب, ك, ل) with or without the article (the definite article is ignored), the accusative ending (اكتئابًا), a plural and a
+possessive (اكتئابك, قلقها). So "باكتئاب شديد" (with severe depression), "قلقًا شديدًا" and "اكتئابك الشديد" are labels
+like their bare forms. A label of the first list is found the same way: "مصاب باكتئاب" and "تعاني من قلق" are found as
+well as "مصاب بالاكتئاب". A label's own possessive stays on it: "تشخيصك" (your diagnosis) is a label, "تشخيصًا" (a
+diagnosis, as in "ليس تشخيصًا") is not.
+
+What the result card shows, which this check does not reach: the card names the instrument above the score ("Anxiety
+(GAD-7)" in English, "القلق (GAD-7)" in Arabic; "Mood (PHQ-9)" and "المزاج (PHQ-9)" for the PHQ-9) and prints the band's name
+("Moderate") beside the score and on the band bar, as separate elements. They sit in the same card, so a reader can
+read the two together, but no message joins a band word to a condition word in one phrase, and the lists above hold the
+messages to that. Whether a band printed beside a condition-named instrument counts as grading a condition is a product
+question, not settled here.
 
 English labels:
 
@@ -70,22 +83,22 @@ Arabic labels:
 
 Band words (English):
 
-- minimal, mild, moderate, moderately, severe, severely
+- minimal, minimally, mild, mildly, slight, slightly, moderate, moderately, severe, severely, serious, seriously
 
 Condition words (English):
 
-- depression, depressed, depressive, anxiety, anxious
+- depression, depressed, depressive, anxiety, anxious, melancholia
 
 Band words (Arabic):
 
-- طفيف، بسيط، بسيطة، خفيف، خفيفة، متوسط، متوسطة، شديد، شديدة، حاد، حادة
+- طفيف، طفيفة، بسيط، بسيطة، خفيف، خفيفة، متوسط، متوسطة، معتدل، معتدلة، شديد، شديدة، حاد، حادة
 
 Condition words (Arabic):
 
-- اكتئاب، اكتئابي، مكتئب، قلق
+- اكتئاب، اكتئابي، مكتئب، قلق، كآبة
 
-The Arabic labels were written for this build and have not been read by a native Arabic speaker with mental health
-experience, so the list may miss phrasings a native reader would flag.
+The Arabic labels, the Arabic band and condition words and the Arabic forms above were written for this build and have not
+been read by a native Arabic speaker with mental health experience, so the lists may miss phrasings a native reader would flag.
 
 ## Open items
 
