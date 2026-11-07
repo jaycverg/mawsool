@@ -12,6 +12,10 @@ export type RemeasureOutcome =
   | { kind: 'illegal' }
   /** Six weeks have not passed since the ticket was seen: 409. */
   | { kind: 'too_early'; availableAt: Date }
+  /** A total's `takenAt` is before the repeat check opened or in the future: 400, nothing written. */
+  | { kind: 'invalid_scores' }
+  /** The stored totals leave no room for these: 409, nothing written (a repeat check without totals still works). */
+  | { kind: 'share_full' }
   /** The person chose to send totals but nothing is shared for the ticket any more: 409, and nothing moved. */
   | { kind: 'no_share' }
   /** Another request moved the ticket first: 409. */
@@ -23,7 +27,7 @@ export interface RemeasureHooks {
 }
 
 class Abandon extends Error {
-  constructor(readonly outcome: 'no_share' | 'lost_race') {
+  constructor(readonly outcome: 'no_share' | 'share_full' | 'lost_race') {
     super(outcome);
   }
 }
@@ -46,11 +50,14 @@ export async function remeasureTicket(deps: ConsentDeps, ticket: { id: string; p
   const availableAt = remeasureAvailableAt(seenAt);
   if (now.getTime() < availableAt.getTime()) return { kind: 'too_early', availableAt };
 
+  // A total must come from the repeat check itself: taken once it opened, and not after now. A screening started before care, or one dated ahead, is refused.
+  if (request.scores.some((score) => Date.parse(score.takenAt) < availableAt.getTime() || Date.parse(score.takenAt) > now.getTime())) return { kind: 'invalid_scores' };
   await hooks.afterRead?.();
   try {
     return await db.transaction(async (tx) => {
       const consent = request.scores.length > 0 ? await shareRemeasureScores(tx, cipher, { personId: ticket.personId, ticketId: ticket.id, scores: request.scores, now }) : null;
       if (consent === 'none') throw new Abandon('no_share');
+      if (consent === 'full') throw new Abandon('share_full');
       if (!(await appendEvent(tx, { ticketId: ticket.id, seq: last.seq + 1, from: last.state, to: 'remeasured', actor: 'person', channel: 'app', at: now }))) throw new Abandon('lost_race');
       if (!(await appendEvent(tx, { ticketId: ticket.id, seq: last.seq + 2, from: 'remeasured', to: 'closed', actor: 'system', channel: 'app', at: now }))) throw new Abandon('lost_race');
       const rows = await tx.select().from(schema.ticketEvents).where(eq(schema.ticketEvents.ticketId, ticket.id)).orderBy(desc(schema.ticketEvents.seq)).limit(2);

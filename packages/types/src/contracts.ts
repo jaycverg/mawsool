@@ -204,14 +204,20 @@ export const ScoreEntrySchema = z
   .strict();
 export type ScoreEntry = z.infer<typeof ScoreEntrySchema>;
 
+/** The most totals a referral, a consent or a summary draft can carry in. */
+export const REFERRAL_SCORES_MAX = 3;
+/** The most totals a stored bundle can hold: the referral's own plus the two of a repeat check. */
+export const STORED_SCORES_MAX = REFERRAL_SCORES_MAX + 2;
+
 /**
  * What a bundle can hold, keyed by consent element. The required `ticket` element has no entry: it is the ticket's own
- * fields. Item answers have no place here, so no consent can send them. `scores` holds up to three totals from the referral
- * and, if the person chooses to send them, the two totals of a repeat check (each entry carries its own `takenAt`).
+ * fields. Item answers have no place here, so no consent can send them. This is what is stored and read back: `scores` holds up to
+ * three totals from the referral and, if the person chooses to send them, the two totals of a repeat check (each entry carries
+ * its own `takenAt`). What a person may send in (a referral, a consent, a summary draft) is `ReferralContentSchema`.
  */
 export const BundleContentSchema = z
   .object({
-    scores: z.array(ScoreEntrySchema).max(5).optional(),
+    scores: z.array(ScoreEntrySchema).max(STORED_SCORES_MAX).optional(),
     trajectory: z.array(ScoreEntrySchema).max(120).optional(),
     free_text: z.string().max(2000).optional(),
     conditions: z.array(z.string().min(1).max(80)).max(20).optional(),
@@ -219,6 +225,9 @@ export const BundleContentSchema = z
   })
   .strict();
 export type BundleContent = z.infer<typeof BundleContentSchema>;
+
+/** Bundle content as a person sends it in: the same, with the referral's cap on `scores`. The repeat check's totals join the stored bundle only through their own route. */
+export const ReferralContentSchema = BundleContentSchema.extend({ scores: z.array(ScoreEntrySchema).max(REFERRAL_SCORES_MAX).optional() });
 
 /** The longest referral summary, in words, that is drafted or approved. */
 export const SUMMARY_WORD_LIMIT = 120;
@@ -231,7 +240,7 @@ export const CreateTicketRequestSchema = z
     windowDays: z.number().int().min(1).max(30),
     language: CareLanguageSchema,
     consents: z.array(ConsentElementSchema).min(1).max(6),
-    content: BundleContentSchema,
+    content: ReferralContentSchema,
     approvedSummary: z.string().max(1500).nullable().default(null),
     summaryRequestId: z.uuid().nullable().default(null),
     /** The consent elements the approved summary was written from. Stopping one of them removes the summary; stopping any other leaves it. Empty for a summary the person wrote by hand. */
@@ -318,7 +327,7 @@ export type TicketEventResult = z.infer<typeof TicketEventResultSchema>;
 
 /** POST /consents: adds one element to a live ticket after the fact. */
 export const GrantConsentRequestSchema = z
-  .object({ ticketId: z.uuid(), element: ConsentElementSchema, content: BundleContentSchema })
+  .object({ ticketId: z.uuid(), element: ConsentElementSchema, content: ReferralContentSchema })
   .strict();
 export type GrantConsentRequest = z.infer<typeof GrantConsentRequestSchema>;
 
@@ -351,7 +360,7 @@ export const SummaryDraftRequestSchema = z
     locale: LocaleSchema,
     useAi: z.boolean(),
     consented: z.array(ConsentElementSchema).max(6),
-    content: BundleContentSchema,
+    content: ReferralContentSchema,
   })
   .strict();
 export type SummaryDraftRequest = z.infer<typeof SummaryDraftRequestSchema>;

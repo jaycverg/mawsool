@@ -283,7 +283,7 @@ function Ready({ t, lang, ticket, reads, all, savedWarning, notice, panel, setPa
         <section className="flex flex-col gap-2 rounded-card border-2 border-accent bg-surface p-4" data-prompt="remeasure">
           <h2 className="text-[16px] font-semibold">{t('remeasureTitle')}</h2>
           <p className="t-body text-muted">{t('remeasureBody')}</p>
-          <a className="btn-primary" href={href(lang, 'check-in', { i: 'phq9', rm: ticket.id })} data-remeasure-start>{t('remeasureStart')}</a>
+          <a className="btn-primary" href={href(lang, 'check-in', { i: 'phq9', rm: ticket.id, since: String(repeatOpensAt?.getTime() ?? '') })} data-remeasure-start>{t('remeasureStart')}</a>
         </section>
       )}
       {seenByClinic && !repeatOpen && repeatOpensAt && <p className="t-small text-muted" data-remeasure-wait>{t('remeasureWait', { date: formatDate(repeatOpensAt.toISOString(), lang, 'long') })}</p>}

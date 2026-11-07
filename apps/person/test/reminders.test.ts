@@ -25,7 +25,7 @@ import { memoryStorage } from './helpers/memory';
 const DAY = 86_400_000;
 const START = '2026-11-01T08:00:00+04:00';
 const AT = (days: number) => new Date(Date.parse(START) + days * DAY);
-const SETTINGS: ReminderSettings = { intervalWeeks: 4, since: START, notifiedFor: null, phone: null };
+const SETTINGS: ReminderSettings = { intervalWeeks: 4, since: START, notifiedFor: null, phone: null, serverMayHoldPhone: false };
 const NUMBER = '+971501234567';
 
 function checkIn(takenAt: string, complete = true): Screening {
@@ -170,7 +170,7 @@ describe('turning reminders on', () => {
     const { notifications } = adapter('default', { requestResult: 'granted' });
     const { storage } = memoryStorage();
     expect(await enableReminders({ storage, notifications, now: () => AT(0) })).toBe('granted');
-    expect(await loadReminders(storage)).toEqual({ intervalWeeks: 4, since: AT(0).toISOString(), notifiedFor: null, phone: null });
+    expect(await loadReminders(storage)).toEqual({ intervalWeeks: 4, since: AT(0).toISOString(), notifiedFor: null, phone: null, serverMayHoldPhone: false });
   });
 
   it('keeps reminders on, for the home screen card, when permission is refused', async () => {
@@ -292,5 +292,111 @@ describe('the optional number for text reminders', () => {
     expect(await setReminderInterval(deps, SETTINGS, 2)).toBe('saved');
     expect(calls).toEqual([]);
     expect((await loadReminders(store.storage))?.intervalWeeks).toBe(2);
+  });
+});
+
+describe('a number the server may hold without the phone having heard', () => {
+  type Put = 'ok' | 'reply-lost' | 'unavailable';
+  /** A fake server that keeps a row: an upload is stored first, then answered as told, so a lost reply leaves a number behind. */
+  function lossy(put: Put) {
+    const store = memoryStorage({ reminders: SETTINGS, screenings: [] });
+    forgetRegistration(store.storage);
+    const server = { row: false, deleteAnswers: 'ok' as 'ok' | 'offline', calls: [] as string[], put };
+    const fetchFn = vi.fn(async (url: string, init?: RequestInit) => {
+      const path = new URL(url).pathname;
+      if (path === '/persons') return new Response('{}', { status: 201 });
+      const method = init?.method ?? 'GET';
+      server.calls.push(method);
+      if (method === 'PUT') {
+        server.row = true;
+        if (server.put === 'reply-lost') throw new TypeError('the reply never came');
+        if (server.put === 'unavailable') return new Response('{}', { status: 503 });
+        return new Response(JSON.stringify({ stored: true, intervalWeeks: 4 }), { status: 200 });
+      }
+      if (server.deleteAnswers === 'offline') throw new TypeError('network down');
+      server.row = false;
+      return new Response(JSON.stringify({ stored: false, intervalWeeks: null }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const deps = { server: { storage: store.storage, fetch: fetchFn, apiUrl: 'http://api.test', locale: 'en' as const, random: globalThis.crypto }, now: () => AT(0) };
+    return { store, server, deps };
+  }
+
+  it.each([
+    ['the reply is lost', 'reply-lost' as const],
+    ['the server answers 503', 'unavailable' as const],
+  ])('turning reminders off after an upload whose reply was lost (%s) deletes the number: the DELETE is sent, and the mark clears only after the server says 200', async (_name, put) => {
+    const { store, server, deps } = lossy(put);
+    expect(await saveReminderNumber(deps, SETTINGS, NUMBER)).toBe('failed');
+    expect(server.row).toBe(true); // stored on the server, unknown to the phone
+    const held = (await loadReminders(store.storage))!;
+    expect(held).toMatchObject({ phone: null, serverMayHoldPhone: true });
+
+    server.deleteAnswers = 'offline';
+    expect(await turnOffReminders(deps, held)).toBe('blocked');
+    expect(server.row).toBe(true);
+    expect(await loadReminders(store.storage)).toMatchObject({ serverMayHoldPhone: true }); // still on, still marked
+
+    server.deleteAnswers = 'ok';
+    expect(await turnOffReminders(deps, (await loadReminders(store.storage))!)).toBe('off');
+    expect(server.row).toBe(false);
+    expect(server.calls.filter((call) => call === 'DELETE')).toHaveLength(2);
+    expect(await loadReminders(store.storage)).toBeNull();
+  });
+
+  it('removing the number after a lost reply sends the DELETE too, and clears the mark only on 200', async () => {
+    const { store, server, deps } = lossy('reply-lost');
+    await saveReminderNumber(deps, SETTINGS, NUMBER);
+    const held = (await loadReminders(store.storage))!;
+    server.deleteAnswers = 'offline';
+    expect(await removeReminderNumber(deps, held)).toBe('failed');
+    expect(await loadReminders(store.storage)).toMatchObject({ serverMayHoldPhone: true });
+    server.deleteAnswers = 'ok';
+    expect(await removeReminderNumber(deps, (await loadReminders(store.storage))!)).toBe('saved');
+    expect(server.row).toBe(false);
+    expect(await loadReminders(store.storage)).toMatchObject({ phone: null, serverMayHoldPhone: false });
+  });
+
+  it('when the upload succeeds and the phone then fails to save the number, removing it still deletes the server row', async () => {
+    const { store, server, deps } = lossy('ok');
+    // Let the mark be written, then make the write that records the number fail.
+    const set = store.storage.set.bind(store.storage);
+    let reminderWrites = 0;
+    store.storage.set = async (key, value) => {
+      if (key === 'reminders' && (reminderWrites += 1) === 2) throw new Error('storage write failed');
+      return set(key, value);
+    };
+    expect(await saveReminderNumber(deps, SETTINGS, NUMBER)).toBe('failed');
+    expect(server.row).toBe(true);
+    const held = (await loadReminders(store.storage))!;
+    expect(held).toMatchObject({ phone: null, serverMayHoldPhone: true });
+
+    expect(await removeReminderNumber(deps, held)).toBe('saved');
+    expect(server.calls).toEqual(['PUT', 'DELETE']);
+    expect(server.row).toBe(false);
+    expect(await loadReminders(store.storage)).toMatchObject({ phone: null, serverMayHoldPhone: false });
+  });
+
+  it('records the mark before it sends the number, so a phone that cannot write it sends nothing', async () => {
+    const { store, server, deps } = lossy('ok');
+    store.storage.set = async (key) => {
+      if (key === 'reminders') throw new Error('storage write failed');
+    };
+    expect(await saveReminderNumber(deps, SETTINGS, NUMBER)).toBe('failed');
+    expect(server.calls).toEqual([]);
+    expect(server.row).toBe(false);
+  });
+
+  it('a confirmed upload keeps the mark and the number, and a confirmed removal clears both', async () => {
+    const { store, server, deps } = lossy('ok');
+    expect(await saveReminderNumber(deps, SETTINGS, NUMBER)).toBe('saved');
+    expect(await loadReminders(store.storage)).toMatchObject({ phone: NUMBER, serverMayHoldPhone: true });
+    expect(await removeReminderNumber(deps, (await loadReminders(store.storage))!)).toBe('saved');
+    expect(server.row).toBe(false);
+    expect(await loadReminders(store.storage)).toMatchObject({ phone: null, serverMayHoldPhone: false });
+  });
+
+  it('reads a record saved before the mark existed as having none', async () => {
+    const { serverMayHoldPhone: _unused, ...old } = SETTINGS;
+    expect((await loadReminders(memoryStorage({ reminders: old }).storage))?.serverMayHoldPhone).toBe(false);
   });
 });

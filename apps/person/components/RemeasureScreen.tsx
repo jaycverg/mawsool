@@ -57,7 +57,7 @@ export function RemeasureScreen() {
     if (!fetched.ok && fetched.reason === 'rejected' && fetched.status === 404) return setLoad({ status: 'missing' });
     const parsed = fetched.ok ? PersonTicketViewSchema.safeParse(fetched.body) : null;
     if (!parsed?.success) return setLoad({ status: 'failed' });
-    const check = await loadRepeatCheck(device.storage, { phq9: phq9Id, gad7: gad7Id }).catch(() => null);
+    const check = await loadRepeatCheck(device.storage, { phq9: phq9Id, gad7: gad7Id }, remeasureOpensAt(parsed.data)).catch(() => null);
     setLoad({ status: 'ready', ticket: parsed.data, check });
   }, [device, ticketId, phq9Id, gad7Id, lang]);
 
@@ -111,7 +111,7 @@ export function RemeasureScreen() {
           <>
             <h1 className="t-h1">{t('introTitle')}</h1>
             <p className="t-body text-muted">{t('intro')}</p>
-            <a className="btn-primary" href={href(lang, 'check-in', { i: 'phq9', rm: load.ticket.id })} data-remeasure-start>{t('start')}</a>
+            <a className="btn-primary" href={href(lang, 'check-in', { i: 'phq9', rm: load.ticket.id, since: String(remeasureOpensAt(load.ticket)?.getTime() ?? '') })} data-remeasure-start>{t('start')}</a>
           </>
         )}
         {load.status === 'ready' && remeasureDue(load.ticket, deviceNow()) && load.check && (

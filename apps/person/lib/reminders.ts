@@ -18,13 +18,16 @@ export const REMINDER_TAG = 'check-in-reminder';
  * The person's reminder settings, kept on the phone under their own key and never inside a check-in. There is no
  * stored "off": turning reminders off removes the whole record. `since` is when they were turned on, `notifiedFor`
  * the due time the last notification was shown for (so each due time notifies once), and `phone` the optional number
- * for text reminders, which the server holds an encrypted copy of for as long as it is here.
+ * for text reminders, which the server holds an encrypted copy of for as long as it is here. `serverMayHoldPhone` is written
+ * before a number is sent and cleared only after the server confirms it deleted it, so a number whose upload reply was lost,
+ * or whose local note failed, is still deleted when the person removes it or turns reminders off.
  */
 export const ReminderSettingsSchema = z.object({
   intervalWeeks: ReminderIntervalSchema,
   since: z.iso.datetime({ offset: true }),
   notifiedFor: z.iso.datetime({ offset: true }).nullable(),
   phone: PhoneNumberSchema.nullable(),
+  serverMayHoldPhone: z.boolean().default(false),
 });
 export type ReminderSettings = z.infer<typeof ReminderSettingsSchema>;
 
@@ -95,7 +98,7 @@ export async function runDueReminder(deps: { storage: StorageAdapter; notificati
  * permission prompt that is never answered cannot keep reminders off. Returns the permission it ended with.
  */
 export async function enableReminders(deps: { storage: StorageAdapter; notifications: NotificationAdapter; now: Now }): Promise<ReturnType<NotificationAdapter['permission']>> {
-  await saveReminders(deps.storage, { intervalWeeks: DEFAULT_REMINDER_INTERVAL, since: deps.now().toISOString(), notifiedFor: null, phone: null });
+  await saveReminders(deps.storage, { intervalWeeks: DEFAULT_REMINDER_INTERVAL, since: deps.now().toISOString(), notifiedFor: null, phone: null, serverMayHoldPhone: false });
   return deps.notifications.permission() === 'default' ? deps.notifications.requestPermission() : deps.notifications.permission();
 }
 
@@ -126,30 +129,37 @@ export function parsePhone(input: string): PhoneNumber | null {
 }
 
 /**
- * Gives the server a number for text reminders, then keeps it on the phone. The phone writes the footprint mark first,
- * so "Delete everything" reaches the server even if this call dies half way. Nothing is kept on the phone unless the server took it.
+ * Gives the server a number for text reminders, then keeps it on the phone. The phone writes the footprint mark and
+ * `serverMayHoldPhone` first, so "Delete everything", removing the number and turning reminders off all reach the server even
+ * if the reply is lost or the local save fails after the server stored it. The number itself is kept on the phone only once the server took it.
  */
 export async function saveReminderNumber(deps: { server: ServerDeps; now: Now }, settings: ReminderSettings, input: string): Promise<ReminderChange> {
   const phone = parsePhone(input);
   if (!phone) return 'invalid';
   try {
     await markServerFootprint(deps.server.storage, deps.now);
+    await saveReminders(deps.server.storage, { ...settings, serverMayHoldPhone: true });
     const done = await callServer(deps.server, 'PUT', '/me/reminder-phone', { phone, intervalWeeks: settings.intervalWeeks });
     if (!done.ok) return 'failed';
-    await saveReminders(deps.server.storage, { ...settings, phone });
+    await saveReminders(deps.server.storage, { ...settings, phone, serverMayHoldPhone: true });
   } catch {
     return 'failed';
   }
   return 'saved';
 }
 
-/** Removes the number: the server's row first, then the phone's copy. Reminders stay on. */
+/** Whether the server may hold a number for this person: one the phone knows of, or one whose upload may have been stored without the phone hearing. */
+function serverMayHold(settings: ReminderSettings): boolean {
+  return settings.phone !== null || settings.serverMayHoldPhone;
+}
+
+/** Removes the number: the server's row first, then the phone's copy and the mark. Reminders stay on. */
 export async function removeReminderNumber(deps: { server: ServerDeps }, settings: ReminderSettings): Promise<ReminderChange> {
-  if (settings.phone === null) return 'saved';
+  if (!serverMayHold(settings)) return 'saved';
   const done = await callServer(deps.server, 'DELETE', '/me/reminder-phone');
   if (!done.ok) return 'failed';
   try {
-    await saveReminders(deps.server.storage, { ...settings, phone: null });
+    await saveReminders(deps.server.storage, { ...settings, phone: null, serverMayHoldPhone: false });
   } catch {
     return 'failed';
   }
@@ -157,11 +167,11 @@ export async function removeReminderNumber(deps: { server: ServerDeps }, setting
 }
 
 /**
- * Turns reminders off. If a number is held it must leave the server first, so the answer is `blocked` when the server
- * cannot be reached and reminders stay on. With no number nothing is asked of the network.
+ * Turns reminders off. If a number is held, or may be (`serverMayHoldPhone`), it must leave the server first, so the answer is
+ * `blocked` when the server cannot be reached and reminders stay on. With no number nothing is asked of the network.
  */
 export async function turnOffReminders(deps: { server: ServerDeps }, settings: ReminderSettings): Promise<'off' | 'blocked' | 'failed'> {
-  if (settings.phone !== null) {
+  if (serverMayHold(settings)) {
     const done = await callServer(deps.server, 'DELETE', '/me/reminder-phone');
     if (!done.ok) return 'blocked';
   }

@@ -35,12 +35,26 @@ export interface RepeatCheck {
   gad7: Screening;
 }
 
-/** The two finished questionnaires of a repeat check, found by the ids in the address; null while either is missing or unfinished. */
-export function repeatCheck(screenings: readonly Screening[], ids: { phq9: string | null; gad7: string | null }): RepeatCheck | null {
-  const find = (instrument: 'phq9' | 'gad7', id: string | null) => screenings.find((screening) => screening.id === id && screening.instrument === instrument && isCompleteScreening(screening));
+/**
+ * The two finished questionnaires of a repeat check, found by the ids in the address; null while either is missing or unfinished,
+ * or when either was started before the repeat check opened (`opensAt`): an old check-in is not the repeat check.
+ */
+export function repeatCheck(screenings: readonly Screening[], ids: { phq9: string | null; gad7: string | null }, opensAt: Date | null): RepeatCheck | null {
+  if (opensAt === null) return null;
+  const find = (instrument: 'phq9' | 'gad7', id: string | null) =>
+    screenings.find((screening) => screening.id === id && screening.instrument === instrument && isCompleteScreening(screening) && Date.parse(screening.takenAt) >= opensAt.getTime());
   const phq9 = find('phq9', ids.phq9);
   const gad7 = find('gad7', ids.gad7);
   return phq9 && gad7 ? { phq9, gad7 } : null;
+}
+
+/** The address parameter that carries the moment the repeat check opened, in epoch ms, from the ticket to the questionnaires. */
+export const SINCE_PARAM = 'since';
+
+/** The moment read from `?since=`, or `Infinity` when it is missing or not a number: then no old check-in can be resumed. */
+export function sinceFrom(value: string | null): number {
+  const ms = value === null || value.trim() === '' ? Number.NaN : Number(value);
+  return Number.isFinite(ms) ? ms : Number.POSITIVE_INFINITY;
 }
 
 /** The totals the person can choose to send: the two totals with their band and date, never an answer. */
@@ -48,8 +62,8 @@ export function totalsOf(check: RepeatCheck): RemeasureRequest['scores'] {
   return [check.phq9, check.gad7].map((screening) => ({ instrument: screening.instrument as 'phq9' | 'gad7', total: screening.total, band: screening.band, takenAt: screening.takenAt }));
 }
 
-export async function loadRepeatCheck(storage: StorageAdapter, ids: { phq9: string | null; gad7: string | null }): Promise<RepeatCheck | null> {
-  return repeatCheck(await loadScreenings(storage), ids);
+export async function loadRepeatCheck(storage: StorageAdapter, ids: { phq9: string | null; gad7: string | null }, opensAt: Date | null): Promise<RepeatCheck | null> {
+  return repeatCheck(await loadScreenings(storage), ids, opensAt);
 }
 
 /**

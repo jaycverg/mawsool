@@ -13,6 +13,7 @@ import { createTestDb, type TestDb } from './helpers/db';
 import { ONE_DAY, cipher, eventStates, issue, rawBundle, registerPerson, serviceAt, storedContent, ticketRequest, type TestPerson } from './helpers/flow';
 
 const SIX_WEEKS = REMEASURE_DELAY_DAYS * ONE_DAY;
+// The totals a repeat check sends. Their `takenAt` is refreshed to the test clock whenever the clock is set with `at`, since the API accepts a total only from a check taken after the repeat check opened and not after now.
 const PHQ = { instrument: 'phq9' as const, total: 7, band: 'mild', takenAt: '2026-12-20T09:00:00+04:00' };
 const GAD = { instrument: 'gad7' as const, total: 5, band: 'mild', takenAt: '2026-12-20T09:05:00+04:00' };
 
@@ -53,7 +54,11 @@ describe('the repeat check at six weeks', () => {
     expect((await asClinic(ticket.id, { to: 'seen' })).statusCode).toBe(200);
     return { id: ticket.id, seenAt: ctx.clock.now() };
   }
-  const at = (seenAt: Date, offsetMs: number) => ctx.clock.set(new Date(seenAt.getTime() + offsetMs));
+  const at = (seenAt: Date, offsetMs: number) => {
+    ctx.clock.set(new Date(seenAt.getTime() + offsetMs));
+    PHQ.takenAt = ctx.clock.now().toISOString();
+    GAD.takenAt = ctx.clock.now().toISOString();
+  };
 
   describe('a repeat check moves the ticket to remeasured and then to closed', () => {
     it('does both in one request: the person fires remeasured, the system fires closed, on the next two sequence numbers at one moment', async () => {
@@ -370,7 +375,22 @@ describe('the repeat check at six weeks', () => {
       expect(read.body).not.toContain('"total":7');
     });
 
-    it('is reached by withdrawing and by Delete everything: both ciphertext columns empty, and the clinic reads 410', async () => {
+    it('ending the share after the totals were sent (withdrawing) takes them out of the raw bundle, and the clinic reads 410', async () => {
+      const { id, seenAt } = await seen(['ticket', 'scores']);
+      at(seenAt, SIX_WEEKS);
+      expect((await remeasure(id, { scores: [PHQ, GAD] })).statusCode).toBe(200);
+      expect((await storedContent(testDb.db, id))!.scores).toHaveLength(3);
+      const ticketConsent = (await ledger(id)).find((row) => row.element === 'ticket')!;
+      expect((await ctx.app.inject({ method: 'DELETE', url: `/consents/${ticketConsent.id}`, headers: person.headers })).statusCode).toBe(200);
+      const bundle = await rawBundle(testDb.db, id);
+      expect(bundle).toMatchObject({ contentCiphertext: null, approvedSummaryCiphertext: null });
+      expect(bundle.deletedAt).not.toBeNull();
+      expect(await storedContent(testDb.db, id)).toBeNull();
+      expect((await ctx.app.inject({ method: 'GET', url: `/tickets/${id}/bundle`, headers: await clinicHeaders() })).statusCode).toBe(410);
+      expect(await stateOf(id)).toBe('closed'); // the data goes, a terminal state stays
+    });
+
+    it('Delete everything after the totals were sent empties both ciphertext columns, and the clinic reads 410', async () => {
       const { id, seenAt } = await seen(['ticket', 'scores']);
       at(seenAt, SIX_WEEKS);
       await remeasure(id, { scores: [PHQ, GAD] });
@@ -380,6 +400,61 @@ describe('the repeat check at six weeks', () => {
       expect(bundle.deletedAt).not.toBeNull();
       expect((await ctx.app.inject({ method: 'GET', url: `/tickets/${id}/bundle`, headers: await clinicHeaders() })).statusCode).toBe(410);
       expect(await stateOf(id)).toBe('closed'); // the data goes, a terminal state stays
+    });
+
+    it('refuses a total taken before the repeat check opened, or dated after now (400), and writes no event, no ledger row and no bundle change', async () => {
+      const { id, seenAt } = await seen(['ticket', 'free_text']);
+      at(seenAt, SIX_WEEKS);
+      const opens = ctx.clock.now().getTime();
+      const bundleBefore = (await rawBundle(testDb.db, id)).contentCiphertext;
+      const ledgerBefore = await ledger(id);
+      const eventsBefore = await eventStates(testDb.db, id);
+      const stamps = [new Date(opens - 1), new Date(seenAt.getTime()), new Date('2020-01-01T00:00:00Z'), new Date(opens + 1)];
+      for (const takenAt of stamps) {
+        const res = await remeasure(id, { scores: [{ ...PHQ, takenAt: takenAt.toISOString() }] });
+        expect(res.statusCode, takenAt.toISOString()).toBe(400);
+      }
+      // One good total and one early one: the whole request is refused.
+      expect((await remeasure(id, { scores: [PHQ, { ...GAD, takenAt: new Date(opens - 1).toISOString() }] })).statusCode).toBe(400);
+      expect(await eventStates(testDb.db, id)).toEqual(eventsBefore);
+      expect(await ledger(id)).toEqual(ledgerBefore);
+      expect((await rawBundle(testDb.db, id)).contentCiphertext).toBe(bundleBefore);
+      expect(await stateOf(id)).toBe('seen');
+      // Exactly when the repeat check opened is the earliest accepted, and now the latest.
+      expect((await remeasure(id, { scores: [{ ...PHQ, takenAt: new Date(opens).toISOString() }] })).statusCode).toBe(200);
+    });
+
+    it('answers 409 and moves nothing when the stored totals leave no room for the new ones; without totals the move still works', async () => {
+      const { id, seenAt } = await seen(['ticket', 'scores']);
+      const four = Array.from({ length: 4 }, (_, index) => ({ instrument: 'phq9' as const, total: index, band: 'minimal', takenAt: '2026-10-29T08:00:00+04:00' }));
+      await testDb.db
+        .update(schema.sharedBundles)
+        .set({ contentCiphertext: cipher.encrypt(JSON.stringify({ scores: four }), `bundle:${id}`) })
+        .where(eq(schema.sharedBundles.ticketId, id));
+      at(seenAt, SIX_WEEKS);
+      const bundleBefore = (await rawBundle(testDb.db, id)).contentCiphertext;
+      const eventsBefore = await eventStates(testDb.db, id);
+      const refused = await remeasure(id, { scores: [PHQ, GAD] });
+      expect(refused.statusCode).toBe(409);
+      expect(await eventStates(testDb.db, id)).toEqual(eventsBefore);
+      expect((await rawBundle(testDb.db, id)).contentCiphertext).toBe(bundleBefore);
+      expect((await remeasure(id, { scores: [] })).statusCode).toBe(200);
+    });
+
+    it('refuses a referral, a consent or a summary draft that carries more than three totals (400), though a stored bundle can hold five', async () => {
+      const total = (instrument: 'who5' | 'phq9' | 'gad7', takenAt: string) => ({ instrument, total: 3, band: 'mild', takenAt });
+      const four = [total('who5', '2026-10-01T08:00:00+04:00'), total('phq9', '2026-10-02T08:00:00+04:00'), total('gad7', '2026-10-03T08:00:00+04:00'), total('phq9', '2026-10-04T08:00:00+04:00')];
+      const ticketsBefore = (await testDb.db.select({ id: schema.tickets.id }).from(schema.tickets)).length;
+      const res = await ctx.app.inject({ method: 'POST', url: '/tickets', headers: person.headers, payload: ticketRequest(gpA, { content: { scores: four } }) });
+      expect(res.statusCode).toBe(400);
+      expect((await testDb.db.select({ id: schema.tickets.id }).from(schema.tickets)).length).toBe(ticketsBefore);
+      expect((await ctx.app.inject({ method: 'POST', url: '/tickets', headers: person.headers, payload: ticketRequest(gpA, { content: { scores: four.slice(0, 3) } }) })).statusCode).toBe(201);
+
+      const { id } = await seen(['ticket', 'free_text']);
+      const grant = await ctx.app.inject({ method: 'POST', url: '/consents', headers: person.headers, payload: { ticketId: id, element: 'scores', content: { scores: four } } });
+      expect(grant.statusCode).toBe(400);
+      const draft = await ctx.app.inject({ method: 'POST', url: '/summary/draft', headers: person.headers, payload: { requestId: randomUUID(), locale: 'en', useAi: false, consented: ['scores'], content: { scores: four } } });
+      expect(draft.statusCode).toBe(400);
     });
 
     it('answers 409 and moves nothing when totals are sent but nothing is shared for the ticket any more; without totals the move still works', async () => {

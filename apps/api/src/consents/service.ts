@@ -179,17 +179,19 @@ export async function grantConsent(deps: ConsentDeps, personId: string, request:
  * grants it (a person who stopped sharing scores earlier is asked again by the tick, never re-granted silently), and the
  * totals join the bundle's `scores` ciphertext next to the referral's own. The one element means a later "stop sharing
  * scores", the ticket's withdrawal and "Delete everything" take these totals out exactly as they take out the rest.
- * Returns the new ledger row (null when `scores` was already shared), or `'none'` when nothing is shared for the ticket,
- * which the caller must treat as a reason to abandon the transaction.
+ * The merged content is validated against the stored schema before it is encrypted, so a bundle that every later read would
+ * refuse is never written. Returns the new ledger row (null when `scores` was already shared), `'none'` when nothing is shared
+ * for the ticket, or `'full'` when the stored totals leave no room for these; the caller must abandon the transaction on either.
  */
-export async function shareRemeasureScores(tx: Executor, cipher: Cipher, input: { personId: string; ticketId: string; scores: RemeasureRequest['scores']; now: Date }): Promise<ConsentRecord | null | 'none'> {
+export async function shareRemeasureScores(tx: Executor, cipher: Cipher, input: { personId: string; ticketId: string; scores: RemeasureRequest['scores']; now: Date }): Promise<ConsentRecord | null | 'none' | 'full'> {
   const { personId, ticketId, scores, now } = input;
   const [bundle] = await tx.select().from(schema.sharedBundles).where(eq(schema.sharedBundles.ticketId, ticketId)).for('update');
   const live = await liveElements(tx, ticketId);
   if (!bundle || bundle.deletedAt !== null || !live.includes('ticket')) return 'none';
-  const granted = live.includes('scores') ? null : (await tx.insert(schema.consents).values({ personId, ticketId, recipient: bundle.recipient, element: 'scores', grantedAt: now }).returning())[0]!;
   const existing = readContent(cipher, ticketId, bundle.contentCiphertext);
   const content: BundleContent = { ...existing, scores: [...(existing.scores ?? []), ...scores] };
+  if (!BundleContentSchema.safeParse(content).success) return 'full';
+  const granted = live.includes('scores') ? null : (await tx.insert(schema.consents).values({ personId, ticketId, recipient: bundle.recipient, element: 'scores', grantedAt: now }).returning())[0]!;
   await tx.update(schema.sharedBundles).set({ contentCiphertext: cipher.encrypt(JSON.stringify(content), bundleContext(ticketId)) }).where(eq(schema.sharedBundles.id, bundle.id));
   return granted ? record(granted) : null;
 }

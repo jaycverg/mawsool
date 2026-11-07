@@ -190,7 +190,7 @@ describe('Delete everything', () => {
 });
 
 describe('Delete everything on a phone that gave a number for text reminders', () => {
-  const settings = { intervalWeeks: 4 as const, since: '2026-11-01T08:00:00+04:00', notifiedFor: null, phone: null };
+  const settings = { intervalWeeks: 4 as const, since: '2026-11-01T08:00:00+04:00', notifiedFor: null, phone: null, serverMayHoldPhone: false };
 
   it('asks the server to delete the number before the wipe, then leaves no reminder record on the phone', async () => {
     const s = setup();

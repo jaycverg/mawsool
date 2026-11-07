@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { INSTRUMENT_TAG } from '../lib/bands';
 import { deviceNow } from '../lib/clock';
 import { recordAnswer } from '../lib/record-answer';
-import { idFrom } from '../lib/remeasure';
+import { idFrom, sinceFrom } from '../lib/remeasure';
 import { href } from '../lib/routes';
 import { findDraft, loadScreenings } from '../lib/screening-store';
 import { useDevice, type Device } from '../lib/use-device';
@@ -38,6 +38,9 @@ export function CheckInFlow() {
   /** The ticket this check-in is the repeat check for, if it is one. */
   const repeatFor = idFrom(params.get('rm'));
   const phq9Done = idFrom(params.get('p'));
+  /** For the repeat check, the moment it opened: nothing started before it is resumed or sent as the repeat check. Undefined for an ordinary check-in. */
+  const sinceParam = params.get('since');
+  const notBefore = repeatFor ? sinceFrom(sinceParam) : undefined;
   const locale = useLocale();
   const lang = isLocale(locale) ? locale : 'en';
   const t = useTranslations('checkIn');
@@ -54,7 +57,7 @@ export function CheckInFlow() {
     if (device === null || device === 'unavailable') return;
     loadScreenings(device.storage).then(
       (all) => {
-        const draft = findDraft(all, instrument);
+        const draft = findDraft(all, instrument, notBefore);
         setAnswers(draft?.answers ?? []);
         setScreeningId(draft?.id ?? null);
         setIndex(draft?.answers.length ?? 0);
@@ -64,7 +67,7 @@ export function CheckInFlow() {
         setFailed(true);
       },
     );
-  }, [device, instrument]);
+  }, [device, instrument, notBefore]);
 
   const loaded = answers !== null;
   useEffect(() => {
@@ -91,7 +94,7 @@ export function CheckInFlow() {
   async function choose(value: number, device: Device) {
     setFailed(false);
     const outcome = await recordAnswer(
-      { instrument, index, value, screeningId },
+      { instrument, index, value, screeningId, notBefore },
       { storage: device.storage, crisis: device.crisis, now: deviceNow, newId: () => crypto.randomUUID(), locale: lang },
     );
     if (outcome.kind === 'failed') return setFailed(true);
@@ -183,7 +186,7 @@ export function CheckInFlow() {
                 disabled={selected === undefined}
                 onClick={() => {
                   if (!last) setIndex(index + 1);
-                  else if (repeatFor && instrument === 'phq9') window.location.assign(href(lang, 'check-in', { i: 'gad7', rm: repeatFor, p: screeningId ?? '' }));
+                  else if (repeatFor && instrument === 'phq9') window.location.assign(href(lang, 'check-in', { i: 'gad7', rm: repeatFor, p: screeningId ?? '', since: sinceParam ?? '' }));
                   else if (repeatFor && instrument === 'gad7') window.location.assign(href(lang, 'remeasure', { id: repeatFor, p: phq9Done ?? '', g: screeningId ?? '' }));
                   else window.location.assign(href(lang, 'result', { id: screeningId ?? '' }));
                 }}
