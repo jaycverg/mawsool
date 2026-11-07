@@ -6,7 +6,8 @@ import { test as base, expect, type Browser, type BrowserContext, type ConsoleMe
  *
  * There is no allow-list by pattern and none for a suite. A test that deliberately provokes a failure names the exact
  * URL and the exact status (or network error) it provokes, for that test alone, with the reason; an allowance nothing
- * matched fails the test, so a stale one cannot stay. The gate for the demo (`gate:c`) allows nothing at all.
+ * matched fails the test, so a stale one cannot stay. The gate for the demo (`gate:c`) allows nothing at all, except in the
+ * one test that provokes an error on purpose (see `PROVOKES_AN_ERROR` in its spec).
  *
  * One more case is named by the test itself rather than by a URL: a test that cuts the network (`setOffline(true)`) makes
  * every request fail with `net::ERR_INTERNET_DISCONNECTED`, which the browser logs as a console error however the app

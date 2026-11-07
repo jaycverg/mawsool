@@ -9,6 +9,7 @@ import {
   validatorCompiler,
 } from 'fastify-type-provider-zod';
 import { OffsetClock, systemClock, type Clock } from './clock';
+import { restoreDemoClock } from './demo/clock-store';
 import type { AppConfig } from './config';
 import { createCipher } from './crypto';
 import type { Db } from './db/client';
@@ -62,6 +63,8 @@ export interface AppDeps {
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const securityClock = deps.clock ?? systemClock;
   const demoClock = deps.config.demoMode === true ? new OffsetClock(securityClock) : null;
+  // A demo that was restarted keeps its date: the offset written by the clock controls is read once, here.
+  if (demoClock) await restoreDemoClock(deps.db, demoClock);
   const clock: Clock = demoClock ?? securityClock;
   const cipher = createCipher(deps.config.encryptionKey);
   const app = Fastify({ logger: deps.logger ?? false });

@@ -44,6 +44,10 @@
     "sentence": "A ticket past its deadline goes overdue on the demo clock, the phone shows the overdue prompt, the prompt leads to a reroute that moves the old ticket to rerouted, and the ops dashboard's overdue list counts the tickets the table holds as overdue"
   },
   {
+    "id": "reset-leaves-a-phone-registered-afresh-without-its-ticket",
+    "sentence": "After a reset from the admin panel, the same phone registers as the same person again, drops the ticket the server no longer holds without asking for it a second time, and keeps its check-in history"
+  },
+  {
     "id": "seam-equity-opt-in-reaches-the-dashboard-row",
     "sentence": "A person who opts in to the group totals on the phone adds one ticket to their age band's row on the ops dashboard, and no other row moves"
   },

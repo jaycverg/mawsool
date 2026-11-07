@@ -63,6 +63,17 @@ export class OffsetClock implements Clock {
     this.offsetMs += ms;
   }
 
+  /** Puts the offset back to a value stored earlier, when the API starts. */
+  setOffset(ms: number): void {
+    if (!Number.isFinite(ms) || ms < 0) throw new Error('the demo clock offset must be zero or more');
+    this.offsetMs = ms;
+  }
+
+  /** The base clock's time, without the offset. */
+  baseNow(): Date {
+    return this.base.now();
+  }
+
   /** Back to the base clock's time. */
   reset(): void {
     this.offsetMs = 0;

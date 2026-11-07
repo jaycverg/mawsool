@@ -2,7 +2,8 @@ import { randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ManualClock, OffsetClock } from '../src/clock';
-import { schema } from '../src/db/client';
+import { schema, type Db } from '../src/db/client';
+import { createClockMover } from '../src/demo/clock-store';
 import { signInbound } from '../src/inbound/signing';
 import { INVITE_TTL_MS, inviteCodeHash } from '../src/inbound/service';
 import { runSeed } from '../src/seed/run';
@@ -28,9 +29,60 @@ describe('OffsetClock', () => {
     expect(() => clock.advance(-1)).toThrow(/forward/);
     expect(() => clock.advance(Number.NaN)).toThrow(/forward/);
     expect(clock.offset).toBe(7 * DAY);
+    clock.setOffset(3 * DAY);
+    expect(clock.offset).toBe(3 * DAY);
+    expect(() => clock.setOffset(-1)).toThrow(/zero or more/);
+    expect(() => clock.setOffset(Number.NaN)).toThrow(/zero or more/);
+    expect(clock.offset).toBe(3 * DAY);
     clock.reset();
     expect(clock.offset).toBe(0);
     expect(clock.now().toISOString()).toBe('2026-11-02T00:00:00.000Z');
+  });
+});
+
+describe('the clock mover', () => {
+  it('writes the offset before it moves the clock, so a failed write leaves the clock where it was, and the next move still works', async () => {
+    const clock = new OffsetClock(new ManualClock(new Date('2026-11-01T00:00:00Z')));
+    let failNext = true;
+    const writes: number[] = [];
+    // Only the shape the mover calls: insert(...).values({ offsetMs }).onConflictDoUpdate(...).
+    const db = {
+      insert: () => ({
+        values: ({ offsetMs }: { offsetMs: number }) => ({
+          onConflictDoUpdate: async () => {
+            if (failNext) {
+              failNext = false;
+              throw new Error('the database is down');
+            }
+            writes.push(offsetMs);
+          },
+        }),
+      }),
+    } as unknown as Db;
+    const move = createClockMover(db, clock);
+    await expect(move(DAY)).rejects.toThrow('the database is down');
+    expect(clock.offset).toBe(0);
+    expect(await move(DAY)).toBe(DAY);
+    expect(writes).toEqual([DAY]);
+  });
+
+  it('counts two moves made at once, each on top of the other', async () => {
+    const clock = new OffsetClock(new ManualClock(new Date('2026-11-01T00:00:00Z')));
+    const writes: number[] = [];
+    const db = {
+      insert: () => ({
+        values: ({ offsetMs }: { offsetMs: number }) => ({
+          onConflictDoUpdate: async () => {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            writes.push(offsetMs);
+          },
+        }),
+      }),
+    } as unknown as Db;
+    const move = createClockMover(db, clock);
+    await Promise.all([move(DAY), move(7 * DAY)]);
+    expect(clock.offset).toBe(8 * DAY);
+    expect(writes).toEqual([DAY, 8 * DAY]);
   });
 });
 
@@ -161,6 +213,41 @@ describe('the demo clock in the API', () => {
     expect(claim.json().source).toBe('tamm');
     const [invite] = await testDb.db.select().from(schema.inboundInvites).where(eq(schema.inboundInvites.codeHash, inviteCodeHash(body.noura.code.replace('-', ''))));
     expect(invite!.claimedBy).toBe(noura.id);
+  });
+
+  describe('across a restart', () => {
+    /** A second API on the same database: the first one's process is gone, so it starts from the stored offset alone. */
+    const restart = async (options: { demoMode: boolean }) => {
+      await ctx.app.close();
+      ctx = await createTestApp(testDb.db, options);
+    };
+
+    it('keeps the demo date: the offset the clock was moved to is the offset the next API starts with', async () => {
+      await advance('3w');
+      await advance('7d');
+      await restart({ demoMode: true });
+      expect((await ctx.app.inject({ method: 'GET', url: '/clock' })).json()).toEqual({ demoMode: true, offsetMs: 28 * DAY });
+      expect(ctx.app.careClock.now().toISOString()).toBe(new Date(TEST_START.getTime() + 28 * DAY).toISOString());
+      admin = await signIn(ctx, 'admin@demo.mawsool.test');
+      expect((await advance('7d')).json().offsetMs).toBe(35 * DAY);
+    });
+
+    it('starts at zero after a reset, because the reload empties the stored offset with the rest', async () => {
+      await advance('6w');
+      await ctx.app.inject({ method: 'POST', url: '/demo/reset', headers: adminHeaders() });
+      expect(await testDb.db.select().from(schema.demoClock)).toEqual([]);
+      await restart({ demoMode: true });
+      expect((await ctx.app.inject({ method: 'GET', url: '/clock' })).json()).toEqual({ demoMode: true, offsetMs: 0 });
+    });
+
+    it('leaves the stored offset alone when DEMO_MODE is unset, and picks it up again when it is set', async () => {
+      await advance('3w');
+      await restart({ demoMode: false });
+      expect((await ctx.app.inject({ method: 'GET', url: '/clock' })).json()).toEqual({ demoMode: false, offsetMs: 0 });
+      expect(ctx.app.careClock.now().toISOString()).toBe(TEST_START.toISOString());
+      await restart({ demoMode: true });
+      expect((await ctx.app.inject({ method: 'GET', url: '/clock' })).json().offsetMs).toBe(21 * DAY);
+    });
   });
 
   it('reloads the seed anchored on today, deterministically, and leaves the staff who are signed in signed in', async () => {

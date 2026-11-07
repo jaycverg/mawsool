@@ -8,6 +8,8 @@ The demo script (the product spec's demo steps 1 to 12) needs the demo routes, a
 4. Staff sign-in links are logged, never sent. Ask for one at `<app>/en/sign-in/` for `admin@demo.mawsool.test` or `ops@demo.mawsool.test` (ops app), or `clinician.a@demo.mawsool.test` or `clinician.b@demo.mawsool.test` (clinician app), then copy the link from the API's log. A link works once, for 15 minutes.
 5. In the ops app, signed in as admin, the demo controls move the demo clock by 7 days, 3 weeks or 6 weeks, reset everything, and open Noura's mock TAMM page in either language with her invite code. Rashid needs nothing loaded: he answers PHQ-9 item 9 with "several days" in the person app, which opens the crisis screen.
 
+The demo clock's offset is kept in the database as you move it, so restarting the API (with `DEMO_MODE` still on) keeps the demo's date. **Reset the demo** empties it, and so does `pnpm db:seed`; starting the API with `DEMO_MODE` off ignores it and leaves it stored for the next demo start. Reset deletes the people and tickets the server holds, not what a phone keeps: a phone that held a ticket registers again the next time it contacts the server and drops that ticket, and its saved check-ins stay.
+
 `pnpm gate:c` runs the whole script in Arabic and English with `DEMO_MODE` on, on ports 450 above the dev ports, and does not use your `.env`'s demo setting. The demo's spec is in [`demo-e2e-spec.md`](demo-e2e-spec.md).
 
 Every directory entry, insurance figure, Malaffi export, TAMM page, message and crisis console in the demo is sample data and is labelled as such on screen.

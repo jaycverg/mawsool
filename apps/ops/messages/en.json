@@ -162,7 +162,7 @@
     },
     "reset": {
       "heading": "Reset to the seed",
-      "warning": "This deletes everything, including tickets made on phones, reloads the sample data, puts the clock back to real time and makes a new invite for Noura. Phones that held a ticket start clean the next time they open the app.",
+      "warning": "This deletes everything, including tickets made on phones, reloads the sample data, puts the clock back to real time and makes a new invite for Noura. A phone that held a ticket registers again the next time it contacts the server and drops that ticket; the check-ins saved on the phone stay.",
       "action": "Reset the demo",
       "confirm": "Press again to reset everything",
       "working": "Resetting…",

@@ -43,6 +43,13 @@
       "when": 1793577131655,
       "tag": "0005_bilingual_directory",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794014372041,
+      "tag": "0006_demo_clock",
+      "breakpoints": true
     }
   ]
 }
