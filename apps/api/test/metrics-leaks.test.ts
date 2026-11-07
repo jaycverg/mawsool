@@ -87,8 +87,8 @@ describe('what cannot be worked out from the funnel, the crisis figures and the 
         }
         const crisis = await get<CrisisResponse>(`/metrics/crisis?period=${period}`);
         // The crisis route and the funnel make one decision about the crisis events of a period.
-        if (crisis.shown === undefined) throw new Error('no shown');
-        expect(num(crisis.shown) === null || num(crisis.shown) === trueCrisis).toBe(true);
+        // The seed holds 40 crisis screens (18 in the last 30 days), so the count is publishable in every period and the figure is the true one.
+        expect(crisis.shown, `the crisis count over ${period}`).toBe(trueCrisis);
       });
     });
   }
