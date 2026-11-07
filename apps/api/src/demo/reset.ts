@@ -20,8 +20,10 @@ import { readStaffAccess, runSeed } from '../seed/run';
  */
 export async function resetDemo(deps: { db: Db; clock: OffsetClock; personAppUrl: string }): Promise<DemoResetResult> {
   // The clock is zeroed before the reload, so a sweep that starts during it reads the fresh seed at real time and cannot mark
-  // the new tickets overdue at a demo date. The reload rolls back whole if it fails, so the stored offset still holds the
-  // previous value: put the clock back to it, and the clock and the row agree.
+  // the new tickets overdue at a demo date. The routes run this after any advance and that advance's own sweep (the clock
+  // mover's queue). Not covered: the sweep pg-boss runs every minute is not on that queue, and one that began before this
+  // started can still append `overdue` to the reloaded tickets. The reload rolls back whole if it fails, so the stored offset
+  // still holds the previous value: put the clock back to it, and the clock and the row agree.
   const previousOffset = deps.clock.offset;
   deps.clock.reset();
   const now = deps.clock.now();

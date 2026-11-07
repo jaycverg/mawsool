@@ -116,6 +116,20 @@ describe('the clock mover with a reset', () => {
     expect(order).toEqual(['write 1d', 'reset starts', 'reset ends', 'write 2d']);
   });
 
+  it('holds a task queued after an advance until that advance’s own follow-up (its sweep) is done', async () => {
+    const order: string[] = [];
+    const mover = createClockMover(slowDb(order), new OffsetClock(new ManualClock(new Date('2026-11-01T00:00:00Z'))));
+    const answer = mover.advanceThen(DAY, async () => {
+      order.push('sweep starts');
+      await delay(10);
+      order.push('sweep ends');
+      return 'swept';
+    });
+    const reset = mover.exclusive(async () => void order.push('reset runs'));
+    expect(await Promise.all([answer, reset])).toEqual(['swept', undefined]);
+    expect(order).toEqual(['write 1d', 'sweep starts', 'sweep ends', 'reset runs']);
+  });
+
   it('goes on after an exclusive task that failed', async () => {
     const clock = new OffsetClock(new ManualClock(new Date('2026-11-01T00:00:00Z')));
     const mover = createClockMover(slowDb([]), clock);
@@ -159,14 +173,16 @@ describe('resetting the demo', () => {
     expect(seenDuringReload).toBe(0);
   });
 
-  it('serves a reset asked for while an advance is being written over HTTP after it: the demo ends at zero in the clock and in the stored row', async () => {
-    // Every write of the clock offset is slow, and says when it has begun, so the reset is asked for with the advance's write under way.
+  it('serves a reset asked for while an advance is being written over HTTP after it: zero in the clock and the row, and no overdue event the advance’s sweep made on tickets the reset reloaded', async () => {
+    // Every write of the clock offset after `armed` is slow, and says when it has begun, so the reset is asked for with the
+    // advance's write under way.
+    let armed = false;
     let writeBegan: () => void = () => undefined;
     const began = new Promise<void>((resolve) => (writeBegan = resolve));
     const slow = Object.assign(Object.create(testDb.db), {
       insert: (table: unknown) => {
         const real = testDb.db.insert(table as never) as unknown as { values: (row: unknown) => { onConflictDoUpdate: (config: unknown) => Promise<unknown> } };
-        if (table !== schema.demoClock) return real;
+        if (table !== schema.demoClock || !armed) return real;
         return {
           values: (row: unknown) => ({
             onConflictDoUpdate: async (config: unknown) => {
@@ -178,16 +194,24 @@ describe('resetting the demo', () => {
         };
       },
     }) as Db;
+    const overdueEvents = async () => (await testDb.db.select().from(schema.ticketEvents)).filter((event) => event.toState === 'overdue').length;
     const ctx = await createTestApp(slow, { demoMode: true });
     try {
       expect((await ctx.app.inject({ method: 'GET', url: '/clock' })).json().offsetMs).toBe(21 * DAY);
       const headers = { authorization: `Bearer ${await signIn(ctx, 'admin@demo.mawsool.test')}` };
-      const advance = ctx.app.inject({ method: 'POST', url: '/demo/clock/advance', headers, payload: { by: '7d' } });
+      // A reset on its own: the overdue events the reloaded seed has. The same seed, reloaded after the advance below, must have the same.
+      expect((await ctx.app.inject({ method: 'POST', url: '/demo/reset', headers })).statusCode).toBe(200);
+      const clean = await overdueEvents();
+      armed = true;
+      const advance = ctx.app.inject({ method: 'POST', url: '/demo/clock/advance', headers, payload: { by: '6w' } });
       await began;
       const reset = ctx.app.inject({ method: 'POST', url: '/demo/reset', headers });
-      expect([(await advance).statusCode, (await reset).statusCode]).toEqual([200, 200]);
+      const [advanced, reloaded] = [await advance, await reset];
+      expect([advanced.statusCode, reloaded.statusCode]).toEqual([200, 200]);
+      expect(advanced.json().markedOverdue, 'the advance’s sweep did mark tickets, so there is something for the reset to lose').toBeGreaterThan(0);
       expect((await ctx.app.inject({ method: 'GET', url: '/clock' })).json().offsetMs).toBe(0);
       expect(await readDemoOffset(testDb.db)).toBe(0);
+      expect(await overdueEvents(), 'overdue events after the reset, against a reset on its own').toBe(clean);
     } finally {
       await ctx.app.close();
     }
