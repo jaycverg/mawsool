@@ -95,4 +95,11 @@ describe('evaluateCrisisForAnswers', () => {
   it('is not triggered by an empty answer list', () => {
     expect(evaluateCrisisForAnswers('phq9', []).triggered).toBe(false);
   });
+
+  it('does not throw for a row that lost its answers altogether, and does not fire for it', () => {
+    for (const lost of [null, undefined]) {
+      expect(evaluateCrisisForAnswers('phq9', lost)).toMatchObject({ triggered: false, reason: 'no_trigger' });
+      expect(evaluateCrisisForAnswers('cssrs', lost)).toMatchObject({ triggered: false, reason: 'no_trigger' });
+    }
+  });
 });

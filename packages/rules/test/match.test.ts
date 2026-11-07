@@ -160,6 +160,15 @@ describe('crisis takes precedence', () => {
     expect(run([flagged], { crisisResolvedAt: '2026-10-01T09:00:00+04:00' })[0]?.kind).toBe('recommended');
   });
 
+  it('survives a stored row whose answers are null: it matches on the other scores, and a flagged one still returns the crisis option', () => {
+    const noAnswers = { ...phq9(25, '2026-10-02T08:00:00+04:00'), answers: null } as unknown as Screening;
+    expect(() => run([noAnswers, phq9(12)])).not.toThrow();
+    // The row with no answers adds no score and no trigger; the complete PHQ-9 of 12 decides.
+    expect(run([noAnswers, phq9(12)])[0]).toMatchObject({ kind: 'recommended', tier: 'gp' });
+    const flagged = { ...noAnswers, item9Flag: true } as Screening;
+    expect(run([flagged, phq9(12)])[0]?.kind).toBe('crisis');
+  });
+
   it('is not triggered by a later check-in that answers item 9 with 0 once the earlier one is resolved', () => {
     const clean = phq9(8, '2026-10-15T08:00:00+04:00', 0);
     expect(run([item9, clean], { crisisResolvedAt: '2026-10-01T08:10:00+04:00' })[0]?.kind).toBe('recommended');
