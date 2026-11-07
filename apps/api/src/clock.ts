@@ -69,11 +69,6 @@ export class OffsetClock implements Clock {
     this.offsetMs = ms;
   }
 
-  /** The base clock's time, without the offset. */
-  baseNow(): Date {
-    return this.base.now();
-  }
-
   /** Back to the base clock's time. */
   reset(): void {
     this.offsetMs = 0;
