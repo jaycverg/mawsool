@@ -3,7 +3,7 @@
 //
 // A second, read-only listener lets a test look at what the API stored without going through the API: the rows of a
 // crisis event, the raw bundle of a ticket (as stored, and decrypted with this harness's own key), its events and
-// consents, a person's equity buckets and the number of registered devices. It is part of this harness, not of the
+// consents, a person's equity buckets, the reminder numbers held and the number of registered devices. It is part of this harness, not of the
 // product API. It also returns the sign-in link the API logged for an address (the product never sends it), read from
 // the API's own log lines, counts invites and nonces, and counts tickets by state.
 //
@@ -19,6 +19,7 @@ import { systemClock } from '../clock';
 import { createCipher } from '../crypto';
 import { schema, type Db } from '../db/client';
 import { MIGRATIONS_FOLDER } from '../db/migrate';
+import { reminderPhoneContext } from '../reminders/service';
 import { readStaffAccess, runSeed } from '../seed/run';
 import { startOfDubaiDay } from '../metrics/facts';
 import { E2E_INBOUND_KEYS } from './e2e-keys';
@@ -139,6 +140,12 @@ const inspect = createServer(async (request, response) => {
   } else if (/^\/persons\/[0-9a-f-]{36}$/.test(url.pathname)) {
     const [person] = await db.select().from(schema.persons).where(eq(schema.persons.id, url.pathname.split('/')[2]!));
     response.end(JSON.stringify(person ? { equityOptIn: person.equityOptIn, ageBand: person.ageBand, gender: person.gender, language: person.language, region: person.region } : null));
+  } else if (url.pathname === '/reminder-phones') {
+    // Every stored reminder number: the raw ciphertext as the table holds it, and the number decrypted with this harness's key.
+    const rows = await db.select().from(schema.reminderPhones);
+    response.end(
+      JSON.stringify(rows.map((row) => ({ personId: row.personId, intervalWeeks: row.intervalWeeks, ciphertext: row.phoneCiphertext, phone: cipher.decrypt(row.phoneCiphertext, reminderPhoneContext(row.personId)) }))),
+    );
   } else if (url.pathname === '/logged-sign-in-link') {
     response.end(JSON.stringify({ link: loggedSignInLink(url.searchParams.get('to') ?? '') }));
   } else if (url.pathname === '/ticket-state-counts') {
