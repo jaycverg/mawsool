@@ -6,7 +6,8 @@
 //   5. one real "Stop sharing" through the app: the log rows made from the note go, the others and the approved summary stay;
 //   6. "Delete everything" removes the invite a person claimed and keeps the ticket and its source;
 //   7. the demo's POST /demo/reset and one sweep (the +7 days step) leave the funnel and the Urdu row the dashboard reads
-//      equal to the ones PGlite gives for the same steps, with the Urdu row flagged 18 to 22 points below overall.
+//      equal to the ones PGlite gives for the same steps, with the Urdu row flagged 18 to 22 points below overall, and the
+//      step's stored clock offset (a bigint column) reads back as 7 days, also to an API started afterwards.
 // It works in a database of its own, created here and dropped at the end, so the dev data is never touched.
 import { randomUUID } from 'node:crypto';
 import type { EquityCell, EquityResponse, FunnelResponse } from '@mawsool/types';
@@ -22,6 +23,7 @@ import { connect, schema, type Db } from '../db/client';
 import { MIGRATIONS_FOLDER } from '../db/migrate';
 import { SWEEP_QUEUE, startJobs } from '../jobs';
 import { acceptScreen, formatInviteCode } from '../inbound/service';
+import { readDemoOffset } from '../demo/clock-store';
 import { runSeed } from '../seed/run';
 import { sweep } from '../sweep';
 import { createTestApp, signIn } from '../../test/helpers/app';
@@ -48,7 +50,7 @@ interface DemoFigures {
  * figures, move the demo clock +7 days (which runs one sweep) and read them again. The same function runs on Compose
  * Postgres and on PGlite, so the two can be held to each other.
  */
-async function demoFigures(database: Db): Promise<{ resetStatus: number; advanceStatus: number; markedOverdue: number; afterReset: DemoFigures; afterSweep: DemoFigures }> {
+async function demoFigures(database: Db): Promise<{ resetStatus: number; advanceStatus: number; markedOverdue: number; storedOffsetMs: number; restartedOffsetMs: number; afterReset: DemoFigures; afterSweep: DemoFigures }> {
   // Staff have to exist to sign in; the reset below reloads the seed anyway and keeps these sign-ins.
   await runSeed(database);
   const demo = await createTestApp(database, { demoMode: true });
@@ -68,9 +70,19 @@ async function demoFigures(database: Db): Promise<{ resetStatus: number; advance
     const reset = await demo.app.inject({ method: 'POST', url: '/demo/reset', headers: admin });
     const afterReset = await figures();
     const advance = await demo.app.inject({ method: 'POST', url: '/demo/clock/advance', headers: admin, payload: { by: '7d' } });
-    return { resetStatus: reset.statusCode, advanceStatus: advance.statusCode, markedOverdue: advance.json().markedOverdue as number, afterReset, afterSweep: await figures() };
-  } finally {
+    const afterSweep = await figures();
+    const storedOffsetMs = await readDemoOffset(database);
+    // A second API on the same database starts from the stored offset alone, as after a restart.
     await demo.app.close();
+    const restarted = await createTestApp(database, { demoMode: true });
+    try {
+      const restartedOffsetMs = (await restarted.app.inject({ method: 'GET', url: '/clock' })).json().offsetMs as number;
+      return { resetStatus: reset.statusCode, advanceStatus: advance.statusCode, markedOverdue: advance.json().markedOverdue as number, storedOffsetMs, restartedOffsetMs, afterReset, afterSweep };
+    } finally {
+      await restarted.app.close();
+    }
+  } finally {
+    await demo.app.close().catch(() => undefined);
   }
 }
 
@@ -192,6 +204,9 @@ try {
   const pglite = await createTestDb();
   const onPglite = await demoFigures(pglite.db).finally(() => pglite.close());
   check(onPostgres.resetStatus === 200 && onPostgres.advanceStatus === 200, 'POST /demo/reset and the +7 days step answer 200 on Postgres');
+  const SEVEN_DAYS_MS = 7 * 86_400_000;
+  check(onPostgres.storedOffsetMs === SEVEN_DAYS_MS && onPglite.storedOffsetMs === SEVEN_DAYS_MS, 'the +7 days step stored an offset of 7 days (a bigint column read back as a number) on Postgres, as on PGlite');
+  check(onPostgres.restartedOffsetMs === SEVEN_DAYS_MS, 'an API started on the same database after the step reports the 7 days: the demo date survives a restart on Postgres');
   check(onPostgres.markedOverdue > 0 && onPostgres.markedOverdue === onPglite.markedOverdue, `the sweep after the step marked ${onPostgres.markedOverdue} tickets overdue on Postgres, as it did on PGlite (${onPglite.markedOverdue})`);
   for (const when of ['afterReset', 'afterSweep'] as const) {
     const urdu = onPostgres[when].urdu;
