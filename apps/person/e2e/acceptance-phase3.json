@@ -20,6 +20,10 @@
     "sentence": "The consent screen shows every optional element off, the ticket as needed, the equity opt-in off, sends nothing before Send, and previews what the clinic will see"
   },
   {
+    "id": "consent-send-needs-a-chosen-service",
+    "sentence": "The consent screen disables Send and says so when the service the person chose is not in the directory, and sends nothing; with the service back it can send"
+  },
+  {
     "id": "ticket-sends-only-ticked-and-stores-ciphertext",
     "sentence": "The request carries only the ticked elements, and the stored bundle is ciphertext holding only those"
   },

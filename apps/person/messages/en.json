@@ -365,6 +365,7 @@
     "rejected": "The referral could not be sent. Go back to the options and choose again.",
     "changed": "This referral can no longer be changed.",
     "noChoice": "No option is waiting to be shared.",
+    "serviceMissing": "We could not find the service you chose, so nothing can be sent. Go back to the options and choose again.",
     "storageUnavailable": "This browser cannot keep your choices on this phone, so sharing is switched off.",
     "localFailed": "This phone could not save your choices, so nothing was sent. Try again.",
     "typedNotSaved": "What you typed could not be kept on this phone.",
