@@ -90,11 +90,13 @@ export async function runDueReminder(deps: { storage: StorageAdapter; notificati
   return allowed ? 'shown' : 'in_app_only';
 }
 
-/** Turns reminders on (every 4 weeks to start) and asks the browser for permission to notify. Returns the permission it ended with. */
+/**
+ * Turns reminders on (every 4 weeks to start), then asks the browser for permission to notify. The settings are saved first, so a
+ * permission prompt that is never answered cannot keep reminders off. Returns the permission it ended with.
+ */
 export async function enableReminders(deps: { storage: StorageAdapter; notifications: NotificationAdapter; now: Now }): Promise<ReturnType<NotificationAdapter['permission']>> {
-  const permission = deps.notifications.permission() === 'default' ? await deps.notifications.requestPermission() : deps.notifications.permission();
   await saveReminders(deps.storage, { intervalWeeks: DEFAULT_REMINDER_INTERVAL, since: deps.now().toISOString(), notifiedFor: null, phone: null });
-  return permission;
+  return deps.notifications.permission() === 'default' ? deps.notifications.requestPermission() : deps.notifications.permission();
 }
 
 export type ReminderChange = 'saved' | 'failed' | 'invalid';
