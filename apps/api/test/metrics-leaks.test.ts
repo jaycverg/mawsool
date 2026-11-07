@@ -86,8 +86,9 @@ describe('what cannot be worked out from the funnel, the crisis figures and the 
           expect(grandFirst - grandSecond - rest, 'the crisis count from the funnel').not.toBe(trueCrisis);
         }
         const crisis = await get<CrisisResponse>(`/metrics/crisis?period=${period}`);
-        // The crisis route and the funnel make one decision about the crisis events of a period.
-        // The seed holds 40 crisis screens (18 in the last 30 days), so the count is publishable in every period and the figure is the true one.
+        // On this seed the funnel does not hide the crisis events in any of the three periods: it holds 40 crisis screens (18 in
+        // the last 30 days), so the crisis route publishes the true count. (When the funnel does hide them, the route hides
+        // the figures with it: `metrics-crisis.test.ts` and the six-screen case below.)
         expect(crisis.shown, `the crisis count over ${period}`).toBe(trueCrisis);
       });
     });
