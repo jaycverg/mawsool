@@ -7,6 +7,7 @@ import {
   INSURANCE_TABLE_IS_SAMPLE,
   RELIABLE_CHANGE,
   STEP_ROWS,
+  TIER_TARGET_DAYS,
 } from '../src';
 
 describe('config', () => {
@@ -28,6 +29,11 @@ describe('config', () => {
 
   it('labels the insurance table as a sample', () => {
     expect(INSURANCE_TABLE_IS_SAMPLE).toBe(true);
+  });
+
+  it('gives each ticket tier the target the stepped-care table offers it, and only a window a ticket can be issued with', () => {
+    expect(TIER_TARGET_DAYS).toEqual({ community: 14, tele: 7, gp: 7, specialist: 14 });
+    for (const days of Object.values(TIER_TARGET_DAYS)) expect(HANDOFF_WINDOWS_DAYS).toContain(days);
   });
 
   it('keeps hand-off windows to the spec values: 14, 14, 7, 14 and none', () => {
