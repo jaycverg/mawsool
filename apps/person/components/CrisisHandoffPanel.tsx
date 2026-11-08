@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { API_URL } from '../lib/api';
 import { deviceNow } from '../lib/clock';
-import { buildHandoffPreview, loadHandoff, sendHandoff, stopHandoff, type HandoffRecord, type SendOutcome } from '../lib/crisis-handoff';
+import { buildHandoffPreview, handoffFor, loadHandoffs, offerState, sendHandoff, stopHandoff, type HandoffRecord, type SendOutcome } from '../lib/crisis-handoff';
 import { flushOutbox } from '../lib/crisis-outbox';
 import { parsePhone } from '../lib/reminders';
 import { loadScreenings } from '../lib/screening-store';
@@ -30,20 +30,26 @@ const FAILURES: Partial<Record<Phase, string>> = {
  * or releasing the block, and a failure of any kind only changes the words in this panel. It shows exactly what would be
  * sent, sends only on an explicit tick and a press, needs a connection, and can be stopped, which deletes it from the server.
  *
- * `mode="settings"` shows only the stop control, and only while a hand-off exists.
+ * One note is kept per crisis. The crisis screen decides what to show from the record of the crisis that is open and from no
+ * other; an earlier crisis's note never stands in for this one. `mode="settings"` lists every note still held, each with its
+ * own stop control, and nothing when there is none.
  */
 export function CrisisHandoffPanel({ device, lang, mode, open }: { device: Device; lang: Locale; mode: 'crisis' | 'settings'; open?: { eventId: string; trigger: CrisisTrigger } | null }) {
   const t = useTranslations('crisis');
   const ts = useTranslations('settings');
-  const [record, setRecord] = useState<HandoffRecord | null>(null);
+  const [records, setRecords] = useState<HandoffRecord[]>([]);
+  const [stopping, setStopping] = useState<string | null>(null);
+  const [stopped, setStopped] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [screenings, setScreenings] = useState<Screening[]>([]);
   const [callback, setCallback] = useState('');
   const [agreed, setAgreed] = useState(false);
   const [phase, setPhase] = useState<Phase>('idle');
 
+  const reload = () => loadHandoffs(device.storage).then(setRecords, () => setRecords([]));
   useEffect(() => {
-    void loadHandoff(device.storage).then(setRecord, () => setRecord(null));
+    void reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [device]);
   useEffect(() => {
     if (expanded) void loadScreenings(device.storage).then(setScreenings, () => setScreenings([]));
@@ -59,44 +65,52 @@ export function CrisisHandoffPanel({ device, lang, mode, open }: { device: Devic
       { crisisEventId: open.eventId, screenings, language: lang, trigger: open.trigger, callbackInput: callback },
     );
     setPhase(outcome);
-    setRecord(await loadHandoff(device.storage).catch(() => null));
+    await reload();
   }
 
-  async function stop() {
-    if (!record) return;
-    setPhase('stopping');
+  async function stop(record: HandoffRecord) {
+    setStopping(record.handoffId);
+    setStopped(false);
     const outcome = await stopHandoff({ server }, record);
-    setPhase(outcome === 'stopped' ? 'stopped' : 'stop_failed');
-    setRecord(await loadHandoff(device.storage).catch(() => null));
+    setStopping(null);
+    setPhase(outcome === 'stopped' ? 'idle' : 'stop_failed');
+    setStopped(outcome === 'stopped');
+    await reload();
   }
 
   const failure = FAILURES[phase];
-  const sent = record?.state === 'sent';
 
   if (mode === 'settings') {
-    if (!record && phase !== 'stopped') return null;
+    if (records.length === 0 && !stopped) return null;
     return (
       <section className="flex flex-col gap-2.5 rounded-card border border-border bg-surface p-5" data-panel="crisis-handoff">
         <h2 className="text-[16px] font-semibold">{ts('handoffTitle')}</h2>
         <p className="t-body text-muted">{ts('handoffBody')}</p>
-        {record && (
-          <button type="button" className="tap rounded-pill border-[1.5px] border-danger px-4 font-semibold text-danger" disabled={phase === 'stopping'} onClick={() => void stop()} data-handoff-stop>
-            {t('handoffStop')}
-          </button>
-        )}
-        {phase === 'stopped' && <p role="status" className="text-[15px] font-semibold text-accent-dark">{t('handoffStopped')}</p>}
+        {records.map((record) => (
+          <div key={record.handoffId} className="flex flex-col gap-1.5" data-handoff-record={record.state}>
+            {record.state === 'sending' && <p className="t-small text-muted">{t('handoffUnconfirmed')}</p>}
+            <button type="button" className="tap rounded-pill border-[1.5px] border-danger px-4 font-semibold text-danger" disabled={stopping === record.handoffId} onClick={() => void stop(record)} data-handoff-stop>
+              {t('handoffStop')}
+            </button>
+          </div>
+        ))}
+        {stopped && <p role="status" className="text-[15px] font-semibold text-accent-dark">{t('handoffStopped')}</p>}
         {failure && phase === 'stop_failed' && <p role="alert" className="t-body">{t(failure)}</p>}
       </section>
     );
   }
 
-  if (!open && !record) return null;
+  // The crisis screen: only a crisis that is open has anything to offer, and only its own record counts.
+  if (!open) return null;
+  const mine = handoffFor(records, open.eventId);
+  const state = offerState(records, open.eventId);
+  const sent = state === 'sent';
   const number = parsePhone(callback.trim());
-  const preview = buildHandoffPreview({ screenings, language: lang, trigger: open?.trigger ?? 'phq9_item9', callback: number });
+  const preview = buildHandoffPreview({ screenings, language: lang, trigger: open.trigger, callback: number });
 
   return (
-    <section aria-labelledby="handoff-title" className="flex flex-col gap-2.5 rounded-card border border-[#E3C9C5] bg-surface p-4" data-panel="crisis-handoff" data-handoff-state={sent ? 'sent' : record ? 'sending' : 'none'}>
-      {!sent && !expanded && open && (
+    <section aria-labelledby="handoff-title" className="flex flex-col gap-2.5 rounded-card border border-[#E3C9C5] bg-surface p-4" data-panel="crisis-handoff" data-handoff-state={sent ? 'sent' : mine ? 'sending' : 'none'}>
+      {!sent && !expanded && (
         <button type="button" className="min-h-tap rounded-pill border-[1.5px] border-[#6B4A46] px-3 text-left font-semibold" aria-expanded={false} onClick={() => setExpanded(true)} data-handoff-offer>
           {t('handoffOffer')}
         </button>
@@ -137,12 +151,12 @@ export function CrisisHandoffPanel({ device, lang, mode, open }: { device: Devic
               </button>
             </>
           )}
-          {record && (
-            <button type="button" className="min-h-tap rounded-pill border-[1.5px] border-[#6B4A46] px-3 font-semibold" disabled={phase === 'stopping'} onClick={() => void stop()} data-handoff-stop>
+          {mine && (
+            <button type="button" className="min-h-tap rounded-pill border-[1.5px] border-[#6B4A46] px-3 font-semibold" disabled={stopping === mine.handoffId} onClick={() => void stop(mine)} data-handoff-stop>
               {t('handoffStop')}
             </button>
           )}
-          {phase === 'stopped' && <p role="status" className="t-body">{t('handoffStopped')}</p>}
+          {stopped && <p role="status" className="t-body">{t('handoffStopped')}</p>}
           {failure && <p role="status" className="t-body" data-handoff-failure={phase}>{t(failure)}</p>}
         </>
       )}

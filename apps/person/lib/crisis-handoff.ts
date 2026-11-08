@@ -6,13 +6,15 @@ import type { FlushResult } from './crisis-outbox';
 import { KEYS } from './keys';
 import { parsePhone } from './reminders';
 import { callServer, markServerFootprint, type ServerDeps } from './server';
+import { withStoreLock } from './lock';
 import { buildContent, EMPTY_SHARING } from './share';
 
 /**
- * What the phone remembers about the hand-off to the crisis line, so the person can stop it: the id the phone made for
+ * What the phone remembers about a hand-off to the crisis line, so the person can stop it: the id the phone made for
  * it, the crisis event it belongs to, and whether the server confirmed it. It holds no score and no number, and it goes
  * with everything else on "Delete everything". `sending` is written before the send, so a reply that was lost still
- * leaves a record to stop from.
+ * leaves a record to stop from. There is one record per crisis event, kept side by side: a later crisis never hides or
+ * overwrites the record of an earlier one.
  */
 export const HandoffRecordSchema = z.object({
   handoffId: z.uuid(),
@@ -22,9 +24,36 @@ export const HandoffRecordSchema = z.object({
 });
 export type HandoffRecord = z.infer<typeof HandoffRecordSchema>;
 
-export async function loadHandoff(storage: StorageAdapter): Promise<HandoffRecord | null> {
-  const parsed = HandoffRecordSchema.safeParse(await storage.get<unknown>(KEYS.crisisHandoff));
-  return parsed.success ? parsed.data : null;
+/** Every hand-off record on the phone, oldest first. Entries that do not parse are left out. */
+export async function loadHandoffs(storage: StorageAdapter): Promise<HandoffRecord[]> {
+  const stored = await storage.get<unknown>(KEYS.crisisHandoff);
+  if (!Array.isArray(stored)) return [];
+  return stored.flatMap((entry) => {
+    const parsed = HandoffRecordSchema.safeParse(entry);
+    return parsed.success ? [parsed.data] : [];
+  });
+}
+
+/** The record for one crisis event, or null. */
+export function handoffFor(records: readonly HandoffRecord[], crisisEventId: string | null): HandoffRecord | null {
+  return crisisEventId === null ? null : (records.find((record) => record.crisisEventId === crisisEventId) ?? null);
+}
+
+/**
+ * What the crisis screen shows for the crisis that is open: `sent` once this crisis's note is confirmed, `sending` while
+ * its send is unconfirmed (the form stays, so a retry reuses the id), and `offer` otherwise. Another crisis's record never
+ * decides it.
+ */
+export function offerState(records: readonly HandoffRecord[], crisisEventId: string): 'offer' | 'sending' | 'sent' {
+  const mine = handoffFor(records, crisisEventId);
+  return mine === null ? 'offer' : mine.state;
+}
+
+/** Changes the list of records under the store lock, so two writers (a send and a stop) never overwrite each other. */
+function changeHandoffs(storage: StorageAdapter, change: (records: HandoffRecord[]) => HandoffRecord[]): Promise<void> {
+  return withStoreLock(storage, async () => {
+    await storage.set(KEYS.crisisHandoff, change(await loadHandoffs(storage)));
+  });
 }
 
 /** What would be sent, as the screen shows it before the person agrees. */
@@ -78,10 +107,11 @@ export async function sendHandoff(deps: SendDeps, input: { crisisEventId: string
   const { storage } = deps.server;
   let record: HandoffRecord;
   try {
-    const earlier = await loadHandoff(storage);
-    record = earlier && earlier.crisisEventId === input.crisisEventId && earlier.state === 'sending' ? earlier : { handoffId: deps.newId(), crisisEventId: input.crisisEventId, state: 'sending', startedAt: deps.now().toISOString() };
+    const earlier = handoffFor(await loadHandoffs(storage), input.crisisEventId);
+    // Only this crisis's own unconfirmed record is reused. An earlier crisis's record is left exactly as it is.
+    record = earlier ?? { handoffId: deps.newId(), crisisEventId: input.crisisEventId, state: 'sending', startedAt: deps.now().toISOString() };
     await markServerFootprint(storage, deps.now);
-    await storage.set(KEYS.crisisHandoff, record);
+    await changeHandoffs(storage, (records) => [...records.filter((other) => other.handoffId !== record.handoffId), { ...record, state: 'sending' }]);
   } catch {
     return 'failed';
   }
@@ -90,11 +120,11 @@ export async function sendHandoff(deps: SendDeps, input: { crisisEventId: string
   if (!sent.ok) {
     if (sent.reason !== 'rejected') return 'offline';
     // A refusal means nothing was stored, so the record has nothing to stop.
-    await storage.remove(KEYS.crisisHandoff).catch(() => undefined);
+    await changeHandoffs(storage, (records) => records.filter((other) => other.handoffId !== record.handoffId)).catch(() => undefined);
     return sent.status === 409 ? 'not_ready' : 'rejected';
   }
   try {
-    await storage.set(KEYS.crisisHandoff, { ...record, state: 'sent' });
+    await changeHandoffs(storage, (records) => records.map((other) => (other.handoffId === record.handoffId ? { ...other, state: 'sent' as const } : other)));
   } catch {
     // The record stays `sending`, which is enough to stop it from.
   }
@@ -104,14 +134,15 @@ export async function sendHandoff(deps: SendDeps, input: { crisisEventId: string
 export type StopOutcome = 'stopped' | 'offline' | 'failed';
 
 /**
- * Stops the hand-off: the server revokes the consent and deletes what it stored, and only then does the phone drop its record.
+ * Stops one hand-off: the server revokes the consent and deletes what it stored, and only then does the phone drop that one record
+ * (the others stay).
  * A hand-off the server no longer has (404) is already stopped. Offline keeps the record, so the person can try again.
  */
 export async function stopHandoff(deps: { server: ServerDeps }, record: HandoffRecord): Promise<StopOutcome> {
   const done = await callServer(deps.server, 'DELETE', `/me/crisis-handoffs/${record.handoffId}`);
   if (!done.ok && !(done.reason === 'rejected' && done.status === 404)) return done.reason === 'rejected' ? 'failed' : 'offline';
   try {
-    await deps.server.storage.remove(KEYS.crisisHandoff);
+    await changeHandoffs(deps.server.storage, (records) => records.filter((other) => other.handoffId !== record.handoffId));
   } catch {
     return 'failed';
   }
