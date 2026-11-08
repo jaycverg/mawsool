@@ -508,10 +508,12 @@ const ANONYMOUS_STORAGE_CASES: Record<string, (ctx: Context) => Promise<void>> =
     expect(api.hits).toEqual([]);
     api.blocking = false;
     const directory = page.waitForResponse((response) => response.url() === `${API}/services?locale=${locale}` && response.ok());
+    const deletesBefore = (await deletesBy(page)).length;
     await page.locator('[data-anonymous-leave-yes]').click();
     await expect(page).toHaveURL(new RegExp(`^${escapeRe(BASE)}/${locale}/$`));
     await directory;
-    expect(await deletesBy(page)).toContain(`/${locale}/anonymous/ mawsool-anon`);
+    // The first deletion after the press was asked for by the leave screen itself, not by the start of the page that follows it.
+    expect((await deletesBy(page)).slice(deletesBefore)[0]).toBe(`/${locale}/anonymous/ mawsool-anon`);
     expect((await anonymousDb(page)).exists).toBe(false);
     expect((await pageStorage(page)).session['mawsool.anonymous']).toBeUndefined();
   },
