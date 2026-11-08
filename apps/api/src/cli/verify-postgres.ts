@@ -5,6 +5,7 @@
 //   4. two connections spending the same signed-request nonce at once leave exactly one invite and one nonce;
 //   5. one real "Stop sharing" through the app: the log rows made from the note go, the others and the approved summary stay;
 //   6. "Delete everything" removes the invite a person claimed and keeps the ticket and its source;
+//   6b. a hand-off send and a stop for the same id racing over two connections leave no hand-off and no ledger row, whoever wins;
 //   7. the demo's POST /demo/reset and one sweep (the +7 days step) leave the funnel and the Urdu row the dashboard reads
 //      equal to the ones PGlite gives for the same steps, with the Urdu row flagged 18 to 22 points below overall, and the
 //      step's stored clock offset (a bigint column) reads back as 7 days, also to an API started afterwards.
@@ -28,7 +29,7 @@ import { runSeed } from '../seed/run';
 import { sweep } from '../sweep';
 import { createTestApp, signIn } from '../../test/helpers/app';
 import { createTestDb } from '../../test/helpers/db';
-import { FREE_TEXT, issue, rawBundle, registerPerson, serviceAt, ticketRequest } from '../../test/helpers/flow';
+import { FREE_TEXT, handoffBody, issue, rawBundle, registerPerson, sendCrisisEvent, serviceAt, ticketRequest } from '../../test/helpers/flow';
 
 const POOLS = 8;
 const config = loadConfig();
@@ -194,6 +195,23 @@ try {
     check((await db.select({ id: schema.inboundInvites.id }).from(schema.inboundInvites).where(eq(schema.inboundInvites.claimedBy, claimer.id))).length === 0, 'the invite the person claimed is gone');
     check((await db.select({ source: schema.tickets.source }).from(schema.tickets).where(eq(schema.tickets.id, fromInvite.id)))[0]?.source === 'tamm', 'the ticket keeps its source');
     check((await db.execute(sql`SELECT count(*)::int AS n FROM inbound_invites WHERE ticket_id = ${fromInvite.id}`)).rows[0]!.n === 0, 'and no invite still points at it');
+
+    // 6b. A hand-off send and a stop for the same id at once, over two connections. Whoever wins, the person ends with no
+    // hand-off and no ledger row: the send must see a stop that is committing, and the stop must see a hand-off being written.
+    const ROUNDS = 40;
+    let leftBehind = 0;
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const racer = await registerPerson(ctx);
+      const body = handoffBody(await sendCrisisEvent(ctx, racer));
+      await Promise.all([
+        ctx.app.inject({ method: 'POST', url: '/me/crisis-handoffs', headers: racer.headers, payload: body }),
+        ctx.app.inject({ method: 'DELETE', url: `/me/crisis-handoffs/${body.handoffId}`, headers: racer.headers }),
+      ]);
+      const rows = (await db.select({ id: schema.crisisHandoffs.id }).from(schema.crisisHandoffs).where(eq(schema.crisisHandoffs.personId, racer.id))).length;
+      const ledger = (await db.select({ id: schema.consents.id }).from(schema.consents).where(and(eq(schema.consents.personId, racer.id), eq(schema.consents.element, 'crisis_handoff')))).length;
+      if (rows + ledger > 0) leftBehind += 1;
+    }
+    check(leftBehind === 0, `a hand-off send and a stop racing for the same id, ${ROUNDS} times over two connections, left no hand-off and no ledger row`);
   } finally {
     await ctx.app.close();
   }
