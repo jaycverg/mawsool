@@ -992,7 +992,7 @@
   },
   {
     "id": "revoking-a-handoff-deletes-its-row-and-the-read-is-404",
-    "sentence": "After the person revokes, the raw hand-off row is gone, the ledger keeps the revocation, the console's read returns 404, a consent revoked with a row left behind is not readable, and Delete everything reaches it too",
+    "sentence": "After the person revokes, the raw hand-off row and its ledger row are gone, the console's read returns 404, a consent revoked with a row left behind is not readable, and Delete everything reaches it too",
     "tests": [
       {
         "project": "apps/api",
@@ -1012,7 +1012,7 @@
       {
         "project": "apps/api",
         "file": "test/crisis-handoffs.test.ts",
-        "name": "the consent is revoked, the row is deleted and the console reads 404"
+        "name": "the row and its ledger row are deleted and the console reads 404"
       },
       {
         "project": "apps/api",
@@ -1132,7 +1132,7 @@
   },
   {
     "id": "handoff-records-are-kept-per-crisis",
-    "sentence": "The phone keeps one hand-off record per crisis: a later crisis still gets the offer and its own send, an earlier crisis's unconfirmed note survives and can still be stopped, a stop or a refusal removes only its own record, and Delete everything removes every one",
+    "sentence": "The phone keeps one hand-off record per crisis: a later crisis still gets the offer and its own send (shown in a browser on the same phone), an earlier crisis's unconfirmed note survives and can still be stopped, a stop or a refusal removes only its own record, Settings describes each Stop by its own note, and Delete everything removes every one",
     "tests": [
       {
         "project": "apps/person",
@@ -1164,11 +1164,15 @@
         "file": "test/crisis-handoff.test.ts",
         "name": "is reached by Delete everything on the phone, every record at once"
       }
-    ]
+    ],
+    "delegated": {
+      "gate": "gate:phase4",
+      "id": "a-second-crisis-offers-a-new-note-and-both-notes-stay-stoppable"
+    }
   },
   {
     "id": "a-send-already-on-its-way-cannot-bring-a-stopped-handoff-back",
-    "sentence": "A send that was already on its way when the person pressed Stop, or pressed Delete everything, is refused with nothing written (409, no hand-off, no ledger entry), whether the stop found a hand-off or not; nobody else's stop blocks a person's send; and the phone drops the refused record and sends a different id next time",
+    "sentence": "A send that was already on its way when the person pressed Stop is refused (409, no hand-off, no ledger entry), whether the stop found a hand-off or not; so is one for an id the phone listed with Delete everything though the server had never seen it, and the phone sends its ids with the erase; the remembered stops hold no person and are forgotten after an hour; and the phone drops a refused record and says it was stopped, without inviting another try. The overlap of a send and a stop at the same instant is serialized by a per-id lock; PGlite cannot show it (one connection), the race case in gate:postgres does",
     "tests": [
       {
         "project": "apps/api",
@@ -1187,17 +1191,67 @@
       },
       {
         "project": "apps/api",
-        "file": "test/crisis-handoffs.test.ts",
-        "name": "is not blocked by"
+        "file": "test/erase-reach.test.ts"
       },
       {
         "project": "apps/api",
-        "file": "test/erase-reach.test.ts"
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "is refused after Delete everything even when the server had never seen the id"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "remembers the id and the time of the stop and nothing else, then forgets it an hour later"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/erase.test.ts",
+        "name": "sends the ids of every note it made, the one whose reply never came included"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/erase.test.ts",
+        "name": "sends no body when no note was ever made, and still wipes"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/erase.test.ts",
+        "name": "wipes without any network call when nothing was ever shared, even with a record that never reached the server"
       },
       {
         "project": "apps/person",
         "file": "test/crisis-handoff.test.ts",
-        "name": "drops the record, tells the person to try again, and the next send is a different hand-off id"
+        "name": "says it was stopped, drops the record, and offers nothing again"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/crisis-handoff.test.ts",
+        "name": "keeps \"try again in a moment\" for a crisis record the server does not hold yet"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/prefs-and-data.test.ts",
+        "name": "say it was not sent and do not invite another try, in both languages"
+      }
+    ]
+  },
+  {
+    "id": "nothing-the-server-keeps-ties-a-stopped-or-erased-person-to-the-event",
+    "sentence": "After Stop or Delete everything the server keeps no hand-off row, no consent ledger row and no remembered stop with a person, and the crisis event is still counted once; the ledger row is deleted, not kept as a revoked row",
+    "tests": [
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "after Stop: no ledger row, no hand-off row"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "after Delete everything: the same"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/erase-reach.test.ts"
       }
     ]
   },
