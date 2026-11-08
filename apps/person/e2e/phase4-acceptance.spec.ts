@@ -8,6 +8,7 @@ import {
   LOCALES,
   computed,
   crisisUrl,
+  escapeRe,
   msg,
   snapshot,
   takeCheckIn,
@@ -1186,7 +1187,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page).toHaveURL(crisisUrl(locale));
     await page.getByRole('button', { name: msg(locale, 'crisis.safeNow'), exact: true }).click();
     // Releasing leaves the crisis screen for the finished check-in's result, as it always does.
-    await expect(page).toHaveURL(new RegExp(`/${locale}/result/\\?id=`));
+    await expect(page).toHaveURL(new RegExp(`^${escapeRe(BASE)}/${locale}/result/\\?id=[0-9a-f-]{36}$`));
   },
 
   async 'stale-contact-made-after-the-person-stopped-sharing-is-refused'({ page, context, locale, consoleGuard }) {
