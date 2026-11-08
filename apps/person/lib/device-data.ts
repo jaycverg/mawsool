@@ -1,4 +1,5 @@
 import type { StorageAdapter, TabMarkAdapter } from '@mawsool/ui';
+import { wipeAnonymousData } from './anonymous';
 import { KEYS } from './keys';
 
 /**
@@ -37,5 +38,7 @@ export async function exportDeviceData(storage: StorageAdapter, now: () => Date)
  */
 export async function deleteDeviceData(storage: StorageAdapter, tabMark?: TabMarkAdapter<unknown>): Promise<void> {
   await storage.clear();
+  // What an anonymous session kept in this tab goes too, whichever mode the deleting is done in.
+  wipeAnonymousData();
   tabMark?.set(null);
 }

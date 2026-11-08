@@ -35,7 +35,9 @@ export function ResultScreen() {
   const t = useTranslations('result');
   const tc = useTranslations('clinicalCopy');
   const ti = useTranslations('instrument');
+  const ta = useTranslations('anonymous');
   const device = useDevice();
+  const anonymous = device !== null && device !== 'unavailable' && device.anonymous;
   const [state, setState] = useState<'loading' | 'missing' | Loaded>('loading');
   const [others, setOthers] = useState<Instrument[]>([]);
 
@@ -174,9 +176,18 @@ export function ResultScreen() {
           </div>
         ) : (
           <div className="mt-auto flex flex-col gap-2.5">
-            <a className="btn-primary" href={href(lang, 'options')}>
-              {t('options')}
-            </a>
+            {anonymous ? (
+              <p className="rounded-[12px] bg-mock p-3 text-[14px] leading-5 text-mock-ink" data-anonymous-result-note>
+                {ta('resultNote')}{' '}
+                <a className="font-semibold underline" href={href(lang, 'anonymous')}>
+                  {ta('bannerLink')}
+                </a>
+              </p>
+            ) : (
+              <a className="btn-primary" href={href(lang, 'options')}>
+                {t('options')}
+              </a>
+            )}
             {others.map((other) => (
               <a key={other} className="tap flex items-center justify-center text-[15px] font-semibold text-accent" href={href(lang, 'check-in', { i: other })}>
                 {t(other === 'gad7' ? 'alsoGad7' : 'alsoPhq9')}

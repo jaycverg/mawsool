@@ -6,6 +6,7 @@ import { isLocale } from '@mawsool/ui';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 import { API_URL } from '../lib/api';
+import { deviceFetch } from '../lib/net';
 import { deviceNow } from '../lib/clock';
 import { loadDirectory } from '../lib/directory';
 import { loadInvite } from '../lib/invite';
@@ -72,7 +73,7 @@ export function ConsentScreen() {
       setStoredOptIn(equityStored.optIn);
       setEquity({ on: equityStored.optIn, buckets: equityStored.buckets as Partial<Demographics> });
       if (!pending) return setLoaded('none');
-      const directory = await loadDirectory({ storage: device.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, now: deviceNow });
+      const directory = await loadDirectory({ storage: device.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, now: deviceNow });
       setSharing(saved);
       setConditionsText(saved.conditions.join('\n'));
       const invite = await loadInvite(device.storage).catch(() => null);
@@ -93,7 +94,7 @@ export function ConsentScreen() {
     if (summary?.approved && stale) setSummary({ ...summary, approved: false });
   }, [stale, summary]);
 
-  const serverDeps = (d: Device): ServerDeps => ({ storage: d.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, random: window.crypto });
+  const serverDeps = (d: Device): ServerDeps => ({ storage: d.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, random: window.crypto });
 
   if (device === 'unavailable' || unreadable) return <Shell lang={lang} t={t}><p role="alert" className="t-body">{t('storageUnavailable')}</p></Shell>;
   if (loaded === 'none') {

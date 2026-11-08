@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { API_URL } from '../lib/api';
+import { deviceFetch } from '../lib/net';
 import { deviceNow } from '../lib/clock';
 import { claimInvite } from '../lib/invite';
 import { href } from '../lib/routes';
@@ -35,7 +36,7 @@ export function ClaimScreen() {
     event.preventDefault();
     if (device === null || device === 'unavailable') return setPhase({ k: 'problem', problem: 'not_saved' });
     setPhase({ k: 'claiming' });
-    const outcome = await claimInvite({ storage: device.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, random: window.crypto }, code, deviceNow);
+    const outcome = await claimInvite({ storage: device.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, random: window.crypto }, code, deviceNow);
     setPhase(outcome.status === 'claimed' ? { k: 'claimed', invite: outcome.invite } : { k: 'problem', problem: outcome.status });
   }
 

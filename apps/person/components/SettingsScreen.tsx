@@ -5,6 +5,7 @@ import { isLocale } from '@mawsool/ui';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { API_URL } from '../lib/api';
+import { deviceFetch } from '../lib/net';
 import { deviceNow } from '../lib/clock';
 import { numbersText } from '../lib/crisis-copy';
 import { crisisLines } from '../lib/crisis-numbers';
@@ -23,6 +24,7 @@ import {
   type ReminderSettings,
 } from '../lib/reminders';
 import { callServer, markServerFootprint, type ServerDeps } from '../lib/server';
+import { href } from '../lib/routes';
 import { loadEquity, saveEquity } from '../lib/share';
 import { useDevice, type Device } from '../lib/use-device';
 import { BottomNav } from './BottomNav';
@@ -44,6 +46,7 @@ type Delete = 'idle' | 'confirming' | 'working' | 'blocked' | 'failed' | { done:
  */
 export function SettingsScreen() {
   const t = useTranslations('settings');
+  const ta = useTranslations('anonymous');
   const locale = useLocale();
   const lang = isLocale(locale) ? locale : 'en';
   const device = useDevice();
@@ -52,6 +55,7 @@ export function SettingsScreen() {
   const [removal, setRemoval] = useState<Delete>('idle');
   const [unreadable, setUnreadable] = useState(false);
   const usable = device !== null && device !== 'unavailable';
+  const anonymous = usable && device.anonymous;
   const [equityOn, setEquityOn] = useState<boolean | null>(null);
   const [equityState, setEquityState] = useState<'idle' | 'working' | 'removed' | 'failed'>('idle');
   const [reminders, setReminders] = useState<ReminderSettings | null>(null);
@@ -64,7 +68,7 @@ export function SettingsScreen() {
     void loadReminders(device.storage).then(setReminders, () => setReminders(null));
   }, [device, usable]);
 
-  const serverFor = (d: Device): ServerDeps => ({ storage: d.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, random: window.crypto });
+  const serverFor = (d: Device): ServerDeps => ({ storage: d.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, random: window.crypto });
 
   /** Runs one reminder change, re-reads the saved settings and shows how it ended. A saved number field is cleared. */
   async function changeReminders(run: (d: Device) => Promise<ReminderNote>) {
@@ -100,7 +104,7 @@ export function SettingsScreen() {
     try {
       await markServerFootprint(device.storage, deviceNow);
       const done = await callServer(
-        { storage: device.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, random: window.crypto },
+        { storage: device.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, random: window.crypto },
         'PUT',
         '/me/equity',
         { optIn: false },
@@ -136,12 +140,12 @@ export function SettingsScreen() {
   async function wipe() {
     if (!usable) return;
     setRemoval('working');
-    const server = { storage: device.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, random: window.crypto };
+    const server = { storage: device.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, random: window.crypto };
     const outcome = await eraseEverything({
       storage: device.storage,
       tabMark: device.tabMark,
       server,
-      flushCrisis: () => flushOutbox({ storage: device.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, random: window.crypto }),
+      flushCrisis: () => flushOutbox({ storage: device.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, random: window.crypto }),
       crisisIsOpen: async () => (await device.crisis.read()).status === 'blocked',
     });
     if (outcome.status === 'erased') {
@@ -181,6 +185,15 @@ export function SettingsScreen() {
           )}
         </section>
 
+        <section className="flex flex-col gap-2.5 rounded-card border border-border bg-surface p-5" data-panel="anonymous">
+          <h2 className="text-[16px] font-semibold">{ta(anonymous ? 'settingsTitle' : 'title')}</h2>
+          <p className="t-body text-muted">{anonymous ? ta('settingsBody') : ta('homeBody')}</p>
+          <a className="tap inline-flex items-center font-semibold text-accent" href={href(lang, 'anonymous')} data-anonymous-link>
+            {anonymous ? ta('leave') : ta('homeAction')}
+          </a>
+        </section>
+
+        {!anonymous && (
         <section className="flex flex-col gap-2.5 rounded-card border border-border bg-surface p-5" data-panel="reminders">
           <h2 className="text-[16px] font-semibold">{t('remindersTitle')}</h2>
           <p className="t-body text-muted">{t('remindersBody')}</p>
@@ -257,6 +270,7 @@ export function SettingsScreen() {
           {reminderNote === 'failed' && <p role="alert" className="text-[15px] font-semibold text-danger" data-reminder-note="failed">{t('remindersFailed')}</p>}
           {reminderNote === 'blocked' && <p role="alert" className="text-[15px] font-semibold text-danger" data-reminder-note="blocked">{t('remindersBlocked')}</p>}
         </section>
+        )}
 
         {(equityOn || equityState === 'removed' || equityState === 'failed') && (
           <section className="flex flex-col gap-2.5 rounded-card border border-border bg-surface p-5" data-panel="equity">
@@ -272,11 +286,11 @@ export function SettingsScreen() {
           </section>
         )}
 
-        {usable && <CrisisHandoffPanel device={device} lang={lang} mode="settings" />}
+        {usable && !anonymous && <CrisisHandoffPanel device={device} lang={lang} mode="settings" />}
 
         <section className="flex flex-col gap-2.5 rounded-card border border-border bg-surface p-5">
           <h2 className="text-[16px] font-semibold">{t('deleteTitle')}</h2>
-          <p className="t-body text-muted">{t('deleteBody')}</p>
+          <p className="t-body text-muted">{anonymous ? ta('deleteBody') : t('deleteBody')}</p>
           {(removal === 'idle' || removal === 'failed' || removal === 'blocked') && (
             <button type="button" className="tap rounded-pill border-[1.5px] border-danger px-4 font-semibold text-danger" disabled={!usable} onClick={() => setRemoval('confirming')}>
               {t('delete')}
