@@ -57,8 +57,9 @@ export async function deleteStaleDrafts(db: Db, clock: Clock): Promise<number> {
 }
 
 /**
- * Also removes stale unclaimed drafts (`deleteStaleDrafts`, by the care clock) and spent request nonces (`deleteStaleNonces`, by the
- * security clock: a nonce guards a signed request's real-time window, so a demo clock jump must not purge it). Finds every ticket past its deadline that has not been seen and appends one `overdue` event to each. Safe to run
+ * Also removes stale unclaimed drafts (`deleteStaleDrafts`, by the care clock), spent request nonces (`deleteStaleNonces`) and
+ * remembered hand-off stops (`deleteStaleRevokedHandoffs`), both by the security clock: each guards a request's real-time window,
+ * so a demo clock jump must not purge it. Finds every ticket past its deadline that has not been seen and appends one `overdue` event to each. Safe to run
  * from several places at once and every minute: a ticket that is already overdue, or that another sweep got to first,
  * is left alone, so there is never a second `overdue` event.
  */
@@ -76,6 +77,6 @@ export async function sweep(db: Db, clock: Clock, hooks: SweepHooks = {}, securi
   }
   result.draftsDeleted = await deleteStaleDrafts(db, clock);
   result.noncesDeleted = await deleteStaleNonces(db, securityClock);
-  result.stopsForgotten = await deleteStaleRevokedHandoffs(db, clock.now());
+  result.stopsForgotten = await deleteStaleRevokedHandoffs(db, securityClock.now());
   return result;
 }

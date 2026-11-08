@@ -142,7 +142,7 @@ describe('the repeat check at six weeks', () => {
       const bundleBefore = (await rawBundle(testDb.db, id)).contentCiphertext;
       const ledgerBefore = await ledger(id);
       const outcome = await remeasureTicket(
-        { db: testDb.db, cipher, clock: ctx.clock },
+        { db: testDb.db, cipher, clock: ctx.clock, securityClock: ctx.clock },
         { id, personId: row!.personId },
         { scores: [PHQ, GAD] },
         {

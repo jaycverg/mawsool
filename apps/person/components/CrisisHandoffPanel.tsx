@@ -74,6 +74,11 @@ export function CrisisHandoffPanel({ device, lang, mode, open }: { device: Devic
       { crisisEventId: open.eventId, screenings, language: lang, trigger: open.trigger, callbackInput: callback },
     );
     setPhase(outcome);
+    // A note the person stopped is not offered again as it stands: the form stays open with its answer, but a new send needs a fresh tick.
+    if (outcome === 'stopped') {
+      setAgreed(false);
+      setExpanded(true);
+    }
     await reload();
   }
 
