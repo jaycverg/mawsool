@@ -133,7 +133,10 @@ export const TicketEventSchema = z.object({
 });
 export type TicketEvent = z.infer<typeof TicketEventSchema>;
 
-/** Append-only consent ledger row. A revoke sets `revokedAt` and never removes the row. */
+/**
+ * Consent ledger row. A ticket consent is append-only: a revoke sets `revokedAt` and keeps the row.
+ * A `crisis_handoff` row is deleted on Stop and Delete everything.
+ */
 export const ConsentSchema = z.object({
   id: Id,
   personId: Id,

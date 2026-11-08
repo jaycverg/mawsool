@@ -1,7 +1,7 @@
 [
   {
     "id": "mw-502-consent-ledger",
-    "sentence": "The MW-502 tests pass: the ledger grants and revokes per element, append-only, and every bundle read checks live consent",
+    "sentence": "The MW-502 tests pass: the ledger grants and revokes per element, append-only for ticket consents (a crisis_handoff row is deleted on Stop and Delete everything), and every bundle read checks live consent",
     "project": "apps/api",
     "tests": [
       {
