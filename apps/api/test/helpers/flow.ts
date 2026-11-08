@@ -103,6 +103,7 @@ export async function sendCrisisEvent({ app }: Pick<TestApp, 'app'>, person: Tes
 /** A consented hand-off request body for a crisis event. */
 export function handoffBody(crisisEventId: string, overrides: Record<string, unknown> = {}) {
   return {
+    handoffId: randomUUID(),
     crisisEventId,
     consented: true,
     language: 'en',

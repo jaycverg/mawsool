@@ -105,18 +105,23 @@ describe('the optional hand-off to the mock crisis line', () => {
     expect({ handoffs: (await handoffRows()).length, consents: (await handoffConsents()).length }).toEqual(before);
   });
 
-  it('answers a repeated send with the first hand-off (a lost reply), leaving one row and one consent; another person on the same event is a conflict', async () => {
+  it('answers a repeated send of the same hand-off with the first one (a lost reply), leaving one row and one consent; any other claim on that event or id is a conflict', async () => {
     const person = await registerPerson(ctx);
     const eventId = await sendCrisisEvent(ctx, person);
-    const first = await post(person, handoffBody(eventId));
-    const again = await post(person, handoffBody(eventId));
+    const body = handoffBody(eventId);
+    const first = await post(person, body);
+    const again = await post(person, body);
     expect([first.statusCode, again.statusCode]).toEqual([201, 200]);
+    expect(first.json().handoffId).toBe(body.handoffId);
     expect(again.json()).toMatchObject({ handoffId: first.json().handoffId, consentId: first.json().consentId, created: false });
     expect((await handoffRows()).filter((row) => row.crisisEventId === eventId)).toHaveLength(1);
     expect((await handoffConsents()).filter((row) => row.personId === person.id)).toHaveLength(1);
     const stranger = await registerPerson(ctx);
     expect((await post(stranger, handoffBody(eventId))).statusCode).toBe(409);
+    expect((await post(stranger, { ...body, handoffId: body.handoffId })).statusCode).toBe(409);
+    expect((await post(person, handoffBody(eventId))).statusCode).toBe(409); // a different hand-off id for an event that already has one
     expect((await handoffConsents()).filter((row) => row.personId === stranger.id)).toHaveLength(0);
+    expect((await handoffConsents()).filter((row) => row.personId === person.id)).toHaveLength(1);
   });
 
   it('lets the crisis-line role read a consented hand-off, in the list and singly', async () => {

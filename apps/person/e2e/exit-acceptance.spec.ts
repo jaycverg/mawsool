@@ -785,7 +785,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await page.goto(`/${locale}/settings/`);
     await page.getByRole('button', { name: msg(locale, 'settings.download'), exact: true }).click();
     const exported = JSON.parse(await page.getByLabel(msg(locale, 'settings.dataLabel')).inputValue()) as { screenings: Record<string, unknown>[] } & Record<string, unknown>;
-    expect(Object.keys(exported).sort()).toEqual(['choice', 'crisis', 'exportedAt', 'insurance', 'preferences', 'reminders', 'screenings', 'sharing', 'tickets']);
+    expect(Object.keys(exported).sort()).toEqual(['choice', 'crisis', 'crisisHandoff', 'exportedAt', 'followUp', 'insurance', 'preferences', 'reminders', 'screenings', 'sharing', 'tickets']);
     expect(exported.screenings).toHaveLength(1);
     expect(exported.screenings[0]).toMatchObject({ instrument: 'phq9', answers: [3, 2, 1, 0, 1, 2, 3, 1, 0], total: 13, band: 'moderate', item9Flag: false });
     expect(JSON.stringify(exported)).not.toMatch(/secret/i); // the device credential is not the person's data

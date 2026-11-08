@@ -6,7 +6,7 @@ import { isLocale, localeFromPathname } from '@mawsool/ui';
  * by the back button or by a typed address. Add a route here when a screen is added that must not open mid-crisis.
  * Settings, home and the crisis screen itself are deliberately not listed.
  */
-export const GUARDED_ROUTES = ['/check-in', '/result', '/check-ins', '/options', '/consent', '/ticket', '/reroute', '/follow-up', '/remeasure'] as const;
+export const GUARDED_ROUTES = ['/check-in', '/result', '/check-ins', '/options', '/consent', '/ticket', '/reroute', '/follow-up', '/remeasure', '/next-day'] as const;
 
 /** The path with its locale segment removed and a trailing slash dropped: `/ar/options/` gives `/options`. */
 export function stripLocale(pathname: string): string {

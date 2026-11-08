@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { deviceNow } from '../lib/clock';
 import { addWeeks, formatDate, partOfDay, spanBetween, type Part } from '../lib/format';
 import { href } from '../lib/routes';
+import { followUpDue, loadFollowUp, type FollowUp } from '../lib/follow-up';
 import { loadReminders, reminderDue, type ReminderSettings } from '../lib/reminders';
 import { findDraft } from '../lib/screening-store';
 import { useDevice } from '../lib/use-device';
@@ -25,12 +26,14 @@ export function HomeScreen() {
   const ti = useTranslations('instrument');
   const tr = useTranslations('result');
   const trm = useTranslations('reminder');
+  const tnd = useTranslations('nextDay');
   const locale = useLocale();
   const lang = isLocale(locale) ? locale : 'en';
   const screenings = useScreenings();
   const [part, setPart] = useState<Part | null>(null);
   const device = useDevice();
   const [reminders, setReminders] = useState<ReminderSettings | null>(null);
+  const [followUp, setFollowUp] = useState<FollowUp | null>(null);
   // Re-render when the demo clock moves, so a reminder that the clock made due appears.
   useDemoOffsetMs();
 
@@ -38,9 +41,11 @@ export function HomeScreen() {
   useEffect(() => {
     if (device === null || device === 'unavailable') return;
     void loadReminders(device.storage).then(setReminders, () => setReminders(null));
+    void loadFollowUp(device.storage).then(setFollowUp, () => setFollowUp(null));
   }, [device]);
 
   const list = Array.isArray(screenings) ? screenings : [];
+  const followUpIsDue = followUpDue(followUp, deviceNow());
   const reminderIsDue = reminders !== null && Array.isArray(screenings) && reminderDue(reminders, list, deviceNow());
   const draft = findDraft(list, 'who5') ?? findDraft(list, 'gad7') ?? findDraft(list, 'phq9');
   const trendInstrument = TRENDS.find((instrument) => completedSeries(list, instrument).length > 0);
@@ -58,6 +63,14 @@ export function HomeScreen() {
           <p role="alert" className="rounded-chip bg-warning px-3 py-2 text-small text-warning-ink">
             {t('storageUnavailable')}
           </p>
+        )}
+
+        {followUpIsDue && (
+          <section className="flex flex-col gap-2 rounded-card border-2 border-accent bg-accent-tint p-4" data-prompt="next-day">
+            <h2 className="text-[16px] font-semibold">{tnd('cardTitle')}</h2>
+            <p className="t-body">{tnd('cardBody')}</p>
+            <a className="btn-primary" href={href(lang, 'next-day')}>{tnd('cardAction')}</a>
+          </section>
         )}
 
         {reminderIsDue && (

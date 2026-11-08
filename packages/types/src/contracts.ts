@@ -413,8 +413,10 @@ export type CrisisHandoffContent = z.infer<typeof CrisisHandoffContentSchema>;
 /**
  * POST /me/crisis-handoffs. `consented` must be literally `true`: a request without it is refused and writes nothing.
  * `crisisEventId` is the id of the crisis event the phone already sent, the one the console's "contact made" completes.
+ * `handoffId` is made by the phone, like a ticket's client request id, so it can stop the hand-off even when the reply to
+ * the send was lost, and a repeated send is the same hand-off.
  */
-export const CreateCrisisHandoffRequestSchema = CrisisHandoffContentSchema.extend({ crisisEventId: z.uuid(), consented: z.literal(true) }).strict();
+export const CreateCrisisHandoffRequestSchema = CrisisHandoffContentSchema.extend({ handoffId: z.uuid(), crisisEventId: z.uuid(), consented: z.literal(true) }).strict();
 export type CreateCrisisHandoffRequest = z.infer<typeof CreateCrisisHandoffRequestSchema>;
 
 /** What the phone keeps to be able to stop the hand-off: the row's id and the ledger row that consent lives in. */

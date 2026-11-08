@@ -16,8 +16,9 @@ export default async function SignInPage({ params }: { params: Promise<{ locale:
     <Suspense>
       <StaffSignInPage
         apiUrl={process.env.NEXT_PUBLIC_API_URL ?? ''}
-        allowedRoles={['ops', 'admin']}
+        allowedRoles={['ops', 'admin', 'crisis_line']}
         homeHref={`/${locale}/`}
+        homeHrefByRole={{ crisis_line: `/${locale}/crisis-line/` }}
         labels={{
           heading: t('heading'),
           action: t('action'),

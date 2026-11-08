@@ -195,5 +195,34 @@
       "source": "Source note"
     },
     "signOut": "Sign out"
+  },
+  "crisisLine": {
+    "heading": "Crisis-line console",
+    "mock": "Mock · no real crisis line",
+    "intro": "This page stands in for the crisis line. It lists the short notes people chose to hand over. Nothing here reaches a real service, and a note disappears when the person stops sharing it.",
+    "refresh": "Refresh",
+    "signOut": "Sign out",
+    "loading": "Loading the notes…",
+    "failed": "The notes could not be loaded.",
+    "empty": "No notes have been handed over.",
+    "received": "Received",
+    "language": "Language",
+    "scores": "Check-in totals",
+    "noScores": "none shared",
+    "callback": "Call back on",
+    "noCallback": "no number given",
+    "languages": {
+      "ar": "Arabic",
+      "en": "English"
+    },
+    "reason": {
+      "phq9_item9": "PHQ-9 item 9 positive",
+      "cssrs": "Suicide-risk screener positive"
+    },
+    "markContact": "Mark contact made",
+    "contactMade": "Contact made, {at}",
+    "marked": "Marked as contact made.",
+    "markFailed": "That could not be saved. Try again.",
+    "gone": "The person stopped sharing this note, so it has been removed."
   }
 }

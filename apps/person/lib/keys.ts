@@ -15,4 +15,6 @@ export const KEYS = {
   crisisOutbox: 'crisis:outbox',
   demoOffset: 'demo:offset',
   reminders: 'reminders',
+  crisisHandoff: 'crisis:handoff',
+  followUp: 'crisis:follow-up',
 } as const;
