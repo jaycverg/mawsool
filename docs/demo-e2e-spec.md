@@ -11,7 +11,7 @@ The demo script (steps 1 to 12) runs in Arabic and in English against the real A
 - `dashboard-shows-suppressed-cells`: A funnel stage or equity group under 10 people shows as suppressed, with no number, bar, flag or rate
 - `admin-panel-controls-clock-and-reset`: The admin panel shows the crisis numbers' last_verified date, moves the demo clock by its three steps, resets to the seed and the real clock, and the API refuses the ops role the same controls
 - `clinic-queue-follows-the-demo-clock`: The clinic queue counts days left from the demo clock, so overdue marks agree with the API
-- `mock-label-audit`: Every mock or sample surface that exists carries its label: the mock TAMM page, the unverified instrument wording, the sample directory and indicative insurance, the Malaffi-ready export, and the dashboard's simulated data
+- `mock-label-audit`: Every mock or sample surface that exists carries its label: the mock TAMM page, the unverified instrument wording, the sample directory and indicative insurance, the Malaffi-ready export, the sample labs of the context panel, the no-login clinic link's sample channel, and the dashboard's simulated data
 - `staff-apps-have-icons-and-log-no-console-error`: The clinician and ops apps declare an icon that loads, and their sign-in and home pages log no console error
 - `dashboard-toggle-and-rtl`: The ops dashboard has the Arabic and English toggle and runs right to left in Arabic
 - `dashboard-holds-the-board-and-plan-tokens`: The ops dashboard holds the board's type, colours, radii, chart sizes and 44 px tap targets
@@ -41,7 +41,7 @@ import {
   takeCheckIn,
   type Locale,
 } from './helpers';
-import { CLINIC, CLINICIAN_A, FACILITY_A, OPS, bearer, call, cmsg, keepSession, makeTicket, newPerson, serviceAt, staffSession } from './staff-helpers';
+import { CLINIC, CLINICIAN_A, FACILITY_A, OPS, bearer, call, cmsg, keepSession, loggedClinicLink, makeTicket, newPerson, serviceAt, staffSession } from './staff-helpers';
 import commonAr from '../../../packages/ui/messages/ar.json';
 import commonEn from '../../../packages/ui/messages/en.json';
 import opsAr from '../../ops/messages/ar.json';
@@ -520,6 +520,29 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await clinic.goto(clinicUrl(locale, `?ticket=${made.id}`));
     await expect(clinic.locator('[data-export-label]')).toHaveText(cmsg(locale, 'detail.exportLabel'));
     expect(cmsg('en', 'detail.exportLabel')).toBe('Malaffi-ready export — not sent');
+    // The sample labs of the context panel appear only beside conditions the person shared, under their own mock label.
+    const shared = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A, 'gp'), consents: ['ticket', 'trajectory', 'conditions'] });
+    await clinic.goto(clinicUrl(locale, `?ticket=${shared.id}`));
+    await expect(clinic.locator('[data-panel="context"] [data-section="labs"] [data-mock-label]')).toHaveText(cmsg(locale, 'detail.labsMock'));
+    expect(cmsg('en', 'detail.labsMock')).toBe('Sample — would come from Malaffi');
+    expect(cmsg('ar', 'detail.labsMock')).toMatch(/[\u0600-\u06FF]/);
+    // The no-login clinic link's page says it is a sample channel (a facility without the portal is the one that is given a link).
+    const adminHeaders = bearer(await staffSession(ADMIN));
+    const setPortal = (portalAccess: boolean) => call('PUT', `/facilities/${FACILITY_A}/portal-access`, { headers: adminHeaders, body: { portalAccess } });
+    expect((await setPortal(false)).status).toBe(200);
+    try {
+      const linked = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A, 'gp') });
+      const link = (await loggedClinicLink(linked.shortCode))!;
+      expect(link).toContain('/clinic-link/#');
+      const visitor = await (await browser.newContext()).newPage();
+      await visitor.goto(link.replace('/en/', `/${locale}/`));
+      await expect(visitor.locator('[data-screen="clinic-link"] [data-mock-label]')).toHaveText(cmsg(locale, 'clinicLink.mock'));
+      expect(cmsg('en', 'clinicLink.mock')).toMatch(/^Sample channel:/);
+      expect(cmsg('ar', 'clinicLink.mock')).toContain('قناة تجريبية');
+      await visitor.context().close();
+    } finally {
+      expect((await setPortal(true)).status).toBe(200);
+    }
     // The dashboard says its figures are simulated, and so does the admin panel.
     const dash = await dashboard(browser, locale);
     await expect(dash.locator('[data-simulated]')).toHaveText(omsg(locale, 'home.simulated'));
@@ -529,7 +552,6 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(dash.getByText(omsg(locale, 'dash.timeliness.waitNote'))).toBeVisible();
     await admin.goto(opsUrl(locale));
     await expect(admin.getByText(omsg(locale, 'home.simulated'))).toBeVisible();
-    // Messaging and the crisis-line console are Phase 6 surfaces and are not built, so there is nothing of them to label.
   },
 
   async 'staff-apps-have-icons-and-log-no-console-error'({ context, locale }) {
