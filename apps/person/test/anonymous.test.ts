@@ -9,6 +9,7 @@ import {
   anonymousSessionId,
   createAnonymousStorage,
   createAnonymousStore,
+  deviceSessionRegistry,
   endAnonymousSession,
   isAnonymous,
   isAnonymousMark,
@@ -381,8 +382,8 @@ describe('the wipe paths of the anonymous store', () => {
   it('a start that fails or finds no IndexedDB throws nothing and wipes nothing it cannot reach', async () => {
     await expect(reconcileAnonymousStore(null)).resolves.toBeUndefined();
     await expect(reconcileAnonymousStore(stubStore({ reconcile: () => Promise.reject(new Error('x')) }))).resolves.toBeUndefined();
-    await expect(wipeAnonymousData(stubStore({ wipeAll: () => Promise.reject(new Error('x')) }))).resolves.toBeUndefined();
-    await expect(wipeAnonymousData(null)).resolves.toBeUndefined();
+    await expect(wipeAnonymousData(stubStore({ wipeAll: () => Promise.reject(new Error('x')) }))).resolves.toBe(false);
+    await expect(wipeAnonymousData(null)).resolves.toBe(true);
   });
 });
 
@@ -429,6 +430,107 @@ describe('a live anonymous session is not deleted by another tab', () => {
     await anonymous.set(KEYS.screenings, [{ id: 'x' }]);
     await make(() => null).reconcile();
     expect(await dbExists(env)).toBe(false);
+  });
+});
+
+describe('in a browser that cannot list its databases', () => {
+  /** An IndexedDB without `databases()`, as in an older browser: it can open and delete a database by name and nothing more. */
+  function blindEnv(locks: LocksLike | null = null): AnonymousEnv {
+    const base = new IDBFactory();
+    return { indexedDB: { open: base.open.bind(base), deleteDatabase: base.deleteDatabase.bind(base), cmp: base.cmp.bind(base) } as unknown as IDBFactory, crypto: globalThis.crypto, locks, abandonedGraceMs: 0 };
+  }
+  /** What the browser really holds, read through a handle that can list. */
+  const namesIn = async (env: AnonymousEnv) => {
+    const names: string[] = [];
+    for (const id of [SESSION, OTHER]) {
+      const probe = await new Promise<boolean>((resolve) => {
+        const opening = env.indexedDB.open(dbOf(id));
+        let existed = true;
+        opening.onupgradeneeded = () => {
+          existed = false;
+        };
+        opening.onsuccess = () => {
+          opening.result.close();
+          if (!existed) env.indexedDB.deleteDatabase(dbOf(id));
+          resolve(existed);
+        };
+      });
+      if (probe) names.push(dbOf(id));
+    }
+    return names;
+  };
+  function make(env: AnonymousEnv, devices = memoryStorage()) {
+    const registry = deviceSessionRegistry(() => devices.storage);
+    const as = (session: string | null) => createAnonymousStore(env, () => session, registry);
+    return { devices, registry, as, storage: (session: string) => createAnonymousStorage(() => devices.storage, as(session)) };
+  }
+
+  it("adds the session's id to the device store's list before its database is first written", async () => {
+    const { registry, as } = make(blindEnv());
+    await as(SESSION).open();
+    expect(await registry.list()).toEqual([SESSION]);
+  });
+
+  it('sweeps a closed session\'s database at the next start and takes its id off the list', async () => {
+    const { locks, held } = fakeLocks();
+    const env = blindEnv(locks);
+    const { registry, as, storage } = make(env);
+    await storage(SESSION).set(KEYS.screenings, [{ id: 'closed tab' }]);
+    expect(await namesIn(env)).toEqual([dbOf(SESSION)]);
+    held.clear(); // its tab closed
+    await reconcileAnonymousStore(as(null));
+    expect(await namesIn(env)).toEqual([]);
+    expect(await registry.list()).toEqual([]);
+  });
+
+  it('leaves a live listed session alone, and its id on the list', async () => {
+    const { locks } = fakeLocks();
+    const env = blindEnv(locks);
+    const { registry, as, storage } = make(env);
+    await storage(SESSION).set(KEYS.screenings, [{ id: 'live' }]); // the page holds the lock
+    await reconcileAnonymousStore(as(null));
+    await reconcileAnonymousStore(as(OTHER));
+    expect(await namesIn(env)).toEqual([dbOf(SESSION)]);
+    expect((await registry.list()).sort()).toEqual([OTHER, SESSION].sort());
+    expect(await storage(SESSION).get(KEYS.screenings)).toEqual([{ id: 'live' }]);
+  });
+
+  it('Delete everything deletes every listed session\'s database, live or not, and clears the list, though the browser cannot list them', async () => {
+    const { locks } = fakeLocks();
+    const env = blindEnv(locks);
+    const devices = memoryStorage();
+    const { registry, as, storage } = make(env, devices);
+    await storage(SESSION).set(KEYS.screenings, [{ id: 'one' }]);
+    await storage(OTHER).set(KEYS.screenings, [{ id: 'two' }]);
+    expect((await namesIn(env)).sort()).toEqual([dbOf(SESSION), dbOf(OTHER)].sort());
+    // The device's own store is cleared in the same erase, and the list lives in it: the databases go first.
+    await deleteDeviceData(devices.storage, undefined, as(null));
+    expect(await namesIn(env)).toEqual([]);
+    expect(await registry.list()).toEqual([]);
+    expect(devices.data.size).toBe(0);
+  });
+
+  it('refuses to clear the device store when an anonymous database could not be deleted, so the list is not lost', async () => {
+    const devices = memoryStorage({ [KEYS.tickets]: [{ id: 't' }] });
+    await expect(deleteDeviceData(devices.storage, undefined, stubStore({ wipeAll: () => Promise.reject(new Error('refused')) }))).rejects.toThrow(/anonymous check-ins/);
+    expect(devices.data.has(KEYS.tickets)).toBe(true);
+  });
+
+  it('is written to the device store only, so an anonymous session still makes no request', async () => {
+    const { calls, fetchStub } = stubNetwork();
+    const { as, storage } = make(blindEnv());
+    await storage(SESSION).set(KEYS.screenings, [{ id: 'x' }]);
+    await as(SESSION).reconcile();
+    expect(fetchStub).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
+  });
+
+  it('survives a list that cannot be read or is not a list: it reads as empty rather than blocking the session', async () => {
+    const devices = memoryStorage({ [KEYS.anonymousSessions]: 'not a list' });
+    const { registry } = make(blindEnv(), devices);
+    expect(await registry.list()).toEqual([]);
+    devices.failures.read = true;
+    expect(await registry.list()).toEqual([]);
   });
 });
 

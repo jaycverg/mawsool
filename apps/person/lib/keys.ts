@@ -17,4 +17,5 @@ export const KEYS = {
   reminders: 'reminders',
   crisisHandoff: 'crisis:handoff',
   followUp: 'crisis:follow-up',
+  anonymousSessions: 'anonymous:sessions',
 } as const;

@@ -2,6 +2,7 @@ import { type CrisisHandoffReceipt, type CrisisTrigger, type Locale, type PhoneN
 import type { StorageAdapter } from '@mawsool/ui';
 import { z } from 'zod';
 import type { NewId, Now } from './clock';
+import type { CrisisRecord } from './crisis';
 import type { FlushResult } from './crisis-outbox';
 import { KEYS } from './keys';
 import { parsePhone } from './reminders';
@@ -37,6 +38,14 @@ export async function loadHandoffs(storage: StorageAdapter): Promise<HandoffReco
 /** The record for one crisis event, or null. */
 export function handoffFor(records: readonly HandoffRecord[], crisisEventId: string | null): HandoffRecord | null {
   return crisisEventId === null ? null : (records.find((record) => record.crisisEventId === crisisEventId) ?? null);
+}
+
+/**
+ * The crisis the screen may offer a hand-off for: the open crisis's own event, or null when none is open or when it opened in an
+ * anonymous session, whose crisis is never handed over (whatever session the phone is in when the record is read).
+ */
+export function handoffOffer(record: CrisisRecord | null): { eventId: string; trigger: CrisisTrigger } | null {
+  return record?.blocked && record.event && !record.anonymous ? { eventId: record.event.id, trigger: record.event.trigger } : null;
 }
 
 /**
@@ -97,6 +106,10 @@ export interface SendDeps {
  * leave two.
  */
 export async function sendHandoff(deps: SendDeps, input: { crisisEventId: string; screenings: readonly Screening[]; language: Locale; trigger: CrisisTrigger; callbackInput: string }): Promise<SendOutcome> {
+  // A crisis that opened in an anonymous session is never handed over, whatever session this phone is in now: the stored record
+  // says so, and this is the second guard behind the screen not offering it. Nothing is read from the server or sent to it.
+  const crisis = await deps.server.storage.get<CrisisRecord>(KEYS.crisisBlock).catch(() => undefined);
+  if (crisis?.anonymous && crisis.event?.id === input.crisisEventId) return 'failed';
   const typed = input.callbackInput.trim();
   const callback = typed === '' ? null : parsePhone(typed);
   if (typed !== '' && !callback) return 'invalid_number';
