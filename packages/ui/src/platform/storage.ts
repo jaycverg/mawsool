@@ -66,7 +66,16 @@ async function write(db: () => Promise<IDBDatabase>, storeName: string, operatio
 export function createIndexedDbStorage(options: IndexedDbStorageOptions): StorageAdapter {
   const storeName = options.storeName ?? 'kv';
   let connection: Promise<IDBDatabase> | null = null;
-  const db = () => (connection ??= open(options));
+  // When another connection (or this page's own delete request) asks to change or delete the database, this one closes and is
+  // opened again by the next call, so a delete is never left waiting on an idle connection.
+  const db = () =>
+    (connection ??= open(options).then((opened) => {
+      opened.onversionchange = () => {
+        opened.close();
+        connection = null;
+      };
+      return opened;
+    }));
   const store = async (mode: IDBTransactionMode) => (await db()).transaction(storeName, mode).objectStore(storeName);
 
   return {
@@ -96,4 +105,18 @@ export function createIndexedDbStorage(options: IndexedDbStorageOptions): Storag
     },
     clear: () => write(db, storeName, (store) => store.clear()),
   };
+}
+
+/**
+ * Deletes the whole database `dbName`, every record in it. Resolves once the browser has deleted it; rejects if it could not.
+ * Connections that are open to it, in this page or another, are asked to close first. Resolves too, without waiting for the
+ * last connection to close, if something holds a connection and ignores the request: the deletion then finishes when it does.
+ */
+export function deleteIndexedDb(factory: IDBFactory, dbName: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const deleting = factory.deleteDatabase(dbName);
+    deleting.onsuccess = () => resolve();
+    deleting.onerror = () => reject(deleting.error ?? new Error('IndexedDB could not be deleted'));
+    deleting.onblocked = () => resolve();
+  });
 }

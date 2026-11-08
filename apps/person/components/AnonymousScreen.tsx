@@ -42,7 +42,7 @@ export function AnonymousFacts({ cannotOnly = false }: { cannotOnly?: boolean })
 
 /**
  * Anonymous mode, explained, with the one explicit way in and the one explicit way out. Starting and leaving reload the page,
- * so every screen builds its store from the new mode. Leaving erases the check-ins of the session from the tab.
+ * so every screen builds its store from the new mode. Leaving deletes the session's encrypted check-ins and their key.
  */
 export function AnonymousScreen() {
   const t = useTranslations('anonymous');
@@ -58,8 +58,7 @@ export function AnonymousScreen() {
   }
 
   function leave() {
-    endAnonymousSession();
-    window.location.assign(href(lang, ''));
+    void endAnonymousSession().then(() => window.location.assign(href(lang, '')));
   }
 
   return (

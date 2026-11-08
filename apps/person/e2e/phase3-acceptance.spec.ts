@@ -7,12 +7,15 @@ import {
   INSPECT,
   LOCALES,
   answerAll,
+  anonymousDb,
   computed,
   crisisUrl,
   escapeRe,
+  finishButton,
   goOffline,
   installFailingIndexedDb,
   msg,
+  pageStorage,
   rawStoreKeys,
   setIdbMode,
   snapshot,
@@ -22,6 +25,7 @@ import {
   visitOnline,
   waitForStored,
   watchNavigationRequests,
+  type IdbMode,
   type Locale,
 } from './helpers';
 
@@ -261,7 +265,11 @@ async function startAnonymous(page: Page, locale: Locale, watch: ApiWatch): Prom
   await expect(page.locator('[data-anonymous-banner]')).toContainText(msg(locale, 'anonymous.banner'));
 }
 
-const anonymousKeysInTab = (page: Page) => page.evaluate(() => Object.keys(sessionStorage).filter((name) => name.startsWith('mawsool.anon:')));
+/** The rows an anonymous session's database holds: the owner's id, the check-ins as ciphertext, and the key that opens them. */
+const ANONYMOUS_DB_ROWS = ['__device-key', 'owner', 'screenings'];
+
+/** The tab's note for the session: a random id and nothing else. */
+const ANONYMOUS_NOTE = /^\{"session":"[0-9a-f-]{36}"\}$/;
 
 const ANONYMOUS_CASES: Record<string, (ctx: Context) => Promise<void>> = {
   async 'anonymous-session-makes-no-request-to-the-api'({ page, context, locale }) {
@@ -277,7 +285,7 @@ const ANONYMOUS_CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await page.reload();
     await expect(page.locator('[data-score]')).toHaveText('11');
     await expect(page.locator('[data-anonymous-banner]')).toBeVisible();
-    expect(await anonymousKeysInTab(page)).toContain('mawsool.anon:screenings');
+    expect(Object.keys((await anonymousDb(page)).rows).sort()).toEqual(ANONYMOUS_DB_ROWS);
 
     // The device store holds none of what a server relationship leaves behind.
     const keys = await rawStoreKeys(page);
@@ -295,7 +303,7 @@ const ANONYMOUS_CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page.locator('[data-anonymous-state="on"]')).toBeVisible();
     await page.locator('[data-anonymous-leave]').click();
     await expect(page.locator('[data-anonymous-confirm]')).toContainText(msg(locale, 'anonymous.leaveConfirm'));
-    expect(await anonymousKeysInTab(page)).toContain('mawsool.anon:screenings');
+    expect(Object.keys((await anonymousDb(page)).rows).sort()).toEqual(ANONYMOUS_DB_ROWS);
     // Not one request to the API from the choice to here. Leaving ends the session, so what follows is an ordinary visit.
     expect(api.hits).toEqual([]);
     api.blocking = false;
@@ -305,7 +313,8 @@ const ANONYMOUS_CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await directory;
     await expect(page.locator('[data-anonymous-banner]')).toHaveCount(0);
     await expect(page.locator('[data-anonymous-offer]')).toBeVisible();
-    expect(await anonymousKeysInTab(page)).toEqual([]);
+    expect((await anonymousDb(page)).exists).toBe(false);
+    expect((await pageStorage(page)).session['mawsool.anonymous']).toBeUndefined();
     await page.goto(resultUrl);
     await expect(page.getByText(msg(locale, 'result.notFound'), { exact: true })).toBeVisible();
   },
@@ -363,14 +372,162 @@ const ANONYMOUS_CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await confirmDelete(page, locale);
     await expect(page.getByText(msg(locale, 'settings.deleted'), { exact: true })).toBeVisible({ timeout: 20_000 });
     await expect.poll(() => rawStoreKeys(page), { timeout: 10_000 }).not.toContain('crisis:block');
-    expect(await anonymousKeysInTab(page)).toEqual([]);
+    expect((await anonymousDb(page)).exists).toBe(false);
     expect(await page.evaluate(() => sessionStorage.getItem('mawsool.crisis-mark'))).toBeNull();
     expect(api.hits).toEqual([]);
   },
 };
 
+/** The phone is in an anonymous session and the browser's storage fails when the trigger answer arrives. */
+async function anonymousCrisisWithFailingStorage({ page, context, locale }: Context, mode: IdbMode): Promise<void> {
+  const api = await watchApi(context);
+  await installFailingIndexedDb(page);
+  await startAnonymous(page, locale, api);
+  await page.goto(`/${locale}/check-in/?i=phq9`);
+  await answerAll(page, locale, [0, 0, 0, 0, 0, 0, 0, 0]);
+  await page.getByRole('button', { name: msg(locale, 'flow.next'), exact: true }).click();
+  await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '9');
+
+  await setIdbMode(page, mode);
+  await page.locator('input[type="radio"][value="1"]').click();
+  await expect(page).toHaveURL(crisisUrl(locale), { timeout: 15_000 });
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(msg(locale, 'crisis.heading'));
+  for (const number of ['800725462', '998', '999']) await expect(page.locator(`a[href="tel:${number}"]`)).toBeVisible();
+
+  // The block holds for the rest of the tab, with the anonymous database failing: Back, a direct visit, a reload.
+  await page.goBack();
+  await expect(page).toHaveURL(crisisUrl(locale), { timeout: 15_000 });
+  for (const screen of ['options', 'check-in', 'result']) {
+    await page.goto(`/${locale}/${screen}/`);
+    await expect(page).toHaveURL(crisisUrl(locale), { timeout: 15_000 });
+  }
+  await page.reload();
+  await expect(page).toHaveURL(crisisUrl(locale));
+
+  // The person is not trapped: "I'm safe right now" releases the block whatever the storage does.
+  await page.getByRole('button', { name: msg(locale, 'crisis.safeNow'), exact: true }).click();
+  await expect(page).not.toHaveURL(crisisUrl(locale), { timeout: 15_000 });
+  expect(api.hits).toEqual([]);
+}
+
+const ANONYMOUS_STORAGE_CASES: Record<string, (ctx: Context) => Promise<void>> = {
+  async 'anonymous-check-ins-and-results-stay-out-of-plain-text-storage'({ page, context, locale }) {
+    const api = await watchApi(context);
+    await startAnonymous(page, locale, api);
+
+    /** Nothing the person answered or was told is in the tab's page storage; the only plain notes are the session id and, once a crisis is open, its mark. */
+    const expectNoHealthDataInPlainText = async (stage: string, crisisOpen: boolean) => {
+      const { session, local } = await pageStorage(page);
+      expect(local, `${stage}: localStorage`).toEqual({});
+      expect(Object.keys(session).sort(), `${stage}: sessionStorage`).toEqual(crisisOpen ? ['mawsool.anonymous', 'mawsool.crisis-mark'] : ['mawsool.anonymous']);
+      expect(session['mawsool.anonymous'], stage).toMatch(ANONYMOUS_NOTE);
+      if (crisisOpen) expect(Object.keys(JSON.parse(session['mawsool.crisis-mark']!) as object).sort(), stage).toEqual(['eventId', 'shownAt', 'trigger']);
+      if (crisisOpen) {
+        const markNote = JSON.parse(session['mawsool.crisis-mark']!) as { trigger: string; eventId: string; shownAt: string };
+        expect(['phq9_item9', 'cssrs'], stage).toContain(markNote.trigger);
+        expect(markNote.eventId, stage).toMatch(/^[0-9a-f-]{36}$/);
+        expect(new Date(markNote.shownAt).toISOString(), stage).toBe(markNote.shownAt);
+      }
+      const everything = JSON.stringify({ session: { 'mawsool.anonymous': session['mawsool.anonymous'] }, local }).toLowerCase();
+      for (const word of ['score', 'total', 'band', 'answer', 'phq9', 'gad7', 'who5', 'moderate', 'severe', 'screening']) expect(everything, `${stage}: ${word}`).not.toContain(word);
+    };
+
+    // Part way through a check-in, with answers given.
+    await page.goto(`/${locale}/check-in/?i=phq9`);
+    await answerAll(page, locale, PHQ9_ELEVEN);
+    await expectNoHealthDataInPlainText('check-in', false);
+
+    // Finished, on the result and after a reload of it: the database holds them as ciphertext under a key no script can read.
+    await finishButton(page, locale).click();
+    await expect(page.locator('[data-score]')).toHaveText('11');
+    await expectNoHealthDataInPlainText('result', false);
+    await page.reload();
+    await expect(page.locator('[data-score]')).toHaveText('11');
+    await expectNoHealthDataInPlainText('result after reload', false);
+    const db = await anonymousDb(page);
+    expect(db.rows['screenings']).toEqual({ kind: 'sealed', fields: ['ct', 'iv', 'v'] });
+    expect(db.rows['__device-key']).toEqual({ kind: 'key', extractable: false });
+    expect(db.rows['owner']?.kind).toBe('text');
+    expect(db.rows['owner']?.text).toMatch(/^[0-9a-f-]{36}$/);
+
+    // A crisis in the session: the mark names the trigger, an event id and a time, and still no answer or score is in plain text.
+    await triggerCrisis(page, locale);
+    await expectNoHealthDataInPlainText('crisis screen', true);
+    expect(api.hits).toEqual([]);
+  },
+
+  async 'anonymous-store-and-key-are-deleted-on-leaving-on-delete-everything-and-on-a-new-tab-session'({ page, context, locale }) {
+    // Every deletion of a database is logged in the tab, with the address of the page that asked, so that a database found gone is
+    // known to have been deleted by the path under test and not by a later start of the app.
+    await context.addInitScript(() => {
+      const original = IDBFactory.prototype.deleteDatabase;
+      IDBFactory.prototype.deleteDatabase = function (this: IDBFactory, name: string) {
+        const log = JSON.parse(sessionStorage.getItem('e2e.deletes') ?? '[]') as string[];
+        sessionStorage.setItem('e2e.deletes', JSON.stringify([...log, `${location.pathname} ${name}`]));
+        return original.call(this, name);
+      };
+    });
+    const deletesBy = async (target: Page) => JSON.parse((await pageStorage(target)).session['e2e.deletes'] ?? '[]') as string[];
+    const api = await watchApi(context);
+    await startAnonymous(page, locale, api);
+    const checkIn = async (target: Page) => {
+      await takeCheckIn(target, locale, 'phq9', PHQ9_ELEVEN);
+      await expect(target.locator('[data-score]')).toHaveText('11');
+      expect(Object.keys((await anonymousDb(target)).rows).sort()).toEqual(ANONYMOUS_DB_ROWS);
+    };
+
+    // Delete everything: the database goes, ciphertext, key and owner with it, and the session carries on with a new, empty one.
+    await checkIn(page);
+    await page.goto(`/${locale}/settings/`);
+    await page.getByRole('button', { name: msg(locale, 'settings.delete'), exact: true }).click();
+    await confirmDelete(page, locale);
+    await expect(page.getByText(msg(locale, 'settings.deleted'), { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect.poll(async () => (await anonymousDb(page)).exists, { timeout: 10_000 }).toBe(false);
+    expect(await deletesBy(page)).toContain(`/${locale}/settings/ mawsool-anon`);
+
+    // A new tab session: the earlier tab closed without a chance to wipe, and the next start of the app, in a tab with no
+    // session of its own, deletes what it left. That start is an ordinary visit, so the API may be asked.
+    await checkIn(page);
+    const sessionBefore = (await pageStorage(page)).session['mawsool.anonymous'];
+    expect(api.hits).toEqual([]);
+    api.blocking = false;
+    const next = await context.newPage();
+    await next.goto(`/${locale}/`);
+    expect((await pageStorage(next)).session['mawsool.anonymous']).toBeUndefined();
+    await expect.poll(async () => (await anonymousDb(next)).exists, { timeout: 10_000 }).toBe(false);
+    expect(await deletesBy(next)).toEqual([`/${locale}/ mawsool-anon`]);
+    await next.close();
+    api.blocking = true;
+    expect((await pageStorage(page)).session['mawsool.anonymous']).toBe(sessionBefore);
+
+    // Leaving the session: the page that asked to leave is the one that deleted the database, before the next page's start.
+    await checkIn(page);
+    await page.goto(`/${locale}/anonymous/`);
+    await page.locator('[data-anonymous-leave]').click();
+    await expect(page.locator('[data-anonymous-confirm]')).toBeVisible();
+    expect(api.hits).toEqual([]);
+    api.blocking = false;
+    const directory = page.waitForResponse((response) => response.url() === `${API}/services?locale=${locale}` && response.ok());
+    await page.locator('[data-anonymous-leave-yes]').click();
+    await expect(page).toHaveURL(new RegExp(`^${escapeRe(BASE)}/${locale}/$`));
+    await directory;
+    expect(await deletesBy(page)).toContain(`/${locale}/anonymous/ mawsool-anon`);
+    expect((await anonymousDb(page)).exists).toBe(false);
+    expect((await pageStorage(page)).session['mawsool.anonymous']).toBeUndefined();
+  },
+
+  async 'anonymous-crisis-screen-opens-when-the-store-refuses'(ctx) {
+    await anonymousCrisisWithFailingStorage(ctx, 'refuse');
+  },
+
+  async 'anonymous-crisis-screen-opens-when-the-store-hangs'(ctx) {
+    await anonymousCrisisWithFailingStorage(ctx, 'hang');
+  },
+};
+
 const CASES: Record<string, (ctx: Context) => Promise<void>> = {
   ...ANONYMOUS_CASES,
+  ...ANONYMOUS_STORAGE_CASES,
   async 'directory-names-follow-the-language'({ page, locale }) {
     // Every service name the person is shown (the option cards, the consent screen, the ticket) and the clinic's name and
     // contact are in the page's language. In Arabic none of them has a Latin letter; in English they are the sample names.
