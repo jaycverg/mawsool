@@ -1,5 +1,5 @@
 import type { StorageAdapter, TabMarkAdapter } from '@mawsool/ui';
-import { wipeAnonymousData } from './anonymous';
+import { wipeAnonymousData, type AnonymousStore } from './anonymous';
 import { KEYS } from './keys';
 
 /**
@@ -32,13 +32,13 @@ export async function exportDeviceData(storage: StorageAdapter, now: () => Date)
 }
 
 /**
- * Wipes everything on this phone: the encrypted store and its key, and the tab's crisis mark with them, so deleting
+ * Wipes everything on this phone: the encrypted store and its key, the anonymous session's encrypted store and its key, and the tab's crisis mark with them, so deleting
  * everything leaves nothing behind that could still hold a block. Nothing on the server is touched here; `eraseEverything`
  * (erase.ts) does that first.
  */
-export async function deleteDeviceData(storage: StorageAdapter, tabMark?: TabMarkAdapter<unknown>): Promise<void> {
+export async function deleteDeviceData(storage: StorageAdapter, tabMark?: TabMarkAdapter<unknown>, anonymous?: AnonymousStore | null): Promise<void> {
   await storage.clear();
-  // What an anonymous session kept in this tab goes too, whichever mode the deleting is done in.
-  wipeAnonymousData();
+  // What an anonymous session kept on this device goes too, whichever mode the deleting is done in: its encrypted check-ins and their key.
+  await wipeAnonymousData(anonymous);
   tabMark?.set(null);
 }

@@ -4,6 +4,7 @@ import {
   InvalidPhoneNumberError,
   createIndexedDbStorage,
   createWebDialler,
+  deleteIndexedDb,
   createWebNotifications,
   telUrl,
 } from '../src';
@@ -126,6 +127,46 @@ describe('storage adapter (IndexedDB)', () => {
       },
     } as unknown as IDBFactory;
     await expect(createIndexedDbStorage({ indexedDB: broken }).get('k')).rejects.toThrow('no storage');
+  });
+
+  it('deletes the whole database even while this adapter holds a connection, and opens a new empty one afterwards', async () => {
+    const factory = new IDBFactory();
+    const storage = createIndexedDbStorage({ indexedDB: factory, dbName: 'doomed' });
+    await storage.set('k', 'v');
+    await storage.set('__key', 'secret');
+    expect((await factory.databases()).map((db) => db.name)).toContain('doomed');
+    await deleteIndexedDb(factory, 'doomed');
+    expect((await factory.databases()).map((db) => db.name)).not.toContain('doomed');
+    expect(await storage.get('k')).toBeUndefined();
+    expect(await storage.keys()).toEqual([]);
+  });
+
+  it('deletes a database another adapter, in another page, holds open, and leaves the others alone', async () => {
+    const factory = new IDBFactory();
+    const other = createIndexedDbStorage({ indexedDB: factory, dbName: 'other' });
+    const holder = createIndexedDbStorage({ indexedDB: factory, dbName: 'doomed' });
+    await other.set('k', 'kept');
+    await holder.set('k', 'gone');
+    await deleteIndexedDb(factory, 'doomed');
+    expect(await other.get('k')).toBe('kept');
+    expect((await factory.databases()).map((db) => db.name)).toEqual(['other']);
+  });
+
+  it('deleting a database that does not exist succeeds and creates nothing', async () => {
+    const factory = new IDBFactory();
+    await deleteIndexedDb(factory, 'never-made');
+    expect(await factory.databases()).toEqual([]);
+  });
+
+  it('rejects when the browser refuses to delete', async () => {
+    const refusing = {
+      deleteDatabase() {
+        const req: { onerror?: () => void; error: Error } = { error: new Error('no delete') };
+        queueMicrotask(() => req.onerror?.());
+        return req;
+      },
+    } as unknown as IDBFactory;
+    await expect(deleteIndexedDb(refusing, 'x')).rejects.toThrow('no delete');
   });
 
   it('rejects when opening is blocked', async () => {

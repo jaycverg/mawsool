@@ -1,10 +1,25 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { createTabMark } from '@mawsool/ui';
+import { createIndexedDbStorage, createTabMark } from '@mawsool/ui';
+import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ANONYMOUS_KEPT_KEYS, createAnonymousStorage, endAnonymousSession, isAnonymous, startAnonymousSession, wipeAnonymousData } from '../lib/anonymous';
+import {
+  ANONYMOUS_DB,
+  ANONYMOUS_KEPT_KEYS,
+  anonymousSessionId,
+  createAnonymousStorage,
+  createAnonymousStore,
+  endAnonymousSession,
+  isAnonymous,
+  isAnonymousMark,
+  reconcileAnonymousStore,
+  startAnonymousSession,
+  wipeAnonymousData,
+  type AnonymousEnv,
+} from '../lib/anonymous';
 import { createCrisisStore, isCrisisMark, type CrisisMark } from '../lib/crisis';
 import { pendingEvents } from '../lib/crisis-outbox';
+import { recordAnswer } from '../lib/record-answer';
 import { deleteDeviceData } from '../lib/device-data';
 import { refreshDemoOffset } from '../lib/demo-offset';
 import { loadDirectory } from '../lib/directory';
@@ -19,20 +34,24 @@ import ar from '../messages/ar.json';
 import en from '../messages/en.json';
 import { fixtureClock, memoryStorage } from './helpers/memory';
 
-/** A `sessionStorage` over a map, with the properties `wipeAnonymousData` walks. */
-function fakeSession() {
-  const data = new Map<string, string>();
-  const session = {
-    get length() {
-      return data.size;
-    },
-    key: (index: number) => [...data.keys()][index] ?? null,
-    getItem: (key: string) => data.get(key) ?? null,
-    setItem: (key: string, value: string) => void data.set(key, value),
-    removeItem: (key: string) => void data.delete(key),
-  } as unknown as Storage;
-  return { session, data };
+const SESSION = '11111111-1111-4111-8111-111111111111';
+
+/** The browser's parts for one anonymous store, over a fresh in-memory IndexedDB. */
+const freshEnv = (): AnonymousEnv => ({ indexedDB: new IDBFactory(), crypto: globalThis.crypto });
+
+/** Whether the anonymous database exists at all: false once it has been deleted, ciphertext, key and owner with it. */
+async function dbExists(env: AnonymousEnv): Promise<boolean> {
+  return (await env.indexedDB.databases()).some((db) => db.name === ANONYMOUS_DB);
 }
+
+/** The rows of the anonymous database exactly as the browser holds them. */
+async function rawRows(env: AnonymousEnv): Promise<Map<string, unknown>> {
+  const raw = createIndexedDbStorage({ indexedDB: env.indexedDB, dbName: ANONYMOUS_DB });
+  return new Map(await Promise.all((await raw.keys()).map(async (key) => [key, await raw.get<unknown>(key)] as const)));
+}
+
+/** The bytes of a stored ciphertext as text, to look for what must not be in it. */
+const ciphertextText = (row: unknown): string => Buffer.from((row as { ct: ArrayBuffer }).ct).toString('latin1');
 
 /** Every way a page can reach a network, as stubs that record a call and then fail it. */
 function stubNetwork() {
@@ -57,61 +76,95 @@ function stubNetwork() {
 
 beforeEach(() => {
   refusedRequests.count = 0;
-  startAnonymousSession();
+  startAnonymousSession(() => SESSION);
 });
 
-afterEach(() => {
-  endAnonymousSession();
+afterEach(async () => {
+  await endAnonymousSession(null);
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
+/** One anonymous store over a fresh IndexedDB, with the device's own store beside it and the tab session it answers to. */
+function setup(initialPersistent: Record<string, unknown> = {}) {
+  const env = freshEnv();
+  const persistent = memoryStorage(initialPersistent);
+  const tab = { session: SESSION as string | null };
+  const make = (session: () => string | null = () => tab.session) => createAnonymousStore(env, session);
+  const store = make();
+  const anonymous = createAnonymousStorage(() => persistent.storage, store);
+  /** A new page load in the same tab: its own store object over the same browser database. */
+  const reload = () => createAnonymousStorage(() => persistent.storage, make());
+  return { env, persistent, tab, make, store, anonymous, reload };
+}
+
+async function saveCheckIn(storage: ReturnType<typeof createAnonymousStorage>) {
+  const clock = fixtureClock();
+  return saveAnswer(storage, { instrument: 'gad7', index: 0, value: 2 }, { now: clock.now, newId: clock.newId });
+}
+
 describe('an anonymous session', () => {
-  it('is a mark on the tab: started, read back, and ended', () => {
+  it('is a note on the tab that holds a random id and nothing else: started, read back, and ended', async () => {
     expect(isAnonymous()).toBe(true);
-    endAnonymousSession();
+    expect(anonymousSessionId()).toBe(SESSION);
+    await endAnonymousSession(null);
     expect(isAnonymous()).toBe(false);
+    expect(anonymousSessionId()).toBeNull();
     startAnonymousSession();
-    expect(isAnonymous()).toBe(true);
+    expect(anonymousSessionId()).toMatch(/^[0-9a-f-]{36}$/);
+    expect(anonymousSessionId()).not.toBe(SESSION);
+  });
+
+  it('accepts only the note it writes: a session id, no extra field that could carry an answer, no bare flag', () => {
+    expect(isAnonymousMark({ session: SESSION })).toBe(true);
+    expect(isAnonymousMark({ session: SESSION, screenings: [] })).toBe(false);
+    expect(isAnonymousMark({ session: '' })).toBe(false);
+    expect(isAnonymousMark({})).toBe(false);
+    expect(isAnonymousMark(true)).toBe(false);
+    expect(isAnonymousMark(null)).toBe(false);
   });
 });
 
 describe('the anonymous store', () => {
-  const setup = () => {
-    const persistent = memoryStorage();
-    const { session, data } = fakeSession();
-    const make = () => createAnonymousStorage(() => persistent.storage, session);
-    return { persistent, session, data, make };
-  };
+  it('keeps the check-ins as ciphertext under a key that cannot be exported, in a database of its own', async () => {
+    const { env, persistent, anonymous } = setup();
+    const saved = await saveCheckIn(anonymous);
+    const rows = await rawRows(env);
+    expect([...rows.keys()].sort()).toEqual(['__device-key', 'owner', KEYS.screenings]);
+    expect(rows.get('owner')).toBe(SESSION); // the one plain row: a random id
+    const key = rows.get('__device-key') as CryptoKey;
+    expect(key.extractable).toBe(false);
+    await expect(globalThis.crypto.subtle.exportKey('raw', key)).rejects.toThrow();
+    const sealed = rows.get(KEYS.screenings);
+    expect(JSON.stringify(sealed)).not.toContain('gad7');
+    for (const word of ['gad7', 'instrument', 'answers', 'total', saved.id]) expect(ciphertextText(sealed), word).not.toContain(word);
+    expect(persistent.data.size).toBe(0); // nothing reaches the device's own store
+  });
 
-  it('keeps the check-ins for the tab: a new page load over the same tab reads them, and nothing reaches the device store', async () => {
-    const { persistent, make, data } = setup();
-    const clock = fixtureClock();
-    const saved = await saveAnswer(make(), { instrument: 'gad7', index: 0, value: 2 }, { now: clock.now, newId: clock.newId });
-    const reloaded = make(); // each screen is its own page load
+  it('is read back by a new page load of the same session, as every screen is its own page load', async () => {
+    const { anonymous, reload } = setup();
+    const saved = await saveCheckIn(anonymous);
+    const reloaded = reload();
     expect(await loadScreenings(reloaded)).toEqual([saved]);
-    expect([...data.keys()].every((name) => name.startsWith('mawsool.anon:'))).toBe(true);
-    expect(persistent.data.size).toBe(0);
     expect(await reloaded.keys()).toEqual([KEYS.screenings]);
   });
 
   it('sends the crisis block to the device store, as outside an anonymous session, and reads it from there', async () => {
-    const { persistent, make, data } = setup();
-    const anonymous = make();
+    const { env, persistent, anonymous } = setup();
     await anonymous.set(KEYS.crisisBlock, { blocked: true });
     expect(persistent.data.get(KEYS.crisisBlock)).toEqual({ blocked: true });
-    expect(data.size).toBe(0);
+    expect(await dbExists(env)).toBe(false); // the crisis block never touched the anonymous database
     expect(await anonymous.get(KEYS.crisisBlock)).toEqual({ blocked: true });
   });
 
   it.each([KEYS.footprint, KEYS.crisisOutbox, KEYS.tickets, KEYS.directory, KEYS.invite, KEYS.equity, KEYS.crisisHandoff, KEYS.reminders, KEYS.followUp, KEYS.demoOffset, 'identity'])(
     'refuses to keep %s, so a path that was missed leaves no trace of a server relationship',
     async (key) => {
-      const { persistent, make, data } = setup();
-      const anonymous = make();
+      const { persistent, anonymous } = setup();
       await expect(anonymous.set(key, { x: 1 })).rejects.toThrow(/keeps nothing/);
       await expect(anonymous.setIfAbsent(key, { x: 1 })).rejects.toThrow(/keeps nothing/);
       expect(await anonymous.get(key)).toBeUndefined();
-      expect(data.size).toBe(0);
+      expect(await anonymous.keys()).toEqual([]);
       expect(persistent.data.size).toBe(0);
     },
   );
@@ -120,36 +173,161 @@ describe('the anonymous store', () => {
     expect(ANONYMOUS_KEPT_KEYS).toEqual([KEYS.screenings]);
   });
 
-  it('is emptied by clear(): the check-ins and the crisis block go, and a sibling key of the device store stays', async () => {
-    const { persistent, make, data } = setup();
-    const anonymous = make();
-    await anonymous.set(KEYS.screenings, [{ id: 'a' }]);
-    await anonymous.set(KEYS.crisisBlock, { blocked: true });
-    await persistent.storage.set(KEYS.tickets, [{ id: 'earlier' }]);
-    await anonymous.clear();
-    expect(data.size).toBe(0);
-    expect(await anonymous.get(KEYS.screenings)).toBeUndefined();
-    expect(persistent.data.has(KEYS.crisisBlock)).toBe(false);
-    expect(persistent.data.has(KEYS.tickets)).toBe(true);
-  });
-
-  it('holds on to the check-ins in memory when the browser refuses sessionStorage', async () => {
-    const persistent = memoryStorage();
-    const refusing = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); }, removeItem: () => { throw new Error('blocked'); }, length: 0, key: () => null } as unknown as Storage;
-    const anonymous = createAnonymousStorage(() => persistent.storage, refusing);
+  it('does not fall back to plain text when the browser refuses its database: the write fails, and is tried again on the next call', async () => {
+    const { env, anonymous } = setup();
+    const good = env.indexedDB;
+    env.indexedDB = { open: () => { throw new Error('refused'); }, deleteDatabase: good.deleteDatabase.bind(good), databases: good.databases.bind(good) } as unknown as IDBFactory;
+    await expect(anonymous.set(KEYS.screenings, [{ id: 'a' }])).rejects.toThrow('refused');
+    env.indexedDB = good;
     await anonymous.set(KEYS.screenings, [{ id: 'a' }]);
     expect(await anonymous.get(KEYS.screenings)).toEqual([{ id: 'a' }]);
   });
+});
 
-  it('is wiped by wipeAnonymousData, which leaves every other key of the tab alone', () => {
-    const { session, data } = fakeSession();
-    data.set('mawsool.anon:screenings', '[]');
-    data.set('mawsool.crisis-mark', '{}');
-    data.set('theme', 'dark');
-    wipeAnonymousData(session);
-    expect([...data.keys()].sort()).toEqual(['mawsool.crisis-mark', 'theme']);
+describe('the wipe paths of the anonymous store', () => {
+  async function seeded() {
+    const ctx = setup();
+    await saveCheckIn(ctx.anonymous);
+    const before = await rawRows(ctx.env);
+    expect([...before.keys()]).toContain(KEYS.screenings);
+    expect([...before.keys()]).toContain('__device-key');
+    return ctx;
+  }
+
+  it('leaving the session deletes the database, the ciphertext and the key with it, and ends the session', async () => {
+    const { env, store } = await seeded();
+    await endAnonymousSession(store);
+    expect(await dbExists(env)).toBe(false);
+    expect(isAnonymous()).toBe(false);
   });
 
+  it('leaving still ends the session when the database cannot be deleted, and the next start deletes it', async () => {
+    const { env, store, make } = await seeded();
+    await endAnonymousSession({ ...store, wipe: () => Promise.reject(new Error('refused')) });
+    expect(isAnonymous()).toBe(false);
+    expect(await dbExists(env)).toBe(true);
+    await reconcileAnonymousStore(make(() => null));
+    expect(await dbExists(env)).toBe(false);
+  });
+
+  it('leaving does not wait for ever on a database that hangs', async () => {
+    await seeded();
+    vi.useFakeTimers();
+    const leaving = endAnonymousSession({ open: () => new Promise(() => undefined), reconcile: () => new Promise(() => undefined), wipe: () => new Promise(() => undefined) });
+    await vi.advanceTimersByTimeAsync(3000);
+    await leaving;
+    expect(isAnonymous()).toBe(false);
+  });
+
+  it('Delete everything deletes the database too, in an anonymous session and outside one, ciphertext and key', async () => {
+    const inSession = await seeded();
+    await deleteDeviceData(inSession.anonymous, undefined, inSession.store);
+    expect(await dbExists(inSession.env)).toBe(false);
+
+    const outside = await seeded();
+    outside.tab.session = null; // the deleting is done in a tab that is not anonymous
+    await deleteDeviceData(memoryStorage().storage, undefined, outside.store);
+    expect(await dbExists(outside.env)).toBe(false);
+  });
+
+  it('the anonymous store\'s clear() deletes the database and the crisis block and leaves the device store\'s other keys', async () => {
+    const { env, persistent, anonymous } = await seeded();
+    await persistent.storage.set(KEYS.crisisBlock, { blocked: true });
+    await persistent.storage.set(KEYS.tickets, [{ id: 'earlier' }]);
+    await anonymous.clear();
+    expect(await dbExists(env)).toBe(false);
+    expect(persistent.data.has(KEYS.crisisBlock)).toBe(false);
+    expect(persistent.data.has(KEYS.tickets)).toBe(true);
+    expect(await anonymous.get(KEYS.screenings)).toBeUndefined(); // the session goes on with a new, empty store
+  });
+
+  it('after a wipe the next write makes a new key: what was sealed under the old one is gone, not unreadable', async () => {
+    const { env, anonymous } = await seeded();
+    const oldKey = (await rawRows(env)).get('__device-key');
+    await anonymous.clear();
+    await anonymous.set(KEYS.screenings, [{ id: 'b' }]);
+    const rows = await rawRows(env);
+    expect(rows.get('__device-key')).not.toBe(oldKey);
+    expect(await anonymous.get(KEYS.screenings)).toEqual([{ id: 'b' }]);
+  });
+
+  it('a start in a tab that is not anonymous deletes what an earlier anonymous session left, as a closed tab could not', async () => {
+    const { env, make } = await seeded();
+    await reconcileAnonymousStore(make(() => null));
+    expect(await dbExists(env)).toBe(false);
+  });
+
+  it('a start in a new anonymous session deletes the earlier session\'s check-ins and key, and keeps only its own owner', async () => {
+    const { env, make } = await seeded();
+    const OTHER = '22222222-2222-4222-8222-222222222222';
+    const next = createAnonymousStorage(() => memoryStorage().storage, make(() => OTHER));
+    await reconcileAnonymousStore(make(() => OTHER));
+    const rows = await rawRows(env);
+    expect([...rows.keys()]).toEqual(['owner']);
+    expect(rows.get('owner')).toBe(OTHER);
+    expect(await next.get(KEYS.screenings)).toBeUndefined();
+  });
+
+  it('a start in the same session keeps its check-ins and key', async () => {
+    const { env, make, anonymous } = await seeded();
+    const before = await rawRows(env);
+    await reconcileAnonymousStore(make());
+    const after = await rawRows(env);
+    expect([...after.keys()].sort()).toEqual([...before.keys()].sort());
+    expect(await anonymous.get(KEYS.screenings)).toHaveLength(1);
+  });
+
+  it('a start that fails or finds no IndexedDB throws nothing and wipes nothing it cannot reach', async () => {
+    await expect(reconcileAnonymousStore(null)).resolves.toBeUndefined();
+    await expect(reconcileAnonymousStore({ open: () => Promise.reject(new Error('x')), reconcile: () => Promise.reject(new Error('x')), wipe: () => Promise.reject(new Error('x')) })).resolves.toBeUndefined();
+    await expect(wipeAnonymousData({ open: () => Promise.reject(new Error('x')), reconcile: () => Promise.reject(new Error('x')), wipe: () => Promise.reject(new Error('x')) })).resolves.toBeUndefined();
+    await expect(wipeAnonymousData(null)).resolves.toBeUndefined();
+  });
+});
+
+describe('a store that refuses or hangs never stands between an anonymous session and the crisis screen', () => {
+  const trigger = { instrument: 'phq9', index: 8, value: 1 } as const;
+  function crisisSetup(anonymousStore: ReturnType<typeof createAnonymousStore>) {
+    const clock = fixtureClock();
+    const persistent = memoryStorage();
+    const storage = createAnonymousStorage(() => persistent.storage, anonymousStore);
+    const fallback = createTabMark<CrisisMark>(undefined, 'crisis', isCrisisMark);
+    const crisis = createCrisisStore(storage, { now: clock.now, newId: clock.newId, fallback, readPatienceMs: 20, anonymous: true });
+    return { storage, persistent, fallback, crisis, deps: { storage, crisis, now: clock.now, newId: clock.newId, locale: 'en' as const, patienceMs: 40 } };
+  }
+  const refusing = (): ReturnType<typeof createAnonymousStore> => ({ open: () => Promise.reject(new Error('refused')), reconcile: () => Promise.reject(new Error('refused')), wipe: () => Promise.resolve() });
+  const hanging = (): ReturnType<typeof createAnonymousStore> => ({ open: () => new Promise(() => undefined), reconcile: () => new Promise(() => undefined), wipe: () => new Promise(() => undefined) });
+
+  it('takes the crisis path and saves the block on the device when the anonymous database refuses', async () => {
+    const { deps, persistent, fallback, crisis } = crisisSetup(refusing());
+    const outcome = await recordAnswer(trigger, deps);
+    expect(outcome).toMatchObject({ kind: 'crisis', screening: null, blockSaved: true });
+    expect(fallback.get()).not.toBeNull();
+    expect(persistent.data.get(KEYS.crisisBlock)).toMatchObject({ blocked: true, trigger: 'phq9_item9', anonymous: true });
+    expect((await crisis.read()).status).toBe('blocked');
+  });
+
+  it('takes the crisis path, within its patience, when the anonymous database hangs, and the tab still says blocked', async () => {
+    const { deps, fallback, crisis } = crisisSetup(hanging());
+    const started = Date.now();
+    const outcome = await recordAnswer(trigger, deps);
+    expect(outcome.kind).toBe('crisis');
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(fallback.get()).not.toBeNull();
+    expect((await crisis.read()).status).toBe('blocked');
+  });
+
+  it('reads the block and resolves it without ever asking the anonymous database', async () => {
+    const asked: string[] = [];
+    const watching: ReturnType<typeof createAnonymousStore> = { open: () => { asked.push('open'); return new Promise(() => undefined); }, reconcile: () => Promise.resolve(), wipe: () => Promise.resolve() };
+    const { crisis } = crisisSetup(watching);
+    await crisis.raise({ trigger: 'phq9_item9', screeningId: null, locale: 'en' });
+    expect((await crisis.read()).status).toBe('blocked');
+    await crisis.recordCall('999');
+    await crisis.resolve();
+    expect((await crisis.read()).status).toBe('clear');
+    expect(asked).toEqual([]);
+  });
 });
 
 describe('zero server calls', () => {
@@ -177,7 +355,8 @@ describe('zero server calls', () => {
   it('turns every server entry point into the failure of a phone with no network, and calls nothing', async () => {
     const { calls, fetchStub } = stubNetwork();
     const store = memoryStorage();
-    const anonymous = createAnonymousStorage(() => store.storage, fakeSession().session);
+    const { env } = setup();
+    const anonymous = createAnonymousStorage(() => store.storage, createAnonymousStore(env, () => SESSION));
     const fetcher = deviceFetch();
     expect(await callServer({ storage: anonymous, fetch: fetcher, apiUrl: 'http://api.test', locale: 'en', random: globalThis.crypto }, 'POST', '/me/crisis-handoffs', {})).toMatchObject({ ok: false });
     expect(await loadDirectory({ storage: anonymous, fetch: fetcher, apiUrl: 'http://api.test', locale: 'en', now: () => new Date() })).toBeNull();
@@ -263,7 +442,7 @@ describe('the crisis path in an anonymous session', () => {
 
   it('survives closing the tab and reopening in an ordinary session: the block is still there', async () => {
     const persistent = memoryStorage();
-    const anonymousStore = createAnonymousStorage(() => persistent.storage, fakeSession().session);
+    const anonymousStore = createAnonymousStorage(() => persistent.storage, createAnonymousStore(freshEnv(), () => SESSION));
     const clock = fixtureClock();
     const fallback = createTabMark<CrisisMark>(undefined, 'crisis', isCrisisMark);
     await createCrisisStore(anonymousStore, { now: clock.now, newId: clock.newId, fallback, anonymous: true }).raise(RAISE);
@@ -274,12 +453,11 @@ describe('the crisis path in an anonymous session', () => {
 });
 
 describe('Delete everything in an anonymous session', () => {
-  it('erases the session without a request: the check-ins and the crisis block go, and the server is never asked', async () => {
+  it('erases the session without a request: the encrypted check-ins, their key and the crisis block go, and the server is never asked', async () => {
     const { calls, fetchStub } = stubNetwork();
-    const persistent = memoryStorage({ [KEYS.crisisBlock]: { blocked: true, trigger: 'phq9_item9' } });
-    const { session, data } = fakeSession();
-    const anonymous = createAnonymousStorage(() => persistent.storage, session);
-    await anonymous.set(KEYS.screenings, [{ id: 'a' }]);
+    const { env, persistent, store, anonymous } = setup({ [KEYS.crisisBlock]: { blocked: true, trigger: 'phq9_item9' } });
+    await saveCheckIn(anonymous);
+    expect(await dbExists(env)).toBe(true);
     const tabMark = createTabMark<{ id: string }>(undefined, 'k', (value): value is { id: string } => typeof value === 'object');
     tabMark.set({ id: 'open' });
     const outcome = await eraseEverything({
@@ -288,22 +466,15 @@ describe('Delete everything in an anonymous session', () => {
       server: { storage: anonymous, fetch: deviceFetch(), apiUrl: 'http://api.test', locale: 'en', random: globalThis.crypto },
       flushCrisis: async () => ({ outcome: 'empty', sent: 0, rejected: 0 }),
       crisisIsOpen: async () => true,
+      anonymousStore: store,
     });
     expect(outcome).toMatchObject({ status: 'erased', crisisWasOpen: true });
-    expect(data.size).toBe(0);
+    expect(await dbExists(env)).toBe(false);
     expect(persistent.data.has(KEYS.crisisBlock)).toBe(false);
     expect(tabMark.get()).toBeNull();
     expect(fetchStub).not.toHaveBeenCalled();
     expect(calls).toEqual([]);
     expect(refusedRequests.count).toBe(0);
-  });
-
-  it('reaches what an anonymous session left in the tab even when the deleting is done outside it', async () => {
-    const { session, data } = fakeSession();
-    data.set('mawsool.anon:screenings', '[{"id":"a"}]');
-    vi.stubGlobal('window', { sessionStorage: session });
-    await deleteDeviceData(memoryStorage().storage);
-    expect(data.size).toBe(0);
   });
 });
 

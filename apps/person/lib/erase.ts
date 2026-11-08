@@ -1,4 +1,5 @@
 import type { StorageAdapter, TabMarkAdapter } from '@mawsool/ui';
+import type { AnonymousStore } from './anonymous';
 import { loadHandoffs } from './crisis-handoff';
 import { pendingEvents, type FlushResult } from './crisis-outbox';
 import { deleteDeviceData } from './device-data';
@@ -29,6 +30,8 @@ export interface EraseDeps {
   flushCrisis: () => Promise<FlushResult>;
   /** Whether a crisis screen is open right now. */
   crisisIsOpen: () => Promise<boolean>;
+  /** The anonymous session's encrypted database, deleted with the rest. The browser's own when not given. */
+  anonymousStore?: AnonymousStore | null;
 }
 
 /**
@@ -42,7 +45,7 @@ export interface EraseDeps {
  *     server is asked to revoke every consent, delete the summaries and notes and clear the buckets, with the ids of the notes
  *     this phone made so that one still on its way is refused. If it cannot be reached, the run stops here
  *     with nothing deleted. A phone that never did so wipes without any network.
- *  3. The encrypted store, its key and the tab's crisis mark are removed.
+ *  3. The encrypted store, its key, the anonymous session's encrypted store and its key, and the tab's crisis mark are removed.
  */
 export async function eraseEverything(deps: EraseDeps): Promise<EraseOutcome> {
   let footprint: boolean;
@@ -73,7 +76,7 @@ export async function eraseEverything(deps: EraseDeps): Promise<EraseOutcome> {
   }
 
   try {
-    await deleteDeviceData(deps.storage, deps.tabMark);
+    await deleteDeviceData(deps.storage, deps.tabMark, deps.anonymousStore);
   } catch {
     return { status: 'failed' };
   }

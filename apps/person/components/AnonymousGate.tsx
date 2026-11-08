@@ -4,7 +4,7 @@ import { isLocale } from '@mawsool/ui';
 import { useLocale, useTranslations } from 'next-intl';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
-import { isAnonymous } from '../lib/anonymous';
+import { isAnonymous, reconcileAnonymousStore } from '../lib/anonymous';
 import { href, isAnonymousWalledPath, stripLocale } from '../lib/routes';
 import { AnonymousFacts } from './AnonymousScreen';
 
@@ -22,7 +22,11 @@ export function AnonymousGate({ children }: { children: ReactNode }) {
   const lang = isLocale(locale) ? locale : 'en';
   const t = useTranslations('anonymous');
   const [mode, setMode] = useState<Mode>('checking');
-  useEffect(() => setMode(isAnonymous() ? 'anonymous' : 'normal'), []);
+  useEffect(() => {
+    setMode(isAnonymous() ? 'anonymous' : 'normal');
+    // Start of the app in this tab: the store of an earlier anonymous session, whose tab closed without a chance to wipe it, goes now.
+    void reconcileAnonymousStore();
+  }, []);
 
   const walled = isAnonymousWalledPath(pathname);
   if (walled && mode === 'checking') return <main aria-busy="true" className="min-h-dvh" data-anonymous-gate="checking" />;

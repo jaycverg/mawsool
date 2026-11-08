@@ -181,6 +181,68 @@ export async function rawStoreKeys(page: Page): Promise<string[]> {
   );
 }
 
+/** How one row of the anonymous session's database looks from outside, without its contents. */
+export interface AnonymousDbRow {
+  kind: 'key' | 'sealed' | 'text' | 'other';
+  /** For the key: whether the browser lets a script read its bytes. */
+  extractable?: boolean;
+  /** For a sealed row: the names of its fields. A ciphertext row is an IV and the bytes and nothing else. */
+  fields?: string[];
+  /** For a plain row: the text. Only the owner's random id is ever plain. */
+  text?: string;
+}
+
+/**
+ * The anonymous session's IndexedDB database as the browser holds it: whether it exists at all, and its rows described by kind.
+ * The database is looked up first, because opening a missing one would make it.
+ */
+export async function anonymousDb(page: Page): Promise<{ exists: boolean; rows: Record<string, AnonymousDbRow> }> {
+  return page.evaluate(
+    () =>
+      new Promise<{ exists: boolean; rows: Record<string, AnonymousDbRow> }>((resolve, reject) => {
+        indexedDB
+          .databases()
+          .then((all) => {
+            if (!all.some((db) => db.name === 'mawsool-anon')) return resolve({ exists: false, rows: {} });
+            const opening = indexedDB.open('mawsool-anon');
+            opening.onerror = () => reject(opening.error);
+            opening.onsuccess = () => {
+              const db = opening.result;
+              if (!db.objectStoreNames.contains('kv')) {
+                db.close();
+                return resolve({ exists: true, rows: {} });
+              }
+              const store = db.transaction('kv').objectStore('kv');
+              const keys = store.getAllKeys();
+              const values = store.getAll();
+              values.onsuccess = () => {
+                const rows: Record<string, AnonymousDbRow> = {};
+                keys.result.forEach((key, index) => {
+                  const value = values.result[index] as unknown;
+                  if (typeof CryptoKey !== 'undefined' && value instanceof CryptoKey) rows[String(key)] = { kind: 'key', extractable: value.extractable };
+                  else if (typeof value === 'string') rows[String(key)] = { kind: 'text', text: value };
+                  else if (typeof value === 'object' && value !== null && (value as { ct?: unknown }).ct instanceof ArrayBuffer) rows[String(key)] = { kind: 'sealed', fields: Object.keys(value).sort() };
+                  else rows[String(key)] = { kind: 'other' };
+                });
+                db.close();
+                resolve({ exists: true, rows });
+              };
+              values.onerror = () => reject(values.error);
+            };
+          })
+          .catch(reject);
+      }),
+  );
+}
+
+/** Everything the page keeps in `sessionStorage` and `localStorage`, key by key. */
+export async function pageStorage(page: Page): Promise<{ session: Record<string, string>; local: Record<string, string> }> {
+  return page.evaluate(() => {
+    const dump = (storage: Storage) => Object.fromEntries(Object.keys(storage).map((key) => [key, storage.getItem(key) ?? '']));
+    return { session: dump(sessionStorage), local: dump(localStorage) };
+  });
+}
+
 /**
  * Records every navigation the page asks the browser for, straight from the browser's own protocol events. A tap on
  * a `tel:` link ends in one, and the browser cannot place a call in a test, so this is where the real dial attempt
