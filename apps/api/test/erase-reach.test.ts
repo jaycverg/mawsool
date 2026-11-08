@@ -13,7 +13,7 @@ import { schema } from '../src/db/client';
 const REVIEWED: Record<string, { fate: 'deleted' | 'kept'; why: string; proof: string }> = {
   persons: { fate: 'kept', why: 'holds only the hash of the device secret; the equity buckets are cleared', proof: 'consent.test.ts' },
   tickets: { fate: 'kept', why: 'a ticket and its events stay as pseudonymous timings with no data', proof: 'consent.test.ts' },
-  consents: { fate: 'kept', why: 'the append-only ledger keeps the revocation', proof: 'consent.test.ts' },
+  consents: { fate: 'kept', why: 'the append-only ledger keeps ticket consents and their revocations; a crisis_handoff row is deleted on Stop and Delete everything (crisis-handoffs.test.ts)', proof: 'consent.test.ts' },
   summary_logs: { fate: 'deleted', why: 'logged summaries are health text', proof: 'revoke-reach.test.ts' },
   inbound_invites: { fate: 'deleted', why: 'ties a person to a positive screen, a front door and a time', proof: 'inbound.test.ts' },
   crisis_handoffs: { fate: 'deleted', why: 'ties a person to a crisis event and holds the template they handed over, with the callback number; its ledger row is deleted with it, so nothing the server keeps ties the person to the event afterwards', proof: 'crisis-handoffs.test.ts' },

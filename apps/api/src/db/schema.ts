@@ -203,7 +203,10 @@ export const ticketEvents = pgTable(
   (t) => [unique('ticket_events_ticket_seq_unique').on(t.ticketId, t.seq), check('ticket_events_seq_positive', sql`${t.seq} >= 1`)],
 );
 
-/** Append-only consent ledger. A revoke sets `revoked_at`; rows are never deleted. */
+/**
+ * Consent ledger. For ticket consents it is append-only: a revoke sets `revoked_at` and the row stays.
+ * A `crisis_handoff` row is deleted on Stop and Delete everything, so nothing kept ties the person to a crisis event.
+ */
 export const consents = pgTable(
   'consents',
   {

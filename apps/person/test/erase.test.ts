@@ -261,7 +261,7 @@ describe('Delete everything on a phone that handed a note to the crisis line', (
     expect(s.calls).toEqual(['CLEAR']);
   });
 
-  it('stops with nothing deleted when the server cannot be reached, so the ids can be sent again later', async () => {
+  it('keeps the hand-off ids to send again later when the server cannot be reached, deleting nothing', async () => {
     const s = setup({ footprint: true, erase: 'offline' });
     s.store.data.set('crisis:handoff', [record(FIRST, 'sending')]);
     await s.prepare();
