@@ -7,6 +7,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { API_URL } from '../lib/api';
+import { deviceFetch } from '../lib/net';
 import { INSTRUMENT_TAG } from '../lib/bands';
 import { deviceNow } from '../lib/clock';
 import { formatDate } from '../lib/format';
@@ -52,7 +53,7 @@ export function RemeasureScreen() {
     if (device === null || device === 'unavailable') return;
     if (!ticketId) return setLoad({ status: 'missing' });
     setLoad({ status: 'loading' });
-    const server = { storage: device.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, random: window.crypto };
+    const server = { storage: device.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, random: window.crypto };
     const fetched = await callServer<unknown>(server, 'GET', `/me/tickets/${ticketId}?locale=${lang}`);
     if (!fetched.ok && fetched.reason === 'rejected' && fetched.status === 404) return setLoad({ status: 'missing' });
     const parsed = fetched.ok ? PersonTicketViewSchema.safeParse(fetched.body) : null;
@@ -75,7 +76,7 @@ export function RemeasureScreen() {
   async function finish(ticket: PersonTicketView, check: RepeatCheck) {
     if (device === null || device === 'unavailable') return;
     setSend('sending');
-    const server = { storage: device.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, random: window.crypto };
+    const server = { storage: device.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, random: window.crypto };
     const outcome = await sendRemeasure(server, ticket.id, share ? totalsOf(check) : []);
     if (outcome === 'done') return window.location.assign(href(lang, 'ticket', { id: ticket.id }));
     setSend(outcome === 'not_ready' ? 'not_ready' : 'failed');

@@ -166,5 +166,17 @@
   {
     "id": "next-day-check-offers-a-ticket-through-matching-consent-and-the-crisis-guard",
     "sentence": "The next-day offer leads into the ordinary flow: the options screen matches on the phone, a fresh check-in reaches the consent screen, and a new crisis sends the next-day screen to the crisis screen"
+  },
+  {
+    "id": "anonymous-session-makes-no-request-to-the-api",
+    "sentence": "After the person chooses an anonymous session, a check-in, its result, a reload, Home, Settings and leaving the session make not one request to the API (any is refused and counted); the result says there are no support options in this mode, the check-ins live in the tab only, and leaving is a separate confirmed step that erases them"
+  },
+  {
+    "id": "anonymous-session-says-what-it-cannot-do-and-walls-the-screens-that-need-the-server",
+    "sentence": "The anonymous screen says in both languages what works, what it cannot do (no ticket, nothing shared, nothing kept on a server) and what stays on the phone; options, consent, ticket, claim, tamm, remeasure and next-day show that explanation in place of the screen, render nothing of it, and make no request to the API"
+  },
+  {
+    "id": "anonymous-crisis-is-kept-on-the-phone-never-sent-and-removed-by-delete-everything",
+    "sentence": "A crisis opened in an anonymous session shows every number, takes a call and a \"reached someone\" answer, offers no hand-off, survives a reload on the phone, is neither sent nor queued, and Delete everything in the session removes the crisis block and the check-ins with no request to the API"
   }
 ]

@@ -209,7 +209,7 @@ export function CrisisScreen() {
           </section>
         )}
 
-        {device && device !== 'unavailable' && (
+        {device && device !== 'unavailable' && !device.anonymous && (
           <CrisisHandoffPanel device={device} lang={lang} mode="crisis" open={record?.blocked && record.event ? { eventId: record.event.id, trigger: record.event.trigger } : null} />
         )}
 

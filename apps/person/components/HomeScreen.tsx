@@ -27,6 +27,7 @@ export function HomeScreen() {
   const tr = useTranslations('result');
   const trm = useTranslations('reminder');
   const tnd = useTranslations('nextDay');
+  const ta = useTranslations('anonymous');
   const locale = useLocale();
   const lang = isLocale(locale) ? locale : 'en';
   const screenings = useScreenings();
@@ -119,6 +120,16 @@ export function HomeScreen() {
               compact
             />
             {nextCheckIn && <span className="text-[14px] text-muted">{t('nextCheckIn', { date: nextCheckIn })}</span>}
+          </section>
+        )}
+
+        {device !== null && device !== 'unavailable' && !device.anonymous && (
+          <section className="flex flex-col gap-2 rounded-card border border-border bg-surface p-4" data-anonymous-offer>
+            <h2 className="text-[16px] font-semibold">{ta('homeTitle')}</h2>
+            <p className="t-body text-muted">{ta('homeBody')}</p>
+            <a className="tap inline-flex items-center font-semibold text-accent" href={href(lang, 'anonymous')}>
+              {ta('homeAction')}
+            </a>
           </section>
         )}
 

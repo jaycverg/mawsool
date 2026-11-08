@@ -1,5 +1,6 @@
 import { fetchDemoOffsetMs, setDemoOffsetMs, type StorageAdapter } from '@mawsool/ui';
 import { API_URL } from './api';
+import { deviceFetch } from './net';
 import { KEYS } from './keys';
 
 /**
@@ -22,7 +23,7 @@ export async function restoreDemoOffset(storage: StorageAdapter): Promise<void> 
  * It sends nothing from the phone (a plain GET with no credential and no body), is never awaited by the crisis path or
  * by matching, and logs no console error when the API has no demo running, because the endpoint is always there.
  */
-export async function refreshDemoOffset(storage: StorageAdapter, fetcher: typeof fetch = window.fetch.bind(window)): Promise<void> {
+export async function refreshDemoOffset(storage: StorageAdapter, fetcher: typeof fetch = deviceFetch()): Promise<void> {
   const offset = await fetchDemoOffsetMs({ fetch: fetcher, apiUrl: API_URL });
   if (offset === null) return;
   setDemoOffsetMs(offset);

@@ -7,6 +7,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { API_URL } from '../lib/api';
+import { deviceFetch } from '../lib/net';
 import { CLINIC_FOCUS, clinicFirst } from '../lib/clinic-first';
 import { deviceNow } from '../lib/clock';
 import { loadDirectory, type Directory } from '../lib/directory';
@@ -56,7 +57,7 @@ export function OptionsScreen() {
   const fetchDirectory = useCallback(
     (d: Device) => {
       setDirectory('loading');
-      void loadDirectory({ storage: d.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, now: deviceNow }).then(setDirectory, () => setDirectory(null));
+      void loadDirectory({ storage: d.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, now: deviceNow }).then(setDirectory, () => setDirectory(null));
     },
     [lang],
   );

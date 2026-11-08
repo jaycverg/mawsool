@@ -4,6 +4,7 @@ import type { CrisisTrigger, Locale, Screening } from '@mawsool/types';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { API_URL } from '../lib/api';
+import { deviceFetch } from '../lib/net';
 import { deviceNow } from '../lib/clock';
 import { buildHandoffPreview, handoffFor, loadHandoffs, offerState, sendHandoff, stopHandoff, type HandoffRecord, type SendOutcome } from '../lib/crisis-handoff';
 import { flushOutbox } from '../lib/crisis-outbox';
@@ -64,13 +65,13 @@ export function CrisisHandoffPanel({ device, lang, mode, open }: { device: Devic
     if (expanded) void loadScreenings(device.storage).then(setScreenings, () => setScreenings([]));
   }, [expanded, device]);
 
-  const server: ServerDeps = { storage: device.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, random: window.crypto };
+  const server: ServerDeps = { storage: device.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, random: window.crypto };
 
   async function send() {
     if (!open || !agreed) return;
     setPhase('sending');
     const outcome = await sendHandoff(
-      { server, flush: () => flushOutbox({ storage: device.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, random: window.crypto }), now: deviceNow, newId: () => crypto.randomUUID() },
+      { server, flush: () => flushOutbox({ storage: device.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, random: window.crypto }), now: deviceNow, newId: () => crypto.randomUUID() },
       { crisisEventId: open.eventId, screenings, language: lang, trigger: open.trigger, callbackInput: callback },
     );
     setPhase(outcome);

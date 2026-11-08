@@ -21,6 +21,7 @@ import {
   triggerCrisis,
   visitOnline,
   waitForStored,
+  watchNavigationRequests,
   type Locale,
 } from './helpers';
 
@@ -225,7 +226,151 @@ async function expectDeclineWords(page: Page, locale: Locale, id: string): Promi
   expect((await stored(id)).ticket.state).toBe('declined');
 }
 
+/** What the test saw of the API origin. Once `blocking` is set every request to it is refused as well as counted. */
+interface ApiWatch {
+  blocking: boolean;
+  hits: string[];
+}
+
+async function watchApi(context: BrowserContext): Promise<ApiWatch> {
+  const watch: ApiWatch = { blocking: false, hits: [] };
+  context.on('request', (request) => {
+    if (watch.blocking && request.url().startsWith(API)) watch.hits.push(`${request.method()} ${request.url()}`);
+  });
+  await context.route(
+    (url) => url.href.startsWith(API),
+    (route) => (watch.blocking ? route.abort() : route.continue()),
+  );
+  return watch;
+}
+
+/**
+ * An ordinary first visit, then the explicit choice of an anonymous session from the home screen. The API is watched from the
+ * moment the choice is made: the visit before it is an ordinary one, so the app's background reads belong to it and are let through.
+ */
+async function startAnonymous(page: Page, locale: Locale, watch: ApiWatch): Promise<void> {
+  await visitOnline(page, locale);
+  await page.waitForLoadState('networkidle');
+  await page.locator('[data-anonymous-offer] a').click();
+  await expect(page).toHaveURL(new RegExp(`^${escapeRe(BASE)}/${locale}/anonymous/$`));
+  await expect(page.locator('[data-anonymous-state="off"]')).toBeVisible();
+  await page.waitForLoadState('networkidle');
+  watch.blocking = true;
+  await page.locator('[data-anonymous-start]').click();
+  await expect(page).toHaveURL(new RegExp(`^${escapeRe(BASE)}/${locale}/$`));
+  await expect(page.locator('[data-anonymous-banner]')).toContainText(msg(locale, 'anonymous.banner'));
+}
+
+const anonymousKeysInTab = (page: Page) => page.evaluate(() => Object.keys(sessionStorage).filter((name) => name.startsWith('mawsool.anon:')));
+
+const ANONYMOUS_CASES: Record<string, (ctx: Context) => Promise<void>> = {
+  async 'anonymous-session-makes-no-request-to-the-api'({ page, context, locale }) {
+    const api = await watchApi(context);
+    await startAnonymous(page, locale, api);
+
+    // A check-in, its result and a reload of it: all on the phone, in this tab only.
+    await takeCheckIn(page, locale, 'phq9', PHQ9_ELEVEN);
+    await expect(page.locator('[data-score]')).toHaveText('11');
+    await expect(page.locator('[data-anonymous-result-note]')).toContainText(msg(locale, 'anonymous.resultNote'));
+    await expect(page.getByRole('link', { name: msg(locale, 'result.options'), exact: true })).toHaveCount(0);
+    const resultUrl = page.url();
+    await page.reload();
+    await expect(page.locator('[data-score]')).toHaveText('11');
+    await expect(page.locator('[data-anonymous-banner]')).toBeVisible();
+    expect(await anonymousKeysInTab(page)).toContain('mawsool.anon:screenings');
+
+    // The device store holds none of what a server relationship leaves behind.
+    const keys = await rawStoreKeys(page);
+    for (const key of ['screenings', 'identity', 'server:footprint', 'crisis:outbox', 'tickets']) expect(keys, key).not.toContain(key);
+
+    // Home no longer offers the choice, and Settings offers the way out and none of the server's panels.
+    await page.goto(`/${locale}/`);
+    await expect(page.locator('[data-anonymous-offer]')).toHaveCount(0);
+    await page.goto(`/${locale}/settings/`);
+    await expect(page.locator('[data-panel="anonymous"]')).toContainText(msg(locale, 'anonymous.settingsBody'));
+    await expect(page.locator('[data-panel="reminders"]')).toHaveCount(0);
+
+    // Leaving is explicit, and erases the session's results from the tab.
+    await page.goto(`/${locale}/anonymous/`);
+    await expect(page.locator('[data-anonymous-state="on"]')).toBeVisible();
+    await page.locator('[data-anonymous-leave]').click();
+    await expect(page.locator('[data-anonymous-confirm]')).toContainText(msg(locale, 'anonymous.leaveConfirm'));
+    expect(await anonymousKeysInTab(page)).toContain('mawsool.anon:screenings');
+    // Not one request to the API from the choice to here. Leaving ends the session, so what follows is an ordinary visit.
+    expect(api.hits).toEqual([]);
+    api.blocking = false;
+    const directory = page.waitForResponse((response) => response.url() === `${API}/services?locale=${locale}` && response.ok());
+    await page.locator('[data-anonymous-leave-yes]').click();
+    await expect(page).toHaveURL(new RegExp(`^${escapeRe(BASE)}/${locale}/$`));
+    await directory;
+    await expect(page.locator('[data-anonymous-banner]')).toHaveCount(0);
+    await expect(page.locator('[data-anonymous-offer]')).toBeVisible();
+    expect(await anonymousKeysInTab(page)).toEqual([]);
+    await page.goto(resultUrl);
+    await expect(page.getByText(msg(locale, 'result.notFound'), { exact: true })).toBeVisible();
+  },
+
+  async 'anonymous-session-says-what-it-cannot-do-and-walls-the-screens-that-need-the-server'({ page, context, locale }) {
+    const api = await watchApi(context);
+    await startAnonymous(page, locale, api);
+    await page.goto(`/${locale}/anonymous/`);
+    for (const key of ['works1', 'works2', 'cannot1', 'cannot2', 'cannot3', 'keeps']) await expect(page.locator('main')).toContainText(msg(locale, `anonymous.${key}`));
+
+    for (const screen of ['options', 'consent', 'ticket', 'claim', 'tamm', 'remeasure', 'next-day']) {
+      await page.goto(`/${locale}/${screen}/`);
+      const wall = page.locator('[data-anonymous-wall]');
+      await expect(wall, screen).toBeVisible();
+      await expect(wall.getByRole('heading', { level: 1 })).toHaveText(msg(locale, 'anonymous.wallTitle'));
+      for (const key of ['cannot1', 'cannot2', 'cannot3']) await expect(wall).toContainText(msg(locale, `anonymous.${key}`));
+      // Nothing of the screen itself rendered, so nothing on it could have started a request.
+      await expect(page.locator('[data-tier], [data-screen="consent"], [data-screen="ticket"]'), screen).toHaveCount(0);
+    }
+    await page.reload();
+    await expect(page.locator('[data-anonymous-wall]')).toBeVisible();
+    expect(api.hits).toEqual([]);
+  },
+
+  async 'anonymous-crisis-is-kept-on-the-phone-never-sent-and-removed-by-delete-everything'({ page, context, locale }) {
+    const api = await watchApi(context);
+    await startAnonymous(page, locale, api);
+    const navigations = await watchNavigationRequests(page);
+    await triggerCrisis(page, locale);
+    const eventId = await page.evaluate(() => JSON.parse(sessionStorage.getItem('mawsool.crisis-mark')!).eventId as string);
+
+    // The crisis screen is as ever: every number, the call, "did you reach someone", and no hand-off panel.
+    for (const number of ['800725462', '998', '999']) await expect(page.locator(`a[href="tel:${number}"]`)).toBeVisible();
+    await expect(page.locator('[data-anonymous-banner]')).toHaveCount(0);
+    await expect(page.locator('[data-panel="crisis-handoff"]')).toHaveCount(0);
+    await page.getByRole('button', { name: msg(locale, 'crisis.callNow'), exact: true }).click();
+    expect(navigations.urls().some((url) => url.startsWith('tel:'))).toBe(true);
+    await page.getByRole('button', { name: msg(locale, 'crisis.reachedYes'), exact: true }).click();
+    await expect(page.getByText(msg(locale, 'crisis.reachedThanks'), { exact: true })).toBeVisible();
+
+    // The block stays on the phone across a reload, and the event is neither sent nor queued.
+    await waitForStored(page, 'crisis:block');
+    await page.reload();
+    await expect(page).toHaveURL(crisisUrl(locale));
+    expect(await rawStoreKeys(page)).not.toContain('crisis:outbox');
+    await page.getByRole('button', { name: msg(locale, 'crisis.safeNow'), exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`^${escapeRe(BASE)}/${locale}/result/\\?id=[0-9a-f-]{36}$`));
+    await page.waitForTimeout(1500);
+    expect(await (await fetch(`${INSPECT}/crisis-events/${eventId}`)).json()).toEqual([]);
+
+    // Delete everything in the session wipes the check-ins and the crisis block, and asks nothing of the server.
+    await page.goto(`/${locale}/settings/`);
+    await expect(page.getByText(msg(locale, 'anonymous.deleteBody'), { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: msg(locale, 'settings.delete'), exact: true }).click();
+    await confirmDelete(page, locale);
+    await expect(page.getByText(msg(locale, 'settings.deleted'), { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect.poll(() => rawStoreKeys(page), { timeout: 10_000 }).not.toContain('crisis:block');
+    expect(await anonymousKeysInTab(page)).toEqual([]);
+    expect(await page.evaluate(() => sessionStorage.getItem('mawsool.crisis-mark'))).toBeNull();
+    expect(api.hits).toEqual([]);
+  },
+};
+
 const CASES: Record<string, (ctx: Context) => Promise<void>> = {
+  ...ANONYMOUS_CASES,
   async 'directory-names-follow-the-language'({ page, locale }) {
     // Every service name the person is shown (the option cards, the consent screen, the ticket) and the clinic's name and
     // contact are in the page's language. In Arabic none of them has a Latin letter; in English they are the sample names.

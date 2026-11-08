@@ -21,6 +21,11 @@ export interface CrisisRecord {
   resumeScreeningId: string | null;
   /** The event as last queued for the server. It holds no item answers and no person id. */
   event: CrisisEventSubmission | null;
+  /**
+   * This crisis opened in an anonymous session. Its event is kept on the phone for the screen and is never queued, however the
+   * record is changed later and in whichever mode, so an anonymous crisis never reaches the server.
+   */
+  anonymous?: true;
 }
 
 export type BlockState =
@@ -76,6 +81,8 @@ export interface CrisisDeps {
   fallback: TabMarkAdapter<CrisisMark>;
   /** How long a read waits on storage when only the tab mark knows about the block. Reads for a change never use it. */
   readPatienceMs?: number;
+  /** An anonymous session: a crisis it opens is marked `anonymous` and its event is never queued for the server. */
+  anonymous?: boolean;
 }
 
 function isRecord(value: unknown): value is CrisisRecord {
@@ -161,7 +168,7 @@ export function createCrisisStore(storage: StorageAdapter, deps: CrisisDeps) {
       const status = await write(next);
       // Only an event that actually changed is queued, so touching a resolved crisis re-sends nothing. Queueing the
       // same event again is harmless: the queue keeps one entry per event id.
-      if (next.event && (retrying || JSON.stringify(next.event) !== JSON.stringify(current.event))) await queue(next.event);
+      if (next.event && !next.anonymous && (retrying || JSON.stringify(next.event) !== JSON.stringify(current.event))) await queue(next.event);
       return { record: next, status };
     });
   }
@@ -199,7 +206,9 @@ export function createCrisisStore(storage: StorageAdapter, deps: CrisisDeps) {
       resolvedAt: null,
       locale,
     });
-    return { ...current, blocked: true, trigger: mark.trigger, blockedAt: mark.shownAt, resumeScreeningId: screeningId, event };
+    // Whether this crisis is anonymous is decided by the mode it opens in, never inherited from an earlier, resolved one.
+    const { anonymous: _earlier, ...rest } = current;
+    return { ...rest, blocked: true, trigger: mark.trigger, blockedAt: mark.shownAt, resumeScreeningId: screeningId, event, ...(deps.anonymous ? { anonymous: true as const } : {}) };
   }
 
   return {

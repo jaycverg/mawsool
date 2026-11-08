@@ -9,6 +9,7 @@ import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { z } from 'zod';
 import { API_URL } from '../lib/api';
+import { deviceFetch } from '../lib/net';
 import { deviceNow } from '../lib/clock';
 import { clinicCouldNotSee, followUpAt, followUpDue } from '../lib/day7';
 import { calendarDaysLeft, formatDate } from '../lib/format';
@@ -61,7 +62,7 @@ export function TicketScreen() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const serverDeps = useCallback((d: Device): ServerDeps => ({ storage: d.storage, fetch: window.fetch.bind(window), apiUrl: API_URL, locale: lang, random: window.crypto }), [lang]);
+  const serverDeps = useCallback((d: Device): ServerDeps => ({ storage: d.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, random: window.crypto }), [lang]);
   /** Asks the server for the service, clinic and contact text in the page's language. */
   const inLanguage = `?locale=${lang}`;
 

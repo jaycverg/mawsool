@@ -20,7 +20,7 @@ const LOCALES = ['en', 'ar'];
  * crisis screen, the check-in and the result in particular must never depend on the network. Each is a directory
  * route with a page in the export; a screen with a query string (`/result/?id=`) is the same page.
  */
-export const OFFLINE_SCREENS = ['crisis', 'check-in', 'check-ins', 'result', 'options', 'settings', 'consent', 'ticket', 'remeasure', 'next-day'];
+export const OFFLINE_SCREENS = ['crisis', 'check-in', 'check-ins', 'result', 'options', 'settings', 'consent', 'ticket', 'remeasure', 'next-day', 'anonymous'];
 
 /** Pages that must open offline after one online visit. Each is a directory route that exists in the export. */
 export const PRECACHE_ROUTES = ['/', ...LOCALES.flatMap((locale) => [`/${locale}/`, ...OFFLINE_SCREENS.map((screen) => `/${locale}/${screen}/`)])];

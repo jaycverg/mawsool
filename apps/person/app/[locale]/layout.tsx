@@ -4,6 +4,7 @@ import { getMessages, getTranslations, setRequestLocale } from 'next-intl/server
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { LOCALES, htmlAttributes } from '@mawsool/ui';
+import { AnonymousGate } from '../../components/AnonymousGate';
 import { CrisisGuard } from '../../components/CrisisGuard';
 import { DeviceSync } from '../../components/DeviceSync';
 import { ReminderNotifier } from '../../components/ReminderNotifier';
@@ -40,7 +41,9 @@ export default async function LocaleLayout({ children, params }: { children: Rea
     <html {...htmlAttributes(locale)}>
       <body className="min-h-dvh bg-ground font-sans text-ink">
         <NextIntlClientProvider locale={locale} messages={messages}>
-          <CrisisGuard>{children}</CrisisGuard>
+          <CrisisGuard>
+            <AnonymousGate>{children}</AnonymousGate>
+          </CrisisGuard>
           <DeviceSync />
           <ReminderNotifier />
           <ServiceWorkerRegistration />

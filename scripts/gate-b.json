@@ -1365,5 +1365,120 @@
       }
     ],
     "browser": "next-day-check-offers-a-ticket-through-matching-consent-and-the-crisis-guard"
+  },
+  {
+    "id": "anonymous-session-makes-no-server-call",
+    "sentence": "In an anonymous session no background job or server entry point makes a request, the one fetch the app uses refuses before anything leaves the phone, no file of the app names the network except that guard, and the browser sees not one request to the API from the choice to the exit",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "is what every background job does in an anonymous session"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "is enforced below the call sites too"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "turns every server entry point into the failure of a phone with no network"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "is not left to chance: no file of the app names the network"
+      }
+    ],
+    "browser": "anonymous-session-makes-no-request-to-the-api"
+  },
+  {
+    "id": "anonymous-session-keeps-only-the-checkins-and-is-erased",
+    "sentence": "An anonymous session keeps only the check-ins (in the tab, gone with it) and the crisis block (on the device), refuses to keep anything else, and is emptied by clear, by Delete everything with no request, and by Delete everything done outside the session",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "keeps the check-ins for the tab"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "sends the crisis block to the device store"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "keeps only the check-ins besides the crisis block"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "is emptied by clear()"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "holds on to the check-ins in memory"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "is wiped by wipeAnonymousData"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "erases the session without a request"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "reaches what an anonymous session left in the tab"
+      }
+    ]
+  },
+  {
+    "id": "anonymous-crisis-is-never-queued-or-sent",
+    "sentence": "A crisis opened in an anonymous session is shown and recorded on the phone but never queued or sent, whatever mode changes the record later; the next crisis does not inherit that; the block survives closing the tab; and in the browser the screen shows every number, offers no hand-off and Delete everything removes the block",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "shows and records everything locally but queues nothing"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "queues the same crisis outside an anonymous session"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "keeps an anonymous crisis off the server even when"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "does not hand the flag on to the next crisis"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "survives closing the tab and reopening"
+      }
+    ],
+    "browser": "anonymous-crisis-is-kept-on-the-phone-never-sent-and-removed-by-delete-everything"
+  },
+  {
+    "id": "anonymous-session-says-what-it-cannot-do-and-walls-the-server-screens",
+    "sentence": "An anonymous session says in both languages what it cannot do (no ticket, nothing shared, nothing kept on a server), and every screen that needs the server is walled with that explanation, decided for each screen of the app",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "is written in both languages for every message"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "says in both languages what it cannot do"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "is decided for every screen of the app"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "walls /en/options/"
+      }
+    ],
+    "browser": "anonymous-session-says-what-it-cannot-do-and-walls-the-screens-that-need-the-server"
   }
 ]
