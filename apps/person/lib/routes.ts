@@ -4,9 +4,10 @@ import { isLocale, localeFromPathname } from '@mawsool/ui';
  * Screens that lead to matching or to a ticket, and the questionnaire that feeds them. While an unresolved crisis
  * trigger exists every one of these sends the person to the crisis screen instead, whether they arrive by reload,
  * by the back button or by a typed address. Add a route here when a screen is added that must not open mid-crisis.
- * Settings, home and the crisis screen itself are deliberately not listed.
+ * `/anonymous` is listed so that an anonymous session can be neither started nor left while a crisis is open: the crisis stays
+ * the kind it opened as. Settings, home and the crisis screen itself are deliberately not listed.
  */
-export const GUARDED_ROUTES = ['/check-in', '/result', '/check-ins', '/options', '/consent', '/ticket', '/reroute', '/follow-up', '/remeasure', '/next-day'] as const;
+export const GUARDED_ROUTES = ['/check-in', '/result', '/check-ins', '/options', '/consent', '/ticket', '/reroute', '/follow-up', '/remeasure', '/next-day', '/anonymous'] as const;
 
 /** The path with its locale segment removed and a trailing slash dropped: `/ar/options/` gives `/options`. */
 export function stripLocale(pathname: string): string {

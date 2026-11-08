@@ -58,7 +58,8 @@ export function AnonymousScreen() {
   }
 
   function leave() {
-    void endAnonymousSession().then(() => window.location.assign(href(lang, '')));
+    // Refused while a crisis is open: the person lands on the crisis screen, whose block is still on.
+    void endAnonymousSession().then((outcome) => window.location.assign(href(lang, outcome === 'left' ? '' : 'crisis')));
   }
 
   return (

@@ -34,12 +34,16 @@ export function linkMovesFrom(state: Parameters<typeof evaluate>[0]): ClinicLink
   return LINK_MOVES.filter((move) => evaluate(state, move, 'clinic') === 'ok');
 }
 
+/** What became of a link a ticket needed: made and logged, not needed, or needed and not made. */
+export type IssueResult = 'issued' | 'not_needed' | 'failed';
+
 /**
  * Makes a one-time link for a ticket and hands it to the notifier (which logs it), if the ticket's facility has no portal and
  * the clinic still has a move to make. Only the token's SHA-256 is stored. Nothing here can fail the caller: the ticket is already
- * made, and a notifier that fails leaves a link nobody has, which expires. Returns whether a link was logged.
+ * made, and a notifier that fails leaves a link nobody has, which expires. `failed` is kept apart from `not_needed` so the clinic
+ * is not told that nothing more is asked of it when it still has a move and no link.
  */
-export async function issueClinicLink(deps: ClinicLinkDeps, ticketId: string): Promise<boolean> {
+export async function issueClinicLink(deps: ClinicLinkDeps, ticketId: string): Promise<IssueResult> {
   try {
     const [row] = await deps.db
       .select({ ticket: schema.tickets, facility: schema.facilities })
@@ -48,16 +52,16 @@ export async function issueClinicLink(deps: ClinicLinkDeps, ticketId: string): P
       .innerJoin(schema.facilities, eq(schema.services.facilityId, schema.facilities.id))
       .where(eq(schema.tickets.id, ticketId))
       .limit(1);
-    if (!row || row.facility.portalAccess || linkMovesFrom(row.ticket.state).length === 0) return false;
+    if (!row || row.facility.portalAccess || linkMovesFrom(row.ticket.state).length === 0) return 'not_needed';
     const now = deps.securityClock.now();
     const token = randomToken();
     const expiresAt = new Date(now.getTime() + CLINIC_LINK_TTL_MS);
     await deps.db.insert(schema.clinicLinks).values({ tokenHash: sha256Hex(token), ticketId, facilityId: row.facility.id, createdAt: now, expiresAt });
     await deps.notifier.sendClinicLink({ facility: row.facility.name, ticketCode: row.ticket.shortCode, link: clinicLink(deps.clinicianAppUrl, ticketId, token), expiresAt });
-    return true;
+    return 'issued';
   } catch (error) {
     deps.log.error({ err: error }, 'could not issue the clinic link');
-    return false;
+    return 'failed';
   }
 }
 
@@ -113,7 +117,7 @@ export async function openClinicLink(deps: ClinicLinkDeps, credential: { ticketI
 }
 
 export type ActResult =
-  | { kind: 'done'; state: ClinicLinkTicket['state']; freshLink: boolean }
+  | { kind: 'done'; state: ClinicLinkTicket['state']; nextLink: IssueResult }
   | { kind: 'invalid' }
   | { kind: 'not_found' }
   | { kind: 'withdrawn' }
@@ -158,8 +162,8 @@ export async function actOnClinicLink(deps: ClinicLinkDeps, credential: { ticket
     throw error;
   }
   // `issueClinicLink` makes none when the clinic has no move left or the facility has the portal.
-  const freshLink = await issueClinicLink(deps, credential.ticketId);
-  return { kind: 'done', state: moved.state, freshLink };
+  const nextLink = await issueClinicLink(deps, credential.ticketId);
+  return { kind: 'done', state: moved.state, nextLink };
 }
 
 /** Deletes the links that were spent, or expired, more than a day ago. Called by the sweep, as it purges spent request nonces. */

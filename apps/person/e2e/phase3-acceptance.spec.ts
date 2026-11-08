@@ -7,6 +7,7 @@ import {
   INSPECT,
   LOCALES,
   answerAll,
+  ANONYMOUS_DB_PREFIX,
   anonymousDb,
   computed,
   crisisUrl,
@@ -265,8 +266,8 @@ async function startAnonymous(page: Page, locale: Locale, watch: ApiWatch): Prom
   await expect(page.locator('[data-anonymous-banner]')).toContainText(msg(locale, 'anonymous.banner'));
 }
 
-/** The rows an anonymous session's database holds: the owner's id, the check-ins as ciphertext, and the key that opens them. */
-const ANONYMOUS_DB_ROWS = ['__device-key', 'owner', 'screenings'];
+/** The rows an anonymous session's database holds: the check-ins as ciphertext, and the key that opens them. */
+const ANONYMOUS_DB_ROWS = ['__device-key', 'screenings'];
 
 /** The tab's note for the session: a random id and nothing else. */
 const ANONYMOUS_NOTE = /^\{"session":"[0-9a-f-]{36}"\}$/;
@@ -421,9 +422,10 @@ const ANONYMOUS_STORAGE_CASES: Record<string, (ctx: Context) => Promise<void>> =
       expect(local, `${stage}: localStorage`).toEqual({});
       expect(Object.keys(session).sort(), `${stage}: sessionStorage`).toEqual(crisisOpen ? ['mawsool.anonymous', 'mawsool.crisis-mark'] : ['mawsool.anonymous']);
       expect(session['mawsool.anonymous'], stage).toMatch(ANONYMOUS_NOTE);
-      if (crisisOpen) expect(Object.keys(JSON.parse(session['mawsool.crisis-mark']!) as object).sort(), stage).toEqual(['eventId', 'shownAt', 'trigger']);
+      if (crisisOpen) expect(Object.keys(JSON.parse(session['mawsool.crisis-mark']!) as object).sort(), stage).toEqual(['anonymous', 'eventId', 'shownAt', 'trigger']);
       if (crisisOpen) {
-        const markNote = JSON.parse(session['mawsool.crisis-mark']!) as { trigger: string; eventId: string; shownAt: string };
+        const markNote = JSON.parse(session['mawsool.crisis-mark']!) as { trigger: string; eventId: string; shownAt: string; anonymous: boolean };
+        expect(markNote.anonymous, stage).toBe(true);
         expect(['phq9_item9', 'cssrs'], stage).toContain(markNote.trigger);
         expect(markNote.eventId, stage).toMatch(/^[0-9a-f-]{36}$/);
         expect(new Date(markNote.shownAt).toISOString(), stage).toBe(markNote.shownAt);
@@ -447,8 +449,9 @@ const ANONYMOUS_STORAGE_CASES: Record<string, (ctx: Context) => Promise<void>> =
     const db = await anonymousDb(page);
     expect(db.rows['screenings']).toEqual({ kind: 'sealed', fields: ['ct', 'iv', 'v'] });
     expect(db.rows['__device-key']).toEqual({ kind: 'key', extractable: false });
-    expect(db.rows['owner']?.kind).toBe('text');
-    expect(db.rows['owner']?.text).toMatch(/^[0-9a-f-]{36}$/);
+    // The database's name is the only other plain trace of the session: its prefix and the same random id as the tab's note.
+    const sessionId = (JSON.parse((await pageStorage(page)).session['mawsool.anonymous']!) as { session: string }).session;
+    expect(db.name).toBe(`${ANONYMOUS_DB_PREFIX}${sessionId}`);
 
     // A crisis in the session: the mark names the trigger, an event id and a time, and still no answer or score is in plain text.
     await triggerCrisis(page, locale);
@@ -476,46 +479,76 @@ const ANONYMOUS_STORAGE_CASES: Record<string, (ctx: Context) => Promise<void>> =
       expect(Object.keys((await anonymousDb(target)).rows).sort()).toEqual(ANONYMOUS_DB_ROWS);
     };
 
-    // Delete everything: the database goes, ciphertext, key and owner with it, and the session carries on with a new, empty one.
+    // Delete everything: the database goes, ciphertext and key with it, and the session carries on with a new, empty one.
     await checkIn(page);
     await page.goto(`/${locale}/settings/`);
     await page.getByRole('button', { name: msg(locale, 'settings.delete'), exact: true }).click();
     await confirmDelete(page, locale);
     await expect(page.getByText(msg(locale, 'settings.deleted'), { exact: true })).toBeVisible({ timeout: 20_000 });
     await expect.poll(async () => (await anonymousDb(page)).exists, { timeout: 10_000 }).toBe(false);
-    expect(await deletesBy(page)).toContain(`/${locale}/settings/ mawsool-anon`);
+    expect((await deletesBy(page)).some((entry) => entry.startsWith(`/${locale}/settings/ ${ANONYMOUS_DB_PREFIX}`))).toBe(true);
 
-    // A new tab session: the earlier tab closed without a chance to wipe, and the next start of the app, in a tab with no
-    // session of its own, deletes what it left. That start is an ordinary visit, so the API may be asked.
+    // A session that is still open is not deleted by another tab's start of the app: its page holds the session's lock. That start
+    // is an ordinary visit, so the API may be asked.
     await checkIn(page);
-    const sessionBefore = (await pageStorage(page)).session['mawsool.anonymous'];
     expect(api.hits).toEqual([]);
     api.blocking = false;
     const next = await context.newPage();
     await next.goto(`/${locale}/`);
-    expect((await pageStorage(next)).session['mawsool.anonymous']).toBeUndefined();
-    await expect.poll(async () => (await anonymousDb(next)).exists, { timeout: 10_000 }).toBe(false);
-    expect(await deletesBy(next)).toEqual([`/${locale}/ mawsool-anon`]);
-    await next.close();
+    await next.waitForLoadState('networkidle');
+    await next.waitForTimeout(3_000); // longer than the grace a start gives a reloading page before it deletes anything
+    expect((await anonymousDb(next)).exists).toBe(true);
+    expect(await deletesBy(next)).toEqual([]);
     api.blocking = true;
-    expect((await pageStorage(page)).session['mawsool.anonymous']).toBe(sessionBefore);
+    await page.reload();
+    await expect(page.locator('[data-score]')).toHaveText('11');
+    expect(api.hits).toEqual([]);
+
+    // A new tab session: the tab closed without a chance to wipe, its lock is gone, and the next start of the app in any tab deletes
+    // what it left.
+    await page.close();
+    api.blocking = false;
+    await next.goto(`/${locale}/`);
+    await expect.poll(async () => (await anonymousDb(next)).exists, { timeout: 15_000 }).toBe(false);
+    expect((await deletesBy(next)).some((entry) => entry.startsWith(`/${locale}/ ${ANONYMOUS_DB_PREFIX}`))).toBe(true);
 
     // Leaving the session: the page that asked to leave is the one that deleted the database, before the next page's start.
-    await checkIn(page);
-    await page.goto(`/${locale}/anonymous/`);
-    await page.locator('[data-anonymous-leave]').click();
-    await expect(page.locator('[data-anonymous-confirm]')).toBeVisible();
+    await startAnonymous(next, locale, api);
+    await checkIn(next);
+    await next.goto(`/${locale}/anonymous/`);
+    await next.locator('[data-anonymous-leave]').click();
+    await expect(next.locator('[data-anonymous-confirm]')).toBeVisible();
     expect(api.hits).toEqual([]);
     api.blocking = false;
-    const directory = page.waitForResponse((response) => response.url() === `${API}/services?locale=${locale}` && response.ok());
-    const deletesBefore = (await deletesBy(page)).length;
-    await page.locator('[data-anonymous-leave-yes]').click();
-    await expect(page).toHaveURL(new RegExp(`^${escapeRe(BASE)}/${locale}/$`));
+    const directory = next.waitForResponse((response) => response.url() === `${API}/services?locale=${locale}` && response.ok());
+    const deletesBefore = (await deletesBy(next)).length;
+    await next.locator('[data-anonymous-leave-yes]').click();
+    await expect(next).toHaveURL(new RegExp(`^${escapeRe(BASE)}/${locale}/$`));
     await directory;
     // The first deletion after the press was asked for by the leave screen itself, not by the start of the page that follows it.
-    expect((await deletesBy(page)).slice(deletesBefore)[0]).toBe(`/${locale}/anonymous/ mawsool-anon`);
-    expect((await anonymousDb(page)).exists).toBe(false);
-    expect((await pageStorage(page)).session['mawsool.anonymous']).toBeUndefined();
+    expect((await deletesBy(next)).slice(deletesBefore)[0]).toMatch(new RegExp(`^/${locale}/anonymous/ ${ANONYMOUS_DB_PREFIX}`));
+    expect((await anonymousDb(next)).exists).toBe(false);
+    expect((await pageStorage(next)).session['mawsool.anonymous']).toBeUndefined();
+  },
+
+  async 'anonymous-screen-is-shut-while-a-crisis-is-open-and-leaving-is-refused'({ page, context, locale }) {
+    const api = await watchApi(context);
+    await startAnonymous(page, locale, api);
+    await triggerCrisis(page, locale);
+    // Neither starting nor leaving a session is reachable during a crisis: the address lands on the crisis screen, and the
+    // session, its note and its database stay as they were.
+    await page.goto(`/${locale}/anonymous/`);
+    await expect(page).toHaveURL(crisisUrl(locale), { timeout: 15_000 });
+    await expect(page.locator('[data-screen="anonymous"]')).toHaveCount(0);
+    expect((await pageStorage(page)).session['mawsool.anonymous']).toMatch(ANONYMOUS_NOTE);
+    expect(JSON.parse((await pageStorage(page)).session['mawsool.crisis-mark']!)).toMatchObject({ anonymous: true });
+    // Once the person releases the screen the session can be left again.
+    await page.getByRole('button', { name: msg(locale, 'crisis.safeNow'), exact: true }).click();
+    await expect(page).not.toHaveURL(crisisUrl(locale), { timeout: 15_000 });
+    await page.goto(`/${locale}/anonymous/`);
+    await expect(page.locator('[data-anonymous-state="on"]')).toBeVisible();
+    await expect(page.locator('[data-anonymous-leave]')).toBeVisible();
+    expect(api.hits).toEqual([]);
   },
 
   async 'anonymous-crisis-screen-opens-when-the-store-refuses'(ctx) {

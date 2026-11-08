@@ -4,7 +4,7 @@ import { createTabMark, safeSessionStorage, type StorageAdapter, type TabMarkAda
 import { useEffect, useState } from 'react';
 import { createAnonymousStorage, isAnonymous } from './anonymous';
 import { deviceNow } from './clock';
-import { createCrisisStore, isCrisisMark, type CrisisMark, type CrisisStore } from './crisis';
+import { CRISIS_MARK_KEY, createCrisisStore, isCrisisMark, type CrisisMark, type CrisisStore } from './crisis';
 import { deviceStorage } from './device';
 
 export interface Device {
@@ -26,7 +26,7 @@ export function getDevice(): Device {
   if (!device) {
     const anonymous = isAnonymous();
     const storage = anonymous ? createAnonymousStorage(deviceStorage) : deviceStorage();
-    const tabMark = createTabMark(safeSessionStorage(), 'mawsool.crisis-mark', isCrisisMark);
+    const tabMark = createTabMark(safeSessionStorage(), CRISIS_MARK_KEY, isCrisisMark);
     device = { storage, tabMark, anonymous, crisis: createCrisisStore(storage, { now: deviceNow, newId: () => crypto.randomUUID(), fallback: tabMark, anonymous }) };
   }
   return device;

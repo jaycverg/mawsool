@@ -185,11 +185,12 @@
     "onlyThis": "This link shows this one referral and nothing the person shared. It works once.",
     "note": {
       "conflict": "That change is not allowed from the referral's current state. The link has not been used.",
-      "failed": "That did not go through. The link has not been used. Try again."
+      "failed": "We could not confirm this went through. Open the link again: if it says the link was used, your step was recorded."
     },
     "doneAcknowledged": "Acknowledged. The person can see that your clinic has it.",
     "doneSeen": "Marked seen. The person can see that your clinic saw them.",
     "freshLink": "This link has been used. A new link for your next step was logged for your clinic (sample channel).",
-    "noFreshLink": "This link has been used. Nothing more is asked of your clinic on this referral."
+    "noFreshLink": "This link has been used. Nothing more is asked of your clinic on this referral.",
+    "nextStepFailed": "This link has been used and your step was recorded, but the link for your next step could not be prepared. Please contact the service."
   }
 }

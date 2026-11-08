@@ -332,7 +332,7 @@
   },
   {
     "id": "mock-label-audit",
-    "sentence": "Every mock or sample surface that exists is labelled, checked in the E2E, the sample labs of the context panel and the no-login clinic link's sample channel included, in both languages; messaging and the crisis-line console are Phase 6 and are not built",
+    "sentence": "Every mock or sample surface that exists is labelled, checked in the E2E, the sample labs of the context panel and the no-login clinic link's sample channel included, in both languages",
     "tests": [
       {
         "project": "packages/ui",

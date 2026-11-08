@@ -1445,7 +1445,7 @@
       },
       {
         "file": "test/anonymous.test.ts",
-        "name": "Delete everything deletes the database too, in an anonymous session and outside one"
+        "name": "Delete everything deletes every anonymous database"
       },
       {
         "file": "test/anonymous.test.ts",
@@ -1457,11 +1457,11 @@
       },
       {
         "file": "test/anonymous.test.ts",
-        "name": "a start in a tab that is not anonymous deletes what an earlier anonymous session left"
+        "name": "a start in a tab that is not anonymous deletes what an ended session left"
       },
       {
         "file": "test/anonymous.test.ts",
-        "name": "a start in a new anonymous session deletes the earlier session"
+        "name": "a start in another session deletes an ended session"
       },
       {
         "file": "test/anonymous.test.ts",
@@ -1557,6 +1557,81 @@
       }
     ],
     "browser": "anonymous-session-says-what-it-cannot-do-and-walls-the-screens-that-need-the-server"
+  },
+  {
+    "id": "anonymous-session-is-not-deleted-by-another-tab-while-it-is-live",
+    "sentence": "A live anonymous session holds its session's Web Lock on every page and its database is not deleted by another tab's start while a page holds it, nor by a reload of its own page (a lock that comes back within the grace keeps it), and is deleted by the next start once the page has gone; where there are no locks every other session's database is deleted at a start",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "holds its session's lock on a start and on every use"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "is left alone by another tab's start while a page holds its lock"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "waits out a page reload"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "falls back, where there are no Web Locks"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "gives two live sessions a database each"
+      }
+    ]
+  },
+  {
+    "id": "anonymous-open-store-never-outlives-its-database",
+    "sentence": "An open anonymous page whose database is deleted from elsewhere makes a new key on its next write instead of sealing with the one it cached, a reload reads what it saved and can go on saving, and a database whose values cannot be decrypted is deleted and the session starts fresh",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "does not seal with the key it cached"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "deletes a database whose values cannot be decrypted and starts fresh"
+      },
+      {
+        "file": "test/platform.test.ts",
+        "name": "tells its owner when the database is deleted from elsewhere",
+        "project": "packages/ui"
+      }
+    ]
+  },
+  {
+    "id": "anonymous-crisis-stays-anonymous-and-the-session-cannot-be-left-during-it",
+    "sentence": "A crisis opened in an anonymous session carries that in the tab's mark, so a repair that runs after the session ended queues nothing and sends nothing; leaving the session is refused while a crisis is open, and the anonymous screen is a guarded one, so a session can be neither started nor left mid-crisis",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "is never queued by a repair that runs after the session ended"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "does not mark a crisis opened outside an anonymous session"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "keeps the tab's mark to what the plain-text note is documented to hold"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "shuts the screen that starts or leaves a session while a crisis is open"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "leaving is refused while a crisis is open"
+      }
+    ],
+    "browser": "anonymous-screen-is-shut-while-a-crisis-is-open-and-leaving-is-refused"
   },
   {
     "id": "handoff-stops-are-the-persons-own-and-follow-the-wall-clock",
@@ -1720,6 +1795,32 @@
         "name": "offers only the seen move once a ticket is overdue"
       }
     ]
+  },
+  {
+    "id": "mw-606-clinic-link-tells-the-clinic-when-its-next-step-could-not-be-prepared",
+    "sentence": "After a clinic link's move the answer says whether the clinic's next link was made, was not needed, or was needed and could not be made (the move stays committed), and the page says so, never that nothing more is asked when the next link failed, and is honest when an answer never arrived",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "commits the move and says the next link could not be made",
+        "project": "apps/api"
+      },
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "acknowledges through the transition table as the clinic",
+        "project": "apps/api"
+      },
+      {
+        "file": "test/clinic-link.test.ts",
+        "name": "exist in both languages, the Arabic in Arabic, and name the channel as a sample",
+        "project": "apps/clinician"
+      }
+    ],
+    "delegated": {
+      "gate": "gate:phase4",
+      "id": "clinic-link-page-is-honest-about-an-unconfirmed-answer-and-a-next-step-that-failed"
+    }
   },
   {
     "id": "mw-606-clinic-link-reveals-no-wellbeing-data-and-answers-404-and-410-like-the-staff-routes",

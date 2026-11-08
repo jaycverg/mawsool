@@ -141,6 +141,15 @@ describe('storage adapter (IndexedDB)', () => {
     expect(await storage.keys()).toEqual([]);
   });
 
+  it('tells its owner when the database is deleted from elsewhere, so state derived from it can be dropped', async () => {
+    const factory = new IDBFactory();
+    const closed = vi.fn();
+    const storage = createIndexedDbStorage({ indexedDB: factory, dbName: 'watched', onVersionChange: closed });
+    await storage.set('k', 'v');
+    await deleteIndexedDb(factory, 'watched');
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+
   it('deletes a database another adapter, in another page, holds open, and leaves the others alone', async () => {
     const factory = new IDBFactory();
     const other = createIndexedDbStorage({ indexedDB: factory, dbName: 'other' });

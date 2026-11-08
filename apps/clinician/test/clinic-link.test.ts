@@ -45,8 +45,8 @@ describe('opening and acting with a link', () => {
   });
 
   it('adds the move to the body of an act, and reads whether a fresh link was logged', async () => {
-    const { fetchFn, calls } = server({ status: 200, body: { state: 'acknowledged', freshLink: true } });
-    expect(await actOnLink(fetchFn, 'http://api.test', credential, 'acknowledged')).toEqual({ status: 'ok', body: { state: 'acknowledged', freshLink: true } });
+    const { fetchFn, calls } = server({ status: 200, body: { state: 'acknowledged', nextLink: 'issued' } });
+    expect(await actOnLink(fetchFn, 'http://api.test', credential, 'acknowledged')).toEqual({ status: 'ok', body: { state: 'acknowledged', nextLink: 'issued' } });
     expect(calls[0]!.url).toBe('http://api.test/clinic-link/act');
     expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ ...credential, to: 'acknowledged' });
   });
@@ -70,7 +70,7 @@ describe('opening and acting with a link', () => {
 });
 
 describe('the clinic link page’s words', () => {
-  const keys = ['mock', 'heading', 'loading', 'missing', 'summary', 'noMoves', 'acknowledge', 'markSeen', 'onlyThis', 'doneAcknowledged', 'doneSeen', 'freshLink', 'noFreshLink'] as const;
+  const keys = ['mock', 'heading', 'loading', 'missing', 'summary', 'noMoves', 'acknowledge', 'markSeen', 'onlyThis', 'doneAcknowledged', 'doneSeen', 'freshLink', 'noFreshLink', 'nextStepFailed'] as const;
 
   it('exist in both languages, the Arabic in Arabic, and name the channel as a sample', () => {
     for (const key of keys) {

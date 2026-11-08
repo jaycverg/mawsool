@@ -185,7 +185,7 @@
   },
   {
     "id": "anonymous-store-and-key-are-deleted-on-leaving-on-delete-everything-and-on-a-new-tab-session",
-    "sentence": "The anonymous session's database, with its ciphertext and its key, is deleted by Delete everything, by the next start of the app in a tab that has no such session (as a closed tab could not wipe it), and by leaving the session, before the page moves on"
+    "sentence": "The anonymous session's database, with its ciphertext and its key, is deleted by Delete everything, by the next start of the app once the session's tab has gone (a closed tab could not wipe it), and by leaving the session, before the page moves on; a session that is still open in another tab is not deleted by that tab's start"
   },
   {
     "id": "anonymous-crisis-screen-opens-when-the-store-refuses",
@@ -194,5 +194,9 @@
   {
     "id": "anonymous-crisis-screen-opens-when-the-store-hangs",
     "sentence": "With the browser's storage never answering when the trigger answer arrives in an anonymous session, the crisis screen still shows every number, the block holds through Back, a direct visit and a reload, \"I'm safe right now\" releases it, and the API sees no request"
+  },
+  {
+    "id": "anonymous-screen-is-shut-while-a-crisis-is-open-and-leaving-is-refused",
+    "sentence": "While a crisis is open in an anonymous session the anonymous screen is not reachable (the address lands on the crisis screen), so the session can be neither left nor started, and the crisis mark says the crisis is an anonymous one; after the person releases the screen it can be left"
   }
 ]

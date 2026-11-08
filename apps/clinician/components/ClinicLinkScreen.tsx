@@ -1,6 +1,6 @@
 'use client';
 
-import type { ClinicLinkMove, ClinicLinkTicket } from '@mawsool/types';
+import type { ClinicLinkActResult, ClinicLinkMove, ClinicLinkTicket } from '@mawsool/types';
 import { formatDate, isLocale } from '@mawsool/ui';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
@@ -12,7 +12,10 @@ type Screen =
   | { k: 'missing' }
   | { k: 'refused'; why: 'invalid' | 'not_found' | 'withdrawn' | 'failed' }
   | { k: 'ready'; credential: LinkCredential; ticket: ClinicLinkTicket; busy: boolean; note: 'conflict' | 'failed' | null }
-  | { k: 'done'; move: ClinicLinkMove; freshLink: boolean };
+  | { k: 'done'; move: ClinicLinkMove; nextLink: ClinicLinkActResult['nextLink'] };
+
+/** What the page tells the clinic about its next step, by what became of the next link. `failed` is never worded as "nothing more is asked". */
+const NEXT_LINK_MESSAGE = { issued: 'freshLink', not_needed: 'noFreshLink', failed: 'nextStepFailed' } as const;
 
 /**
  * The page a clinic's no-login link opens (a mock channel: the link is logged by the API, not sent). It reads the ticket id and the
@@ -47,7 +50,7 @@ export function ClinicLinkScreen() {
     const { credential, ticket } = screen;
     setScreen({ ...screen, busy: true, note: null });
     const result = await actOnLink(window.fetch.bind(window), API_URL, credential, move);
-    if (result.status === 'ok') return setScreen({ k: 'done', move, freshLink: result.body.freshLink });
+    if (result.status === 'ok') return setScreen({ k: 'done', move, nextLink: result.body.nextLink });
     if (result.status === 'invalid' || result.status === 'not_found' || result.status === 'withdrawn') return setScreen({ k: 'refused', why: result.status });
     setScreen({ k: 'ready', credential, ticket, busy: false, note: result.status === 'conflict' ? 'conflict' : 'failed' });
   }
@@ -95,8 +98,8 @@ export function ClinicLinkScreen() {
       {screen.k === 'done' && (
         <section role="status" className="flex flex-col gap-2 rounded-staff border border-border bg-surface p-[18px]" data-link-state="done" data-move-made={screen.move}>
           <p className="text-[17px] font-semibold">{t(screen.move === 'acknowledged' ? 'doneAcknowledged' : 'doneSeen')}</p>
-          <p className="t-body text-muted" data-fresh-link={screen.freshLink ? 'yes' : 'no'}>
-            {t(screen.freshLink ? 'freshLink' : 'noFreshLink')}
+          <p className={screen.nextLink === 'failed' ? 't-body text-danger' : 't-body text-muted'} role={screen.nextLink === 'failed' ? 'alert' : undefined} data-next-link={screen.nextLink}>
+            {t(NEXT_LINK_MESSAGE[screen.nextLink])}
           </p>
         </section>
       )}

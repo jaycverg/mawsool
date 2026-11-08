@@ -359,8 +359,12 @@ export type ClinicLinkTicket = z.infer<typeof ClinicLinkTicketSchema>;
 
 export const ClinicLinkActResultSchema = z.object({
   state: TicketStateSchema,
-  /** A fresh link was logged for the clinic because another move of theirs remains. */
-  freshLink: z.boolean(),
+  /**
+   * What became of the clinic's next step: `issued` (a fresh link was logged because another move of theirs remains),
+   * `not_needed` (no move of theirs remains, or the facility has the portal) or `failed` (one was needed and could not be
+   * made: the move itself is committed, and the clinic must be told to contact the service).
+   */
+  nextLink: z.enum(['issued', 'not_needed', 'failed']),
 });
 export type ClinicLinkActResult = z.infer<typeof ClinicLinkActResultSchema>;
 
