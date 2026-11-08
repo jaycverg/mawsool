@@ -110,3 +110,13 @@ describe('Delete everything reaches every key the app keeps on the phone', () =>
     expect(parsed.followUp).toEqual({ eventId: 'e' });
   });
 });
+
+describe('the words shown when a note was stopped before it was stored', () => {
+  it('say it was not sent and do not invite another try, in both languages', async () => {
+    const en = (await import('../messages/en.json')).default.crisis;
+    const ar = (await import('../messages/ar.json')).default.crisis;
+    expect(en.handoffStoppedNote).not.toMatch(/try again|moment/i);
+    expect(en.handoffNotReady).toMatch(/try again/i);
+    expect(ar.handoffStoppedNote).not.toMatch(/حاول|بعد قليل/);
+  });
+});

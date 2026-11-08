@@ -1,4 +1,5 @@
 import type { StorageAdapter, TabMarkAdapter } from '@mawsool/ui';
+import { loadHandoffs } from './crisis-handoff';
 import { pendingEvents, type FlushResult } from './crisis-outbox';
 import { deleteDeviceData } from './device-data';
 import { callServer, hasServerFootprint, type ServerDeps } from './server';
@@ -37,17 +38,21 @@ export interface EraseDeps {
  *  1. A crisis record that was never sent is sent first, within a time limit. It holds no person id and no answers,
  *     so sending it discloses nothing the person has not already given; if it cannot be sent, erasure wins and it goes
  *     with everything else, and the outcome says so.
- *  2. If this phone ever gave the server anything to keep (a ticket, a draft, the equity buckets), the server is asked
- *     to revoke every consent, delete the summaries and clear the buckets. If it cannot be reached, the run stops here
+ *  2. If this phone ever gave the server anything to keep (a ticket, a draft, the equity buckets, a note for the crisis line), the
+ *     server is asked to revoke every consent, delete the summaries and notes and clear the buckets, with the ids of the notes
+ *     this phone made so that one still on its way is refused. If it cannot be reached, the run stops here
  *     with nothing deleted. A phone that never did so wipes without any network.
  *  3. The encrypted store, its key and the tab's crisis mark are removed.
  */
 export async function eraseEverything(deps: EraseDeps): Promise<EraseOutcome> {
   let footprint: boolean;
   let unsent: number;
+  let handoffIds: string[];
   try {
     footprint = await hasServerFootprint(deps.storage);
     unsent = (await pendingEvents(deps.storage)).length;
+    // The ids of every note this phone ever tried to hand to the crisis line, including one whose send never got an answer.
+    handoffIds = (await loadHandoffs(deps.storage)).map((record) => record.handoffId).slice(-100);
   } catch {
     return { status: 'failed' };
   }
@@ -62,7 +67,8 @@ export async function eraseEverything(deps: EraseDeps): Promise<EraseOutcome> {
   if (footprint) {
     // Any failure on the way to the server stops the run with nothing deleted: `callServer` reports a phone that cannot
     // read its own device secret the same way as a network that is down.
-    const revoked = await callServer(deps.server, 'DELETE', '/me/data');
+    // The ids go with the request, so the server can also refuse a send it has not seen yet and that is still on its way.
+    const revoked = await callServer(deps.server, 'DELETE', '/me/data', handoffIds.length > 0 ? { handoffIds } : undefined);
     if (!revoked.ok) return { status: 'blocked' };
   }
 

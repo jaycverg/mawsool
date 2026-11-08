@@ -15,7 +15,7 @@ export interface ServerDeps {
  * a 4xx the person can do nothing about by retrying, with its status, and `not_registered` is a device the server does
  * not know and could not register.
  */
-export type CallResult<T> = { ok: true; status: number; body: T } | { ok: false; reason: 'offline' | 'rejected' | 'not_registered'; status: number | null };
+export type CallResult<T> = { ok: true; status: number; body: T } | { ok: false; reason: 'offline' | 'rejected' | 'not_registered'; status: number | null; /** The API's error code on a refusal, when it sent one. */ error?: string | null };
 
 const registered = new WeakMap<StorageAdapter, string>();
 
@@ -89,6 +89,9 @@ async function callOnce<T>(deps: ServerDeps, method: 'GET' | 'POST' | 'PUT' | 'D
   } catch {
     // An empty or unreadable body: the status still says what happened.
   }
-  if (!response.ok) return { ok: false, reason: 'rejected', status: response.status };
+  if (!response.ok) {
+    const code = (parsed as { error?: unknown } | null)?.error;
+    return { ok: false, reason: 'rejected', status: response.status, ...(typeof code === 'string' ? { error: code } : {}) };
+  }
   return { ok: true, status: response.status, body: parsed as T };
 }

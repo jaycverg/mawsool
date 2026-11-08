@@ -74,10 +74,11 @@ export function buildHandoffPreview(input: { screenings: readonly Screening[]; l
  * - `offline`: no connection (or the server failed); nothing is known to be stored. The crisis screen says so and stays as it is.
  * - `not_ready`: the server does not yet hold the crisis record this belongs to.
  * - `rejected`: the server refused the request for good.
+ * - `stopped`: the server says this hand-off was already stopped, so it was not stored. Nothing is offered again.
  * - `invalid_number`: the number typed is not an international number; nothing was sent.
  * - `failed`: the phone could not write its own record, so nothing was sent.
  */
-export type SendOutcome = 'sent' | 'offline' | 'not_ready' | 'rejected' | 'invalid_number' | 'failed';
+export type SendOutcome = 'sent' | 'offline' | 'not_ready' | 'stopped' | 'rejected' | 'invalid_number' | 'failed';
 
 export interface SendDeps {
   server: ServerDeps;
@@ -121,6 +122,7 @@ export async function sendHandoff(deps: SendDeps, input: { crisisEventId: string
     if (sent.reason !== 'rejected') return 'offline';
     // A refusal means nothing was stored, so the record has nothing to stop.
     await changeHandoffs(storage, (records) => records.filter((other) => other.handoffId !== record.handoffId)).catch(() => undefined);
+    if (sent.status === 409 && sent.error === 'handoff_stopped') return 'stopped';
     return sent.status === 409 ? 'not_ready' : 'rejected';
   }
   try {

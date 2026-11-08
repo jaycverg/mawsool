@@ -88,7 +88,7 @@ export function NextDayScreen() {
               <p className="t-body" role="status">{t(answered === 'better' ? 'afterBetter' : answered === 'same' ? 'afterSame' : 'afterWorse')}</p>
               {!saveFailed && <p className="t-small text-muted">{t('saved')}</p>}
               {saveFailed && <p role="alert" className="t-small text-muted">{t('saveFailed')}</p>}
-              {answered === 'worse' && <a className="btn-primary" href={href(lang, 'crisis')} data-help-now>{t('helpNow')}</a>}
+              {answered === 'worse' && <a className="flex min-h-cta items-center justify-center rounded-cta bg-danger px-4 text-[16px] font-semibold text-white no-underline" href={href(lang, 'crisis')} data-help-now>{t('helpNow')}</a>}
             </section>
             <section className="flex flex-col gap-2.5 rounded-card border border-border bg-surface p-4" data-offer>
               <h2 className="text-[16px] font-semibold">{t('offerTitle')}</h2>

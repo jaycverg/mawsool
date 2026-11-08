@@ -20,7 +20,7 @@ function unfinishedPhq9(): Screening {
   return { id: 's2', instrument: 'phq9', answers: [3, 3, 3], total: 9, band: null, item9Flag: false, takenAt: '2026-11-01T08:05:00+04:00' } as Screening;
 }
 
-type PostReply = 'created' | 'offline' | 'lost-reply' | 'unknown-event' | 'rejected' | 'unavailable';
+type PostReply = 'created' | 'offline' | 'lost-reply' | 'unknown-event' | 'stopped' | 'rejected' | 'unavailable';
 
 /** A fake API: registration works, the hand-off route answers as told, and a row is kept when the server "stored" it. */
 function setup(post: PostReply = 'created', flush: FlushResult['outcome'] = 'sent') {
@@ -37,6 +37,7 @@ function setup(post: PostReply = 'created', flush: FlushResult['outcome'] = 'sen
       if (post === 'offline') throw new TypeError('network down');
       if (post === 'unavailable') return new Response('{}', { status: 503 });
       if (post === 'unknown-event') return new Response(JSON.stringify({ error: 'crisis_event_unknown' }), { status: 409 });
+      if (post === 'stopped') return new Response(JSON.stringify({ error: 'handoff_stopped' }), { status: 409 });
       if (post === 'rejected') return new Response('{}', { status: 400 });
       server.stored = true;
       if (post === 'lost-reply') throw new TypeError('the reply never came');
@@ -276,14 +277,21 @@ describe('one record per crisis', () => {
 });
 
 describe('a send the server says was stopped', () => {
-  it('drops the record, tells the person to try again, and the next send is a different hand-off id', async () => {
-    const s = setup('unknown-event');
-    expect(await sendHandoff(s.deps, input())).toBe('not_ready');
+  it('says it was stopped, drops the record, and offers nothing again: the next send, if the person makes one, is a different hand-off id', async () => {
+    const s = setup('stopped');
+    expect(await sendHandoff(s.deps, input())).toBe('stopped');
     expect(await loadHandoffs(s.store.storage)).toEqual([]);
     const idsSent = posts(s.calls).map((call) => call.body!.handoffId);
     await sendHandoff(s.deps, input());
     const all = posts(s.calls).map((call) => call.body!.handoffId);
     expect(all).toHaveLength(2);
     expect(all[1]).not.toBe(idsSent[0]);
+  });
+
+  it('keeps "try again in a moment" for a crisis record the server does not hold yet, and never for a stopped hand-off', async () => {
+    const notReady = setup('unknown-event');
+    expect(await sendHandoff(notReady.deps, input())).toBe('not_ready');
+    const stopped = setup('stopped');
+    expect(await sendHandoff(stopped.deps, input())).not.toBe('not_ready');
   });
 });

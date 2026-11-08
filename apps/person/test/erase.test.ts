@@ -29,6 +29,7 @@ type Reply = { status: number } | 'offline';
 function setup(options: { footprint?: boolean; unsent?: boolean; erase?: Reply; flush?: 'sends' | 'fails' | 'hangs'; crisisOpen?: boolean; failClear?: boolean } = {}) {
   const store = memoryStorage({ screenings: [{ id: 's' }], 'crisis:outbox': options.unsent ? [EVENT] : [] });
   const calls: string[] = [];
+  const eraseBodies: unknown[] = [];
   const wipedBefore: boolean[] = [];
   const fetchFn = vi.fn(async (url: string, init?: RequestInit) => {
     const path = new URL(url).pathname;
@@ -36,6 +37,7 @@ function setup(options: { footprint?: boolean; unsent?: boolean; erase?: Reply; 
     if (path === '/persons') return new Response('{}', { status: 201 });
     if (path === '/me/invites/claim') return new Response(JSON.stringify({ inviteId: '66666666-6666-4666-8666-666666666666', source: 'tamm', screenedAt: '2026-11-01T04:00:00.000Z' }), { status: 200 });
     wipedBefore.push(store.data.size === 0);
+    eraseBodies.push(init?.body ? JSON.parse(String(init.body)) : null);
     const reply = options.erase ?? { status: 200 };
     if (reply === 'offline') throw new TypeError('network down');
     return new Response('{}', { status: reply.status });
@@ -58,7 +60,7 @@ function setup(options: { footprint?: boolean; unsent?: boolean; erase?: Reply; 
     flushCrisis,
     crisisIsOpen: async () => options.crisisOpen ?? false,
   };
-  return { deps, store, calls, mark, flushCrisis, wipedBefore, prepare: async () => { forgetRegistration(store.storage); if (options.footprint) await markServerFootprint(store.storage, NOW); } };
+  return { deps, store, calls, eraseBodies, mark, flushCrisis, wipedBefore, prepare: async () => { forgetRegistration(store.storage); if (options.footprint) await markServerFootprint(store.storage, NOW); } };
 }
 
 afterEach(() => vi.useRealTimers());
@@ -226,5 +228,44 @@ describe('Delete everything on a phone that gave a number for text reminders', (
     expect((await eraseEverything(s.deps)).status).toBe('erased');
     expect(s.calls).toEqual(['CLEAR']);
     expect(s.store.data.has('reminders')).toBe(false);
+  });
+});
+
+describe('Delete everything on a phone that handed a note to the crisis line', () => {
+  const FIRST = '55555555-5555-4555-8555-555555555555';
+  const SECOND = '66666666-6666-4666-8666-666666666666';
+  const record = (handoffId: string, state: 'sending' | 'sent') => ({ handoffId, crisisEventId: '11111111-1111-4111-8111-111111111111', state, startedAt: '2026-11-02T08:00:00+04:00' });
+
+  it('sends the ids of every note it made, the one whose reply never came included, so the server can refuse a send still on its way', async () => {
+    const s = setup({ footprint: true });
+    s.store.data.set('crisis:handoff', [record(FIRST, 'sent'), record(SECOND, 'sending')]);
+    await s.prepare();
+    expect((await eraseEverything(s.deps)).status).toBe('erased');
+    expect(s.calls.filter((call) => call !== 'POST /persons')).toEqual(['DELETE /me/data', 'CLEAR']);
+    expect(s.eraseBodies).toEqual([{ handoffIds: [FIRST, SECOND] }]);
+    expect(s.store.data.size).toBe(0);
+  });
+
+  it('sends no body when no note was ever made, and still wipes', async () => {
+    const s = setup({ footprint: true });
+    await s.prepare();
+    expect((await eraseEverything(s.deps)).status).toBe('erased');
+    expect(s.eraseBodies).toEqual([null]);
+  });
+
+  it('wipes without any network call when nothing was ever shared, even with a record that never reached the server', async () => {
+    const s = setup();
+    s.store.data.set('crisis:handoff', [record(FIRST, 'sending')]);
+    await s.prepare();
+    expect((await eraseEverything(s.deps)).status).toBe('erased');
+    expect(s.calls).toEqual(['CLEAR']);
+  });
+
+  it('stops with nothing deleted when the server cannot be reached, so the ids can be sent again later', async () => {
+    const s = setup({ footprint: true, erase: 'offline' });
+    s.store.data.set('crisis:handoff', [record(FIRST, 'sending')]);
+    await s.prepare();
+    expect((await eraseEverything(s.deps)).status).toBe('blocked');
+    expect(s.store.data.get('crisis:handoff')).toEqual([record(FIRST, 'sending')]);
   });
 });
