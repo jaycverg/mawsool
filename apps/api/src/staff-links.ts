@@ -18,3 +18,11 @@ export function staffAppFor(role: StaffRole): keyof StaffAppUrls {
 export function staffSignInLink(role: StaffRole, token: string, apps: StaffAppUrls): string {
   return `${apps[staffAppFor(role)]}/${STAFF_LINK_LOCALE}/sign-in/?token=${encodeURIComponent(token)}`;
 }
+
+/**
+ * The no-login clinic link: `<clinician app>/en/clinic-link/#<ticket id>.<token>`. Both values sit in the fragment, which a browser
+ * never sends, so neither is in a request URL or a server log; the page reads them and sends them in a request body.
+ */
+export function clinicLink(clinicianAppUrl: string, ticketId: string, token: string): string {
+  return `${clinicianAppUrl}/${STAFF_LINK_LOCALE}/clinic-link/#${ticketId}.${token}`;
+}

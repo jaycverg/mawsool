@@ -114,5 +114,13 @@
   {
     "id": "a-second-crisis-offers-a-new-note-and-both-notes-stay-stoppable",
     "sentence": "After a note was sent in one crisis and the crisis screen released, a second crisis on the same phone offers a new note instead of the first one's sent line; sending it leaves the server with two hand-offs; Settings lists two Stop controls, each described by its own note, and stopping one leaves the other"
+  },
+  {
+    "id": "context-panel-puts-the-trajectory-beside-conditions-and-labels-the-sample-labs",
+    "sentence": "The clinician detail shows the PHQ-9/GAD-7 trajectory beside the self-reported conditions in one panel, with sample labs under the label \"Sample — would come from Malaffi\" only when conditions are shared; the export holds the conditions and no lab; kept-back conditions show the neutral \"Not shared by the person\" and no lab; stopping them removes both"
+  },
+  {
+    "id": "no-login-clinic-link-acknowledges-and-marks-seen-one-ticket-and-is-refused-a-second-time",
+    "sentence": "A clinic without portal access is given a logged one-time link; opened with no sign-in it shows only the ticket code, tier, state and deadline under a mock-channel label, Acknowledge moves the ticket once as the clinic and logs a fresh link, the used, tampered or wrong-ticket link is refused alike, the fresh link marks seen, and a ticket whose person ended the share answers as withdrawn; the token is only ever in a request body"
   }
 ]

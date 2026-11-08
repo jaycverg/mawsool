@@ -20,6 +20,7 @@ import {
   CLINIC,
   CLINICIAN_A,
   CLINICIAN_B,
+  ADMIN_USER,
   CONDITION,
   CRISIS_LINE_USER,
   FACILITY_A,
@@ -35,6 +36,7 @@ import {
   handOver,
   inboundCounts,
   keepSession,
+  loggedClinicLink,
   loggedLink,
   makeTicket,
   newPerson,
@@ -1188,6 +1190,146 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await page.getByRole('button', { name: msg(locale, 'crisis.safeNow'), exact: true }).click();
     // Releasing leaves the crisis screen for the finished check-in's result, as it always does.
     await expect(page).toHaveURL(new RegExp(`^${escapeRe(BASE)}/${locale}/result/\\?id=[0-9a-f-]{36}$`));
+  },
+
+  async 'context-panel-puts-the-trajectory-beside-conditions-and-labels-the-sample-labs'({ context, locale }) {
+    const person = await newPerson();
+    const serviceId = await serviceAt(FACILITY_A);
+    const shared = await makeTicket(person, { serviceId, consents: ['ticket', 'trajectory', 'conditions'] });
+    const kept = await makeTicket(person, { serviceId, consents: ['ticket', 'trajectory'] });
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(CLINIC).origin });
+    const clinic = await clinicianPage(context);
+    await clinic.setViewportSize({ width: 1440, height: 900 });
+
+    // Conditions shared: the trajectory and the conditions sit side by side in one panel, with the sample labs under a mock label.
+    await openTicket(clinic, locale, shared.id);
+    const panel = clinic.locator('[data-panel="context"]');
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('[data-trajectory="gad7"]')).toBeVisible();
+    await expect(panel.locator('[data-section="conditions"]')).toContainText(CONDITION);
+    const trajectory = (await panel.locator('[data-section="trajectory"]').boundingBox())!;
+    const conditions = (await panel.locator('[data-section="conditions"]').boundingBox())!;
+    expect(Math.abs(trajectory.y - conditions.y)).toBeLessThan(2);
+    expect(Math.abs(trajectory.x - conditions.x)).toBeGreaterThan(100);
+    const labs = panel.locator('[data-section="labs"]');
+    await expect(labs.locator('[data-mock-label]')).toHaveText(cmsg(locale, 'detail.labsMock'));
+    expect(cmsg('en', 'detail.labsMock')).toBe('Sample — would come from Malaffi');
+    await expect(labs.locator('[data-lab]')).toHaveCount(3);
+    await expect(labs.locator('[data-lab="hba1c"]')).toContainText('HbA1c');
+    await expect(labs.locator('[data-lab="hba1c"] bdi')).toHaveText('6.1 %');
+    await expect(labs).toContainText(cmsg(locale, 'detail.labsNote'));
+
+    // The export holds the person's conditions and none of the sample: no lab, no label, no observation.
+    await clinic.getByRole('button', { name: cmsg(locale, 'detail.copyFhir'), exact: true }).click();
+    await expect(clinic.locator('[data-fhir]')).toBeVisible();
+    const text = (await clinic.locator('[data-fhir]').textContent())!;
+    expect(await validateBundle(text)).toEqual({ valid: true });
+    expect(text).toContain(CONDITION);
+    for (const sample of ['HbA1c', 'glucose', 'TSH', 'would come from', 'Observation', 'DiagnosticReport']) expect(text, sample).not.toContain(sample);
+
+    // Conditions kept back: the neutral "not shared" text, and no lab at all.
+    await openTicket(clinic, locale, kept.id);
+    await expect(clinic.locator('[data-panel="context"] [data-trajectory="gad7"]')).toBeVisible();
+    await expect(clinic.locator('[data-section="conditions"] [data-not-shared]')).toHaveText(cmsg(locale, 'detail.notShared'));
+    await expect(clinic.locator('[data-section="labs"]')).toHaveCount(0);
+    await expect(clinic.locator('[data-lab]')).toHaveCount(0);
+
+    // Stopping the conditions takes the labs away with them.
+    await revokeConsent(person, shared, 'conditions');
+    await openTicket(clinic, locale, shared.id);
+    await expect(clinic.locator('[data-section="conditions"] [data-not-shared]')).toHaveText(cmsg(locale, 'detail.notShared'));
+    await expect(clinic.locator('[data-section="labs"]')).toHaveCount(0);
+    await expect(clinic.locator('body')).not.toContainText(CONDITION);
+  },
+
+  async 'no-login-clinic-link-acknowledges-and-marks-seen-one-ticket-and-is-refused-a-second-time'({ context, locale, consoleGuard }) {
+    consoleGuard.allow({ url: `${API}/clinic-link/open`, expect: 401, reason: 'a link that was used, tampered with or made for another ticket is refused, which the page must say' });
+    consoleGuard.allow({ url: `${API}/clinic-link/open`, expect: 410, reason: 'a link for a ticket whose person ended the share is refused with the withdrawn answer' });
+    const admin = bearer(await staffSession(ADMIN_USER));
+    const portal = (portalAccess: boolean) => call('PUT', `/facilities/${FACILITY_A}/portal-access`, { headers: admin, body: { portalAccess } });
+    expect((await portal(false)).status).toBe(200);
+    try {
+      const person = await newPerson();
+      const serviceId = await serviceAt(FACILITY_A);
+      const ticket = await makeTicket(person, { serviceId, consents: ['ticket', 'scores', 'free_text', 'conditions'], approvedSummary: SUMMARY, summaryBuiltFrom: ['ticket'] });
+      const link = (await loggedClinicLink(ticket.shortCode))!;
+      expect(link).toMatch(new RegExp(`^${escapeRe(CLINIC)}/en/clinic-link/#${ticket.id}\\.[A-Za-z0-9_-]{43}$`));
+      const token = link.split('.').at(-1)!;
+
+      // The page of a clinic with no sign-in at all: a fresh browser context, nothing kept from any staff session.
+      const visitor = await context.browser()!.newContext();
+      const page = await visitor.newPage();
+      const seen: string[] = [];
+      page.on('request', (request) => {
+        if (request.url().startsWith(API)) seen.push(`${request.method()} ${request.url()}`);
+      });
+      const open = async (address: string) => {
+        await page.goto(address);
+        await page.reload(); // the hash alone changes nothing for the browser: this loads the page and its fragment afresh
+      };
+      await page.goto(link.replace('/en/', `/${locale}/`));
+      await expect(page.locator('[data-screen="clinic-link"] [data-mock-label]')).toHaveText(cmsg(locale, 'clinicLink.mock'));
+      await expect(page.locator('[data-link-state="ready"] [data-code]')).toHaveText(`${ticket.shortCode.slice(0, 2)}-${ticket.shortCode.slice(2)}`);
+      await expect(page.locator('[data-move]')).toHaveCount(2);
+      // Only what is needed to act: nothing the person shared, and no staff session behind the page.
+      for (const secret of [FREE_TEXT, CONDITION, SUMMARY, person.id]) await expect(page.locator('body')).not.toContainText(secret);
+      expect(await page.evaluate((key) => sessionStorage.getItem(key), SESSION_KEY)).toBeNull();
+      // The token and the ticket id travel in a request body, never in a URL.
+      expect(seen).toEqual([`POST ${API}/clinic-link/open`]);
+      for (const request of seen) {
+        expect(request).not.toContain(token);
+        expect(request).not.toContain(ticket.id);
+      }
+
+      // Acknowledge: one move, through the state machine, as the clinic by link; the link is spent and a fresh one is logged.
+      await page.locator('[data-move="acknowledged"]').click();
+      await expect(page.locator('[data-link-state="done"][data-move-made="acknowledged"]')).toBeVisible();
+      await expect(page.locator('[data-fresh-link]')).toHaveAttribute('data-fresh-link', 'yes');
+      await expect(page.locator('[data-fresh-link]')).toHaveText(cmsg(locale, 'clinicLink.freshLink'));
+      const afterAck = (await stored(ticket.id)).events;
+      expect(afterAck.map((event) => [event.toState, event.actor])).toEqual([['issued', 'person'], ['acknowledged', 'clinic']]);
+      expect((afterAck.at(-1) as unknown as { channel: string }).channel).toBe('link');
+
+      // The same link again: refused like any bad link, nothing moves.
+      await page.reload();
+      await expect(page.locator('[data-link-state="invalid"]')).toHaveText(cmsg(locale, 'clinicLink.refused.invalid'));
+      await expect(page.locator('[data-code]')).toHaveCount(0);
+      expect((await stored(ticket.id)).events).toHaveLength(2);
+
+      // The fresh link offers the one move that is left, and closes the clinic's part.
+      const fresh = (await loggedClinicLink(ticket.shortCode))!;
+      expect(fresh).not.toBe(link);
+      await open(fresh.replace('/en/', `/${locale}/`));
+      await expect(page.locator('[data-move]')).toHaveCount(1);
+      await expect(page.locator('[data-move="seen"]')).toBeVisible();
+      await page.locator('[data-move="seen"]').click();
+      await expect(page.locator('[data-link-state="done"][data-move-made="seen"]')).toBeVisible();
+      await expect(page.locator('[data-fresh-link]')).toHaveAttribute('data-fresh-link', 'no');
+      expect((await stored(ticket.id)).events.map((event) => event.toState)).toEqual(['issued', 'acknowledged', 'seen']);
+      expect(await loggedClinicLink(ticket.shortCode)).toBe(fresh);
+
+      // A tampered link and a link used with another ticket's id are the same refusal.
+      const other = await makeTicket(person, { serviceId });
+      const flipped = `${link.slice(0, -1)}${link.endsWith('A') ? 'B' : 'A'}`;
+      const forOther = link.replace(ticket.id, other.id);
+      for (const address of [flipped, forOther]) {
+        await open(address.replace('/en/', `/${locale}/`));
+        await expect(page.locator('[data-link-state="invalid"]')).toHaveText(cmsg(locale, 'clinicLink.refused.invalid'));
+      }
+      expect((await stored(other.id)).events).toHaveLength(1);
+
+      // A ticket whose person ended the share: the withdrawn answer, with nothing about it.
+      const gone = await makeTicket(person, { serviceId, consents: ['ticket', 'scores'] });
+      const goneLink = (await loggedClinicLink(gone.shortCode))!;
+      await revokeConsent(person, gone, 'ticket');
+      await open(goneLink.replace('/en/', `/${locale}/`));
+      await expect(page.locator('[data-link-state="withdrawn"]')).toHaveText(cmsg(locale, 'clinicLink.refused.withdrawn'));
+      await expect(page.locator('[data-code]')).toHaveCount(0);
+      await expect(page.locator('[data-move]')).toHaveCount(0);
+      await visitor.close();
+    } finally {
+      expect((await portal(true)).status).toBe(200);
+    }
   },
 
   async 'a-note-the-server-says-was-stopped-leaves-the-form-with-its-send-button-not-ready'({ page, locale, consoleGuard }) {

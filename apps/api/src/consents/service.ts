@@ -5,6 +5,7 @@ import type { Clock } from '../clock';
 import type { Cipher } from '../crypto';
 import { schema, type Db } from '../db/client';
 import { ticketElement } from './elements';
+import { deleteClinicLinksOf } from '../clinic-links/service';
 import { eraseHandoffs } from '../crisis-handoffs/service';
 import { removeReminderPhone } from '../reminders/service';
 import { appendEvent, lastEvent, type Executor } from '../tickets/events';
@@ -18,6 +19,8 @@ export interface ConsentDeps {
   clock: Clock;
   /** The wall clock: what guards a request still on its way (a remembered stop) must not follow a demo clock jump. */
   securityClock: Clock;
+  /** Runs once after a new ticket is committed (not for a replay). It must not throw: nothing it does can fail the request. */
+  onTicketIssued?: (ticketId: string) => Promise<void>;
 }
 
 type ConsentRow = typeof schema.consents.$inferSelect;
@@ -237,7 +240,7 @@ export interface EraseResult {
 /**
  * "Delete everything" on the server: revokes the `ticket` consent of every ticket the person holds that is still
  * shared (which revokes the rest and withdraws what is live), deletes every logged summary the person has, and
- * clears the equity buckets. The invites the person claimed, the number they gave for text reminders and any hand-off to the crisis line are deleted too (see below). The tickets themselves
+ * clears the equity buckets. The invites the person claimed, the number they gave for text reminders, any hand-off to the crisis line and the clinic links of their tickets are deleted too (see below). The tickets themselves
  * and their events remain, as pseudonymous timings with no data: an event's reason is a code from a fixed list, never free text.
  */
 export async function eraseEverything(deps: ConsentDeps, personId: string, unseenHandoffIds: readonly string[] = []): Promise<EraseResult> {
@@ -263,6 +266,8 @@ export async function eraseEverything(deps: ConsentDeps, personId: string, unsee
   // The hand-offs to the crisis line go the same way: the stored template and its ledger row are deleted, and the ids of the ones
   // the phone may have sent without hearing back are remembered, so a send still on its way cannot recreate one.
   await db.transaction((tx) => eraseHandoffs(tx, personId, deps.securityClock.now(), unseenHandoffIds));
+  // A no-login clinic link of one of the person's tickets is useless once the share has ended, and goes with the rest.
+  await deleteClinicLinksOf(db, personId);
   await db
     .update(schema.persons)
     .set({ equityOptIn: false, ageBand: null, gender: null, language: null, region: null })

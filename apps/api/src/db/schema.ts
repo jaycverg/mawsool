@@ -66,6 +66,11 @@ export const facilities = pgTable('facilities', {
   contactText: text('contact_text').notNull(),
   contactTextAr: text('contact_text_ar'),
   sample: boolean('sample').notNull().default(true),
+  /**
+   * Whether the facility has the clinician portal. A clinic without it gets a signed one-time link (logged, not sent) to acknowledge or
+   * mark seen a ticket (`clinic_links`). The seeded facilities all have it.
+   */
+  portalAccess: boolean('portal_access').notNull().default(true),
 });
 
 /** Mock directory. Every tier except self-help belongs to a facility, tele included. `name_ar` follows the rule of `facilities`. */
@@ -383,6 +388,30 @@ export const revokedHandoffs = pgTable('revoked_handoffs', {
 });
 
 /**
+ * The no-login clinic channel: one signed, one-time link to acknowledge or mark seen one ticket, for a facility without the
+ * portal. Only the SHA-256 of the token is stored (the token is logged, not sent). The link is bound to a ticket and to the
+ * facility that ticket is addressed to, expires 48 hours after it was made on the wall clock, and is spent by the one
+ * transition it fires, in the same transaction. It holds no person and no data: the ticket row it points to is the only tie.
+ */
+export const clinicLinks = pgTable(
+  'clinic_links',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tokenHash: text('token_hash').notNull().unique(),
+    ticketId: uuid('ticket_id')
+      .notNull()
+      .references(() => tickets.id),
+    facilityId: uuid('facility_id')
+      .notNull()
+      .references(() => facilities.id),
+    createdAt: at('created_at').notNull(),
+    expiresAt: at('expires_at').notNull(),
+    usedAt: at('used_at'),
+  },
+  (t) => [index('clinic_links_ticket_idx').on(t.ticketId)],
+);
+
+/**
  * What a person handed to the mock crisis line, one row per hand-off. The template (language, trigger, the totals of their
  * latest check-ins and the callback number if they gave one) is AES-256-GCM ciphertext bound to this row's id. The row
  * exists only while its ledger consent (`consent_id`, element `crisis_handoff`) is live. Stopping and "Delete everything"
@@ -444,6 +473,7 @@ export const ALL_TABLE_NAMES = [
   'inbound_nonces',
   'bundle_reads',
   'summary_logs',
+  'clinic_links',
   'revoked_handoffs',
   'crisis_handoffs',
   'crisis_events',

@@ -15,6 +15,7 @@ import { formatDate, isLocale, staffCall, type StaffCall } from '@mawsool/ui';
 import { useLocale, useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ACTIONABLE_STATES, API_URL, displayCode, sparkline, trajectoryByInstrument } from '../lib/queue';
+import { SAMPLE_LABS, showsSampleLabs } from '../lib/sample-labs';
 
 type Translate = ReturnType<typeof useTranslations>;
 
@@ -285,13 +286,18 @@ function Shared({ t, root, lang, bundle }: { t: Translate; root: Translate; lang
         {missing('scores') ? <NotShared t={t} /> : (content.scores ?? []).length === 0 ? <Empty t={t} /> : <ul className="m-0 flex list-none flex-col gap-1 p-0">{(content.scores ?? []).map((score) => <li key={`${score.instrument}-${score.takenAt}`} className="text-[15px]"><b>{t('scoreLine', { instrument: t(`instrument.${score.instrument}`), total: score.total })}</b>{score.band && <> · {t.has(`band.${score.band}`) ? t(`band.${score.band as 'mild'}`) : score.band}</>}{(content.scores ?? []).filter((other) => other.instrument === score.instrument).length > 1 && <span className="text-muted"> · {formatDate(score.takenAt, lang)}</span>}</li>)}</ul>}
       </Section>
 
-      <Section title={t('trajectoryTitle')} data="trajectory">
-        {missing('trajectory') ? <NotShared t={t} /> : <Trajectory t={t} lang={lang} content={content} />}
-      </Section>
-
-      <Section title={t('conditionsTitle')} data="conditions">
-        {missing('conditions') ? <NotShared t={t} /> : (content.conditions ?? []).length === 0 ? <Empty t={t} /> : <ul className="m-0 flex list-none flex-col gap-1 p-0">{(content.conditions ?? []).map((name) => <li key={name} className="text-[15px]" dir="auto">{t('conditionLine', { name })}</li>)}</ul>}
-      </Section>
+      <div className="flex flex-col gap-3 rounded-input border border-border p-3" data-panel="context">
+        <span className={SECTION}>{t('contextTitle')}</span>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Section title={t('trajectoryTitle')} data="trajectory">
+            {missing('trajectory') ? <NotShared t={t} /> : <Trajectory t={t} lang={lang} content={content} />}
+          </Section>
+          <Section title={t('conditionsTitle')} data="conditions">
+            {missing('conditions') ? <NotShared t={t} /> : (content.conditions ?? []).length === 0 ? <Empty t={t} /> : <ul className="m-0 flex list-none flex-col gap-1 p-0">{(content.conditions ?? []).map((name) => <li key={name} className="text-[15px]" dir="auto">{t('conditionLine', { name })}</li>)}</ul>}
+          </Section>
+        </div>
+        {showsSampleLabs(content, !missing('conditions')) && <SampleLabsBlock t={t} />}
+      </div>
 
       <Section title={t('preferencesTitle')} data="preferences">
         {missing('preferences') ? <NotShared t={t} /> : content.preferences === undefined ? <Empty t={t} /> : <p className="text-[15px]">{preferenceLines(t, root, content.preferences).join(' · ')}</p>}
@@ -301,6 +307,27 @@ function Shared({ t, root, lang, bundle }: { t: Translate; root: Translate; lang
         {missing('free_text') ? <NotShared t={t} /> : content.free_text === undefined ? <Empty t={t} /> : <p className="whitespace-pre-wrap text-[15px]" dir="auto" data-note>{content.free_text}</p>}
       </Section>
     </>
+  );
+}
+
+/** The mock lab results, under their label. They come from `lib/sample-labs.ts`, never from the bundle, and are not in the export. */
+function SampleLabsBlock({ t }: { t: Translate }) {
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-border pt-2.5" data-section="labs">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={SECTION}>{t('labsTitle')}</span>
+        <span className="rounded-chip bg-mock px-2 py-[3px] text-[12px] font-semibold text-mock-ink" data-mock-label>{t('labsMock')}</span>
+      </div>
+      <ul className="m-0 flex list-none flex-col gap-1 p-0">
+        {SAMPLE_LABS.map((lab) => (
+          <li key={lab.id} className="flex items-baseline justify-between gap-3 text-[15px]" data-lab={lab.id}>
+            <span>{t(`lab.${lab.id}`)}</span>
+            <bdi dir="ltr" className="font-semibold">{`${lab.value} ${lab.unit}`}</bdi>
+          </li>
+        ))}
+      </ul>
+      <p className="t-small text-muted">{t('labsNote')}</p>
+    </div>
   );
 }
 
