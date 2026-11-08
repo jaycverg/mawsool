@@ -1,12 +1,16 @@
 import type { Screening } from '@mawsool/types';
 import { describe, expect, it, vi } from 'vitest';
-import { buildHandoffPreview, loadHandoff, sendHandoff, stopHandoff, type HandoffRecord } from '../lib/crisis-handoff';
+import type { StorageAdapter } from '@mawsool/ui';
+import { buildHandoffPreview, handoffFor, loadHandoffs, offerState, sendHandoff, stopHandoff, type HandoffRecord } from '../lib/crisis-handoff';
 import type { FlushResult } from '../lib/crisis-outbox';
 import { deleteDeviceData } from '../lib/device-data';
 import { forgetRegistration, hasServerFootprint } from '../lib/server';
 import { fixtureClock, memoryStorage } from './helpers/memory';
 
 const EVENT_ID = '11111111-1111-4111-8111-111111111111';
+const OTHER_EVENT_ID = '33333333-3333-4333-8333-333333333333';
+/** The only record on the phone, or null: most cases involve one crisis. */
+const loadHandoff = async (storage: StorageAdapter): Promise<HandoffRecord | null> => (await loadHandoffs(storage))[0] ?? null;
 const NUMBER = '+971501234567';
 
 function phq9(): Screening {
@@ -75,6 +79,7 @@ describe('sending the hand-off', () => {
     expect(JSON.stringify(post!.body)).not.toContain('answers');
     const record = (await loadHandoff(s.store.storage))!;
     expect(record).toMatchObject({ crisisEventId: EVENT_ID, state: 'sent', handoffId: post!.body!.handoffId });
+    expect(s.store.data.get('crisis:handoff')).toHaveLength(1);
     expect(JSON.stringify(record)).not.toContain('971');
     expect(await hasServerFootprint(s.store.storage)).toBe(true);
   });
@@ -151,7 +156,7 @@ describe('sending the hand-off', () => {
     const s = setup();
     const set = s.store.storage.set.bind(s.store.storage);
     s.store.storage.set = async (key, value) => {
-      if (key === 'crisis:handoff' && (value as HandoffRecord).state === 'sent') throw new Error('storage write failed');
+      if (key === 'crisis:handoff' && (value as HandoffRecord[]).some((record) => record.state === 'sent')) throw new Error('storage write failed');
       return set(key, value);
     };
     expect(await sendHandoff(s.deps, input())).toBe('sent');
@@ -205,5 +210,80 @@ describe('stopping the hand-off', () => {
     await deleteDeviceData(s.store.storage);
     expect(await loadHandoff(s.store.storage)).toBeNull();
     expect(s.store.data.size).toBe(0);
+  });
+});
+
+describe('one record per crisis', () => {
+  it('shows the offer for a new crisis even though an earlier crisis’s note was sent', async () => {
+    const s = setup();
+    await sendHandoff(s.deps, input());
+    const records = await loadHandoffs(s.store.storage);
+    expect(offerState(records, EVENT_ID)).toBe('sent');
+    expect(offerState(records, OTHER_EVENT_ID)).toBe('offer');
+    expect(handoffFor(records, OTHER_EVENT_ID)).toBeNull();
+  });
+
+  it('shows the form, not the offer or the sent line, for the crisis whose send is unconfirmed', async () => {
+    const s = setup('lost-reply');
+    await sendHandoff(s.deps, input());
+    const records = await loadHandoffs(s.store.storage);
+    expect(offerState(records, EVENT_ID)).toBe('sending');
+    expect(offerState(records, OTHER_EVENT_ID)).toBe('offer');
+  });
+
+  it('keeps an earlier crisis’s unconfirmed record through a new crisis’s send, and can still stop it', async () => {
+    const s = setup('lost-reply');
+    await sendHandoff(s.deps, input());
+    const earlier = (await loadHandoff(s.store.storage))!;
+    expect(earlier.state).toBe('sending');
+    await sendHandoff(s.deps, input({ crisisEventId: OTHER_EVENT_ID }));
+    const records = await loadHandoffs(s.store.storage);
+    expect(records.map((record) => [record.crisisEventId, record.state])).toEqual([[EVENT_ID, 'sending'], [OTHER_EVENT_ID, 'sending']]);
+    expect(records[0]!.handoffId).toBe(earlier.handoffId);
+    expect(records[1]!.handoffId).not.toBe(earlier.handoffId);
+    // The earlier note is on the server (its reply was lost) and the phone can still stop exactly that one.
+    expect(await stopHandoff({ server: s.serverDeps }, earlier)).toBe('stopped');
+    expect(s.calls.at(-1)).toMatchObject({ method: 'DELETE', path: `/me/crisis-handoffs/${earlier.handoffId}` });
+    expect((await loadHandoffs(s.store.storage)).map((record) => record.crisisEventId)).toEqual([OTHER_EVENT_ID]);
+  });
+
+  it('stops only its own record and leaves a sent note of another crisis alone', async () => {
+    const s = setup();
+    await sendHandoff(s.deps, input());
+    await sendHandoff(s.deps, input({ crisisEventId: OTHER_EVENT_ID }));
+    const [first, second] = await loadHandoffs(s.store.storage);
+    expect(await stopHandoff({ server: s.serverDeps }, second!)).toBe('stopped');
+    expect(await loadHandoffs(s.store.storage)).toEqual([first]);
+  });
+
+  it('drops only the refused crisis’s record when the server refuses it', async () => {
+    const s = setup();
+    await sendHandoff(s.deps, input());
+    const refused = setup('rejected');
+    refused.store.data.set('crisis:handoff', (await loadHandoffs(s.store.storage)).map((record) => ({ ...record, handoffId: '44444444-4444-4444-8444-444444444444' })));
+    expect(await sendHandoff(refused.deps, input({ crisisEventId: OTHER_EVENT_ID }))).toBe('rejected');
+    expect((await loadHandoffs(refused.store.storage)).map((record) => record.crisisEventId)).toEqual([EVENT_ID]);
+  });
+
+  it('is reached by Delete everything on the phone, every record at once', async () => {
+    const s = setup();
+    await sendHandoff(s.deps, input());
+    await sendHandoff(s.deps, input({ crisisEventId: OTHER_EVENT_ID }));
+    expect(await loadHandoffs(s.store.storage)).toHaveLength(2);
+    await deleteDeviceData(s.store.storage);
+    expect(await loadHandoffs(s.store.storage)).toEqual([]);
+  });
+});
+
+describe('a send the server says was stopped', () => {
+  it('drops the record, tells the person to try again, and the next send is a different hand-off id', async () => {
+    const s = setup('unknown-event');
+    expect(await sendHandoff(s.deps, input())).toBe('not_ready');
+    expect(await loadHandoffs(s.store.storage)).toEqual([]);
+    const idsSent = posts(s.calls).map((call) => call.body!.handoffId);
+    await sendHandoff(s.deps, input());
+    const all = posts(s.calls).map((call) => call.body!.handoffId);
+    expect(all).toHaveLength(2);
+    expect(all[1]).not.toBe(idsSent[0]);
   });
 });
