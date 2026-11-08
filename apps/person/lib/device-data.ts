@@ -37,8 +37,10 @@ export async function exportDeviceData(storage: StorageAdapter, now: () => Date)
  * (erase.ts) does that first.
  */
 export async function deleteDeviceData(storage: StorageAdapter, tabMark?: TabMarkAdapter<unknown>, anonymous?: AnonymousStore | null): Promise<void> {
+  // What an anonymous session kept on this device goes first, whichever mode the deleting is done in: its encrypted check-ins and
+  // their key. It goes before the device store is cleared because the list of sessions to delete lives in that store; if it cannot all
+  // be deleted nothing is cleared, and the person is told it failed.
+  if (!(await wipeAnonymousData(anonymous))) throw new Error('the anonymous check-ins could not be deleted');
   await storage.clear();
-  // What an anonymous session kept on this device goes too, whichever mode the deleting is done in: its encrypted check-ins and their key.
-  await wipeAnonymousData(anonymous);
   tabMark?.set(null);
 }

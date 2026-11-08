@@ -1,7 +1,9 @@
+import { createTabMark } from '@mawsool/ui';
 import type { Screening } from '@mawsool/types';
 import { describe, expect, it, vi } from 'vitest';
 import type { StorageAdapter } from '@mawsool/ui';
-import { buildHandoffPreview, handoffFor, loadHandoffs, offerState, sendHandoff, stopHandoff, type HandoffRecord } from '../lib/crisis-handoff';
+import { createCrisisStore, isCrisisMark, type CrisisMark } from '../lib/crisis';
+import { buildHandoffPreview, handoffFor, handoffOffer, loadHandoffs, offerState, sendHandoff, stopHandoff, type HandoffRecord } from '../lib/crisis-handoff';
 import type { FlushResult } from '../lib/crisis-outbox';
 import { deleteDeviceData } from '../lib/device-data';
 import { forgetRegistration, hasServerFootprint } from '../lib/server';
@@ -67,6 +69,48 @@ describe('what the hand-off would send', () => {
 
   it('sends no scores when no check-in was finished', () => {
     expect(buildHandoffPreview({ screenings: [unfinishedPhq9()], language: 'en', trigger: 'cssrs', callback: null }).scores).toEqual([]);
+  });
+});
+
+describe('a crisis that opened in an anonymous session', () => {
+  async function anonymousCrisisOnPhone() {
+    const s = setup();
+    const clock = fixtureClock();
+    const fallback = createTabMark<CrisisMark>(undefined, 'crisis', isCrisisMark);
+    await createCrisisStore(s.store.storage, { now: clock.now, newId: clock.newId, fallback, anonymous: true }).raise({ trigger: 'phq9_item9', screeningId: null, locale: 'en' });
+    // The phone is read afterwards by an ordinary session: a store that is not anonymous, over the same record.
+    const ordinary = createCrisisStore(s.store.storage, { now: clock.now, newId: clock.newId, fallback, anonymous: false });
+    return { s, ordinary };
+  }
+
+  it('is not offered a hand-off by an ordinary session that reads its record, and the server is never called', async () => {
+    const { s, ordinary } = await anonymousCrisisOnPhone();
+    const record = (await ordinary.read()).record;
+    expect(record).toMatchObject({ blocked: true, anonymous: true });
+    expect(handoffOffer(record)).toBeNull();
+    expect(s.calls).toEqual([]);
+  });
+
+  it('is still refused by sendHandoff itself, before anything is read from the server or sent to it', async () => {
+    const { s, ordinary } = await anonymousCrisisOnPhone();
+    const eventId = (await ordinary.read()).record!.event!.id;
+    expect(await sendHandoff(s.deps, input({ crisisEventId: eventId }))).toBe('failed');
+    expect(s.calls).toEqual([]);
+    expect(s.flushFn).not.toHaveBeenCalled();
+    expect(await loadHandoffs(s.store.storage)).toEqual([]);
+    expect(await hasServerFootprint(s.store.storage)).toBe(false);
+  });
+
+  it('is the only kind refused: an ordinary crisis is offered one for its own event', async () => {
+    const s = setup();
+    const clock = fixtureClock();
+    const fallback = createTabMark<CrisisMark>(undefined, 'crisis', isCrisisMark);
+    const crisis = createCrisisStore(s.store.storage, { now: clock.now, newId: clock.newId, fallback });
+    await crisis.raise({ trigger: 'phq9_item9', screeningId: null, locale: 'en' });
+    const record = (await crisis.read()).record;
+    expect(handoffOffer(record)).toEqual({ eventId: record!.event!.id, trigger: 'phq9_item9' });
+    expect(handoffOffer(null)).toBeNull();
+    expect(await sendHandoff(s.deps, input({ crisisEventId: record!.event!.id }))).toBe('sent');
   });
 });
 

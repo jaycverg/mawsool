@@ -1428,7 +1428,7 @@
   },
   {
     "id": "anonymous-store-and-key-are-deleted-on-every-wipe-path",
-    "sentence": "The anonymous session's database, with its ciphertext and its key, is deleted by leaving the session (which still ends it when the deletion fails or hangs), by clear, by Delete everything inside and outside the session with no request, and at the next start of the app in a tab that is not that session (a closed tab could not wipe it), while a start in the same session keeps it; after a wipe the next write makes a new key",
+    "sentence": "The anonymous session's database, with its ciphertext and its key, is deleted by leaving the session (which still ends it when the deletion fails or hangs), by clear, by Delete everything inside and outside the session with no request, and at the next start of the app in any tab once the session's lock has been free for 2 s (a closed tab could not wipe it), while a start in the same session keeps it; after a wipe the next write makes a new key",
     "project": "apps/person",
     "tests": [
       {
@@ -1632,6 +1632,60 @@
       }
     ],
     "browser": "anonymous-screen-is-shut-while-a-crisis-is-open-and-leaving-is-refused"
+  },
+  {
+    "id": "anonymous-sessions-are-found-and-deleted-where-the-browser-cannot-list-databases",
+    "sentence": "Where the browser cannot list its databases, the ids of the anonymous sessions this device made are kept in the device store (never sent to a server) and added before a session's database is first written; a closed session's database is swept at the next start and its id taken off, a live one is left alone, Delete everything deletes every listed session's database and clears the list before the device store is cleared, and refuses to clear it when a database could not be deleted",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "adds the session's id to the device store's list before its database is first written"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "sweeps a closed session's database at the next start and takes its id off the list"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "leaves a live listed session alone, and its id on the list"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "Delete everything deletes every listed session's database, live or not, and clears the list"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "refuses to clear the device store when an anonymous database could not be deleted"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "is written to the device store only, so an anonymous session still makes no request"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "survives a list that cannot be read or is not a list"
+      }
+    ]
+  },
+  {
+    "id": "anonymous-crisis-is-never-handed-over-to-the-crisis-line",
+    "sentence": "A crisis record marked anonymous that an ordinary session reads is offered no hand-off, sendHandoff refuses it before anything is read from the server or sent to it, and an ordinary crisis is still offered one",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "is not offered a hand-off by an ordinary session that reads its record"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "is still refused by sendHandoff itself"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "is the only kind refused"
+      }
+    ]
   },
   {
     "id": "handoff-stops-are-the-persons-own-and-follow-the-wall-clock",

@@ -17,6 +17,7 @@ import { loadScreenings } from '../lib/screening-store';
 import { useDevice, type Device } from '../lib/use-device';
 import { repairNow, syncNow } from '../lib/sync';
 import { within } from '../lib/within';
+import { handoffOffer } from '../lib/crisis-handoff';
 import { CrisisHandoffPanel } from './CrisisHandoffPanel';
 
 type Reached = 'unasked' | 'asking' | 'yes' | 'later';
@@ -210,7 +211,7 @@ export function CrisisScreen() {
         )}
 
         {device && device !== 'unavailable' && !device.anonymous && (
-          <CrisisHandoffPanel device={device} lang={lang} mode="crisis" open={record?.blocked && record.event ? { eventId: record.event.id, trigger: record.event.trigger } : null} />
+          <CrisisHandoffPanel device={device} lang={lang} mode="crisis" open={handoffOffer(record)} />
         )}
 
         <button type="button" className={choice} onClick={() => void release()}>

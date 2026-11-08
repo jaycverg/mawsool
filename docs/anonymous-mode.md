@@ -14,6 +14,7 @@ no registration, directory fetch, clock read, crisis event or hand-off, so an an
 ## What it keeps, and where
 
 - The tab's note `{ session }` in `sessionStorage` under `mawsool.anonymous`: a random id, nothing else.
+- The list of anonymous session ids this device has made a database for, in the device's own encrypted store (`KEYS.anonymousSessions`; ciphertext, local, never sent). An id is added before the session's database is first written and removed once that database is confirmed deleted. It lets a database be found and deleted where the browser cannot list its databases, and "Delete everything" clears it.
 - The crisis block stays in the ordinary device store (safety beats wipe). It is marked `anonymous`, and so is the tab's crisis
   mark, so that a repair that runs after the session ended still never queues the event. It never waits on the anonymous
   database, so a store that refuses or hangs cannot stand between the person and the crisis screen.
@@ -21,7 +22,8 @@ no registration, directory fetch, clock read, crisis event or hand-off, so an an
   IndexedDB database `mawsool-anon-<session id>`. The database's name is the only other plain trace of the session.
 
 The plain-text items are named in Settings (`settings.exception`) and in `CLAUDE.md`: the crisis mark, the session note, and the
-database name; none holds an answer, score or result.
+database name; none holds an answer, score or result. The Web Lock name `mawsool-anon:<id>` is held in memory only, while a page
+lives, and is never stored. The session note, the database name and the crisis mark are the only plain stored traces.
 
 ## When the database is deleted
 
@@ -30,8 +32,8 @@ database name; none holds an answer, score or result.
 - The next start of the app in any tab, for every session whose Web Lock has been free for 2 s: a closed tab cannot wipe its
   own store, and a reload releases the lock only between two pages, which the 2 s grace waits out. A session that is live in
   another tab is never deleted by this.
-- Without Web Locks (an old browser) every other session's database is deleted at a start. Without `indexedDB.databases()`
-  only this tab's own database can be found, so a closed tab's database is not swept there.
+- Without Web Locks (an old browser) every other session's database is deleted at a start by any tab, live or not. Without
+  `indexedDB.databases()` the sessions listed in the device store (above) are the candidates, under the same lock rule.
 
 An open page never outlives its database: when it is deleted from elsewhere the page drops its cached key and makes a new one
 on its next write, and a value that cannot be decrypted deletes the database and starts fresh.
