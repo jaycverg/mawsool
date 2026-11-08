@@ -91,6 +91,15 @@
     "trajectoryTitle": "Trajectory",
     "conditionsTitle": "Self-reported conditions",
     "conditionLine": "{name} (self-reported)",
+    "contextTitle": "Physical and mental context",
+    "labsTitle": "Lab results",
+    "labsMock": "Sample — would come from Malaffi",
+    "labsNote": "Illustrative values for the demo. They are not this person's results and are not part of the export.",
+    "lab": {
+      "hba1c": "HbA1c",
+      "fastingGlucose": "Fasting glucose",
+      "tsh": "TSH"
+    },
     "preferencesTitle": "Preferences",
     "noteTitle": "Person's note",
     "instrument": {
@@ -157,5 +166,30 @@
     "copied": "Copied to the clipboard.",
     "copyFailed": "The bundle is shown below. Copy it from there.",
     "exportFailed": "The export could not be made."
+  },
+  "clinicLink": {
+    "mock": "Sample channel: a clinic without portal access would get this link by SMS or email. Here the API only writes it to its log, and nothing is sent.",
+    "heading": "Act on one referral",
+    "loading": "Opening the link…",
+    "missing": "This address has no link in it. Open the link exactly as it was given to you.",
+    "refused": {
+      "invalid": "This link is invalid, expired or already used.",
+      "not_found": "This referral was not found for your clinic.",
+      "withdrawn": "Withdrawn by the person. The person ended the sharing, and nothing about this referral is kept for your clinic.",
+      "failed": "The link could not be opened just now. Try it again in a moment."
+    },
+    "summary": "{tier} tier · {state} · be seen by {deadline}",
+    "noMoves": "No action is open for a referral in this state.",
+    "acknowledge": "Acknowledge",
+    "markSeen": "Mark seen",
+    "onlyThis": "This link shows this one referral and nothing the person shared. It works once.",
+    "note": {
+      "conflict": "That change is not allowed from the referral's current state. The link has not been used.",
+      "failed": "That did not go through. The link has not been used. Try again."
+    },
+    "doneAcknowledged": "Acknowledged. The person can see that your clinic has it.",
+    "doneSeen": "Marked seen. The person can see that your clinic saw them.",
+    "freshLink": "This link has been used. A new link for your next step was logged for your clinic (sample channel).",
+    "noFreshLink": "This link has been used. Nothing more is asked of your clinic on this referral."
   }
 }

@@ -16,10 +16,10 @@ import { CALLBACK, CONDITION, FREE_TEXT, handoffBody, issue, registerPerson, sen
  *  - inbound-signed:   a front door's hand-over: no bearer token works on it, only a valid per-source signature
  *                      (`inbound.test.ts` holds the signature cases); it returns a claim code and no wellbeing data
  *  - ops-aggregate:    the dashboard's numbers, behind an ops session; every figure is suppressed under ten (`metrics.test.ts` holds the cases)
- *  - crisis-line-consented: the mock crisis line's console, behind a crisis_line session and only under /crisis-handoffs: it reads a
+ * - crisis-line-consented: the mock crisis line's console, behind a crisis_line session and only under /crisis-handoffs: it reads a
  *                      hand-off while the person's consent for it is live, and 404s once it is revoked (`crisis-handoffs.test.ts`)
  */
-type Kind = 'open' | 'person-own' | 'clinician-scoped' | 'inbound-signed' | 'ops-aggregate' | 'crisis-line-consented';
+type Kind = 'open' | 'person-own' | 'clinician-scoped' | 'inbound-signed' | 'ops-aggregate' | 'crisis-line-consented' | 'clinic-link-one-ticket' | 'admin-config';
 
 const REVIEWED: Record<string, { access: RouteAccess; kind: Kind }> = {
   'GET /health': { access: 'public', kind: 'open' },
@@ -61,6 +61,9 @@ const REVIEWED: Record<string, { access: RouteAccess; kind: Kind }> = {
   'GET /tickets/:id/bundle': { access: 'clinician', kind: 'clinician-scoped' },
   'GET /tickets/:id/fhir': { access: 'clinician', kind: 'clinician-scoped' },
   'POST /inbound/screens': { access: 'inbound', kind: 'inbound-signed' },
+  'POST /clinic-link/open': { access: 'clinic_link', kind: 'clinic-link-one-ticket' },
+  'POST /clinic-link/act': { access: 'clinic_link', kind: 'clinic-link-one-ticket' },
+  'PUT /facilities/:id/portal-access': { access: 'admin', kind: 'admin-config' },
 };
 
 describe('no employer or insurer access (MW-505)', () => {
@@ -112,7 +115,7 @@ describe('no employer or insurer access (MW-505)', () => {
 
   it('serves wellbeing data only through person and clinician routes: no other role, and no employer or insurer role at all', () => {
     expect([...STAFF_ROLES]).toEqual(['clinician', 'ops', 'admin', 'crisis_line']);
-    expect([...ROUTE_ACCESS]).toEqual(['public', 'person', 'clinician', 'ops', 'admin', 'crisis_line', 'inbound']);
+    expect([...ROUTE_ACCESS]).toEqual(['public', 'person', 'clinician', 'ops', 'admin', 'crisis_line', 'inbound', 'clinic_link']);
     for (const route of registered()) {
       const { kind } = REVIEWED[key(route)]!;
       if (kind === 'person-own') expect(route.access).toBe('person');
@@ -120,6 +123,8 @@ describe('no employer or insurer access (MW-505)', () => {
       if (kind === 'inbound-signed') expect(route.access).toBe('inbound');
       if (kind === 'ops-aggregate') expect(route.access).toBe('ops');
       if (kind === 'crisis-line-consented') expect(route.access).toBe('crisis_line');
+      if (kind === 'clinic-link-one-ticket') expect(route.access).toBe('clinic_link');
+      if (kind === 'admin-config') expect(route.access).toBe('admin');
       if (kind === 'open') expect(route.access).toBe('public');
     }
   });
@@ -127,6 +132,11 @@ describe('no employer or insurer access (MW-505)', () => {
   it('gives the crisis-line role exactly the three hand-off routes and no other route', () => {
     const open = registered().filter((route) => route.access === 'crisis_line').map(key).sort();
     expect(open).toEqual(['GET /crisis-handoffs', 'GET /crisis-handoffs/:id', 'POST /crisis-handoffs/:id/contact']);
+  });
+
+  it('gives the no-login clinic link exactly two routes, both under /clinic-link/, and none of them reads a bundle', () => {
+    const open = registered().filter((route) => route.access === 'clinic_link').map(key).sort();
+    expect(open).toEqual(['POST /clinic-link/act', 'POST /clinic-link/open']);
   });
 
   it('refuses every principal that is not the right one, on every person and clinician route, without returning any data', async () => {
@@ -146,6 +156,9 @@ describe('no employer or insurer access (MW-505)', () => {
       'PUT /me/reminder-phone': { phone: '+971501234567', intervalWeeks: 4 },
       'POST /summary/draft': { requestId: crypto.randomUUID(), locale: 'en', useAi: false, consented: [], content: {} },
       'POST /tickets/:id/events': { to: 'acknowledged' },
+      'POST /clinic-link/open': { ticketId, token: 'not-a-token' },
+      'POST /clinic-link/act': { ticketId, token: 'not-a-token', to: 'seen' },
+      'PUT /facilities/:id/portal-access': { portalAccess: false },
     };
     const outsiders: Record<RouteAccess, { name: string; headers: Record<string, string> }[]> = {
       person: [
@@ -174,7 +187,23 @@ describe('no employer or insurer access (MW-505)', () => {
         { name: 'admin', headers: { authorization: `Bearer ${tokens['admin']}` } },
         { name: 'the crisis line', headers: { authorization: `Bearer ${tokens['crisis line']}` } },
       ],
-      admin: [],
+      // A facility's portal switch is the admin's: no other role, no person and no anonymous caller may move it.
+      admin: [
+        { name: 'no credential', headers: {} },
+        { name: 'the owner', headers: owner.headers },
+        { name: 'a clinician', headers: { authorization: `Bearer ${tokens['clinician A']}` } },
+        { name: 'ops', headers: { authorization: `Bearer ${tokens['ops']}` } },
+        { name: 'the crisis line', headers: { authorization: `Bearer ${tokens['crisis line']}` } },
+      ],
+      // No bearer token opens a clinic link, the facility's own clinician's and the owner's included: the link's token is the only credential.
+      clinic_link: [
+        { name: 'no credential', headers: {} },
+        { name: 'the owner', headers: owner.headers },
+        { name: 'the facility’s own clinician', headers: { authorization: `Bearer ${tokens['clinician A']}` } },
+        { name: 'ops', headers: { authorization: `Bearer ${tokens['ops']}` } },
+        { name: 'admin', headers: { authorization: `Bearer ${tokens['admin']}` } },
+        { name: 'the crisis line', headers: { authorization: `Bearer ${tokens['crisis line']}` } },
+      ],
       // The console reads a person's hand-off and nothing else: a person (even the one who made it), every other staff role and an anonymous caller are refused.
       crisis_line: [
         { name: 'no credential', headers: {} },

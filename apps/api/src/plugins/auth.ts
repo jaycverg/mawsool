@@ -70,12 +70,14 @@ async function authenticateStaff(db: Db, clock: Clock, token: string): Promise<P
  * - `clinician`, `ops`, `admin`, `crisis_line`: a live staff session whose role equals the declared one, else 403.
  * - `inbound`: a signed request from a connector. It is checked later, once the body has been read (see
  *   `registerInboundAuth`), because the signature covers the body; a bearer token is never accepted on it.
+ * - `clinic_link`: a one-time link's token and ticket id, sent in the request body. No bearer token is read or accepted: the
+ *   link is checked by the route's own service, which refuses a bad one with the same 401 whatever was wrong with it.
  */
 export function registerAuth(app: FastifyInstance, deps: { db: Db; /** The wall clock: a staff session lives in real time, so a demo clock jump never signs anyone out. */ clock: Clock }): void {
   app.decorateRequest('principal', null);
   app.addHook('onRequest', async (request, reply) => {
     const access = request.routeOptions?.config?.access;
-    if (access === undefined || access === 'public' || access === 'inbound') return;
+    if (access === undefined || access === 'public' || access === 'inbound' || access === 'clinic_link') return;
 
     const token = bearerToken(request.headers.authorization);
     if (token === null) return sendError(reply, 401, 'unauthorized', 'Authentication required');

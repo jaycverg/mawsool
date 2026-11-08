@@ -3,19 +3,34 @@ import type { SummaryProvider } from '@mawsool/summary';
 import { buildApp } from '../../src/app';
 import { ManualClock } from '../../src/clock';
 import type { Db } from '../../src/db/client';
-import type { MagicLinkMessage, MagicLinkNotifier } from '../../src/notifier';
+import type { ClinicLinkMessage, MagicLinkMessage, Notifier } from '../../src/notifier';
 import { TEST_CONFIG } from './config';
 
 export const TEST_START = new Date('2026-11-01T08:00:00+04:00');
 
 /** Captures sign-in links instead of logging them, so tests can use the token. */
-export class CapturingNotifier implements MagicLinkNotifier {
+export class CapturingNotifier implements Notifier {
   readonly sent: MagicLinkMessage[] = [];
+  /** The no-login clinic links that were "sent" (logged), oldest first. */
+  readonly clinicLinks: ClinicLinkMessage[] = [];
   failWith: Error | null = null;
 
   async send(message: MagicLinkMessage): Promise<void> {
     if (this.failWith) throw this.failWith;
     this.sent.push(message);
+  }
+
+  async sendClinicLink(message: ClinicLinkMessage): Promise<void> {
+    if (this.failWith) throw this.failWith;
+    this.clinicLinks.push(message);
+  }
+
+  /** The ticket id and token of the most recent clinic link, read from its fragment as the page reads it. */
+  lastClinicCredential(): { ticketId: string; token: string } {
+    const link = this.clinicLinks.at(-1)?.link;
+    if (!link) throw new Error('no clinic link was sent');
+    const [ticketId, token] = new URL(link).hash.slice(1).split('.') as [string, string];
+    return { ticketId, token };
   }
 
   /** The token inside the most recent link. */

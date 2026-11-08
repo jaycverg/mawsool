@@ -18,6 +18,7 @@ export const FACILITY_B = '00000000-0000-4000-8000-00000000fb02';
 export const CLINICIAN_A = 'clinician.a@demo.mawsool.test';
 export const CLINICIAN_B = 'clinician.b@demo.mawsool.test';
 export const OPS_USER = 'ops@demo.mawsool.test';
+export const ADMIN_USER = 'admin@demo.mawsool.test';
 export const CRISIS_LINE_USER = 'crisisline@demo.mawsool.test';
 export const SESSION_KEY = 'mawsool.staffSession';
 
@@ -81,6 +82,12 @@ export interface StaffSession {
 /** The sign-in link the API logged for an address (read from its log), as the page would receive it by hand. */
 export async function loggedLink(email: string): Promise<string | null> {
   const res = await fetch(`${INSPECT}/logged-sign-in-link?to=${encodeURIComponent(email)}`);
+  return ((await res.json()) as { link: string | null }).link;
+}
+
+/** The no-login clinic link the API logged for a ticket code (read from its log), as the clinic would be given it. */
+export async function loggedClinicLink(ticketCode: string): Promise<string | null> {
+  const res = await fetch(`${INSPECT}/logged-clinic-link?ticket=${encodeURIComponent(ticketCode)}`);
   return ((await res.json()) as { link: string | null }).link;
 }
 

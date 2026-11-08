@@ -21,6 +21,7 @@ export interface RegisteredRoute {
 
 const TICKET_PATH = /^\/tickets(\/|$)/;
 const HANDOFF_PATH = /^\/crisis-handoffs(\/|$)/;
+const CLINIC_LINK_PATH = /^\/clinic-link\//;
 
 /**
  * Installs the route registry. Must be registered before any route.
@@ -44,6 +45,9 @@ export function registerRouteRegistry(app: FastifyInstance): void {
     }
     if (access === 'crisis_line' && !HANDOFF_PATH.test(route.url)) {
       throw new Error(`Route ${where} gives the crisis-line role access outside /crisis-handoffs; that role may read only hand-offs the person consented to`);
+    }
+    if (access === 'clinic_link' && !CLINIC_LINK_PATH.test(route.url)) {
+      throw new Error(`Route ${where} gives the no-login clinic link access outside /clinic-link/; a link may only open or act on its one ticket`);
     }
     registry.push({ method: methods, url: route.url, access });
   });

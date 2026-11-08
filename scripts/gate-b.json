@@ -1480,5 +1480,228 @@
       }
     ],
     "browser": "anonymous-session-says-what-it-cannot-do-and-walls-the-screens-that-need-the-server"
+  },
+  {
+    "id": "handoff-stops-are-the-persons-own-and-follow-the-wall-clock",
+    "sentence": "A remembered hand-off stop is written and purged on the wall clock (a care clock step of seven days and its sweep do not forget a fresh stop and a late send is still refused), a stop for an id another person holds writes nothing that blocks its owner (also in a Delete everything list), a stop for an id nobody holds still blocks the late send, and after a stopped reply the panel is left with its send button not ready",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "is written and kept on the wall clock"
+      },
+      {
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "is still forgotten an hour of wall time later"
+      },
+      {
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "does not remember a stop for an id that another person holds: the answer is the unknown-id 404"
+      },
+      {
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "does not remember an id that another person holds when it comes in a Delete everything list either"
+      },
+      {
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "still remembers a stop for an id nobody holds"
+      }
+    ],
+    "delegated": {
+      "gate": "gate:phase4",
+      "id": "a-note-the-server-says-was-stopped-leaves-the-form-with-its-send-button-not-ready"
+    }
+  },
+  {
+    "id": "mw-604-conditions-are-their-own-consent-element-and-reach-the-export-only-when-consented",
+    "sentence": "Self-reported conditions are a separate consent element that is off until ticked: redacted on the phone and again on the server, read only when consented with an audit row, rewritten away when that element is stopped, exported as Condition resources (unconfirmed) only when consented and validated against the R4 schema",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/consent.test.ts",
+        "name": "returns exactly the consented elements, names the ones not shared and writes an audit row first"
+      },
+      {
+        "file": "test/queue.test.ts",
+        "name": "is a Bundle that validates against the R4 schema, labelled as not sent, and holds only what is consented to"
+      },
+      {
+        "file": "test/queue.test.ts",
+        "name": "contains no unconsented element, for each element left out on its own"
+      },
+      {
+        "file": "test/queue.test.ts",
+        "name": "drops an element as soon as the person stops it, and is 410 with no data once the ticket is revoked"
+      },
+      {
+        "file": "test/bundle.test.ts",
+        "name": "marks a condition as unconfirmed, because the person reported it",
+        "project": "packages/fhir"
+      },
+      {
+        "file": "test/bundle.test.ts",
+        "name": "validates against the official R4 schema with everything shared",
+        "project": "packages/fhir"
+      },
+      {
+        "file": "test/consent.test.ts",
+        "name": "keeps exactly the granted elements, each as supplied",
+        "project": "packages/consent"
+      }
+    ],
+    "browser": "consent-defaults-off-and-previews"
+  },
+  {
+    "id": "mw-604-context-panel-shows-the-trajectory-beside-conditions-and-labelled-sample-labs",
+    "sentence": "The clinician detail shows the trajectory beside the self-reported conditions with sample labs under the label \"Sample — would come from Malaffi\", only beside conditions the person shared; a ticket without them says \"Not shared by the person\" and shows no lab; no lab is in any server source or in the export",
+    "project": "apps/clinician",
+    "tests": [
+      {
+        "file": "test/sample-labs.test.ts",
+        "name": "are named in both languages, and carry the mock label"
+      },
+      {
+        "file": "test/sample-labs.test.ts",
+        "name": "show only beside conditions the person shared and listed"
+      },
+      {
+        "file": "test/sample-labs.test.ts",
+        "name": "are nowhere on the server"
+      }
+    ],
+    "delegated": {
+      "gate": "gate:phase4",
+      "id": "context-panel-puts-the-trajectory-beside-conditions-and-labels-the-sample-labs"
+    }
+  },
+  {
+    "id": "mw-606-clinic-link-is-logged-hashed-one-use-short-lived-and-bound",
+    "sentence": "A ticket at a facility without the portal gets a one-time link that is logged and not sent, stored as a hash, valid for 48 hours on the wall clock, spent by its one move (two presses move the ticket once), and bound to its ticket and facility; a used, expired, tampered or wrong-ticket link is the same refusal and writes nothing",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "logs one link for a ticket at a facility without the portal"
+      },
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "makes no link for a ticket at a facility that has the portal"
+      },
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "lets two presses of one link move the ticket once"
+      },
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "is refused alike when it was used"
+      },
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "is refused alike when it expired"
+      },
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "is refused alike when the token was tampered with"
+      },
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "is refused alike when its token is used with another ticket"
+      },
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "expires on the wall clock: a care clock step of seven days"
+      }
+    ],
+    "delegated": {
+      "gate": "gate:phase4",
+      "id": "no-login-clinic-link-acknowledges-and-marks-seen-one-ticket-and-is-refused-a-second-time"
+    }
+  },
+  {
+    "id": "mw-606-clinic-link-fires-only-clinic-moves-through-the-transition-table",
+    "sentence": "A clinic link fires only acknowledge and seen, through the transition table as the clinic: any other move is refused with nothing written, a move the table does not allow is 409 and leaves the link unspent, and a fresh link is logged only while a clinic move remains",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "acknowledges through the transition table as the clinic"
+      },
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "marks seen straight from issued"
+      },
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "fires nothing but acknowledge and seen: withdrawn is refused"
+      },
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "asks the table, not the link"
+      },
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "offers only the seen move once a ticket is overdue"
+      }
+    ]
+  },
+  {
+    "id": "mw-606-clinic-link-reveals-no-wellbeing-data-and-answers-404-and-410-like-the-staff-routes",
+    "sentence": "A clinic link shows only the ticket code, tier, state and deadline (no bundle, summary, score or note) and writes no audit row, is 404 for a ticket addressed to another facility and 410 once the person ended the share, takes no bearer token of any kind, and is its own access value limited to two routes under /clinic-link/; the page puts the token in a request body only and says it is a sample channel",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "shows only what is needed to act, writes nothing and reads no bundle"
+      },
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "is the same for a staff session or a person credential"
+      },
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "is 404 when it is addressed to another facility"
+      },
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "is 410 once the person ended the share"
+      },
+      {
+        "file": "test/access.test.ts",
+        "name": "gives the no-login clinic link exactly two routes"
+      },
+      {
+        "file": "test/route-registry.test.ts",
+        "name": "refuses to start when a route outside /clinic-link/ gives the no-login clinic link access"
+      },
+      {
+        "file": "test/clinic-link.test.ts",
+        "name": "sends the credential in the body of a POST with no cookie, and never in the URL",
+        "project": "apps/clinician"
+      },
+      {
+        "file": "test/clinic-link.test.ts",
+        "name": "exist in both languages, the Arabic in Arabic, and name the channel as a sample",
+        "project": "apps/clinician"
+      }
+    ],
+    "delegated": {
+      "gate": "gate:phase4",
+      "id": "no-login-clinic-link-acknowledges-and-marks-seen-one-ticket-and-is-refused-a-second-time"
+    }
+  },
+  {
+    "id": "mw-606-clinic-links-are-erased-with-the-person-and-swept",
+    "sentence": "The clinic links of a person’s tickets are deleted by Delete everything (a stranger’s stay), and the sweep deletes links spent or expired more than a day ago and keeps a live one",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "is deleted by Delete everything along with the links"
+      },
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "forgets a link a day after it was spent or expired"
+      }
+    ]
   }
 ]

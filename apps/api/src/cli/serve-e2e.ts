@@ -5,7 +5,7 @@
 // crisis event, the raw bundle of a ticket (as stored, and decrypted with this harness's own key), its events and
 // consents, a person's equity buckets, the reminder numbers held, the crisis-line hand-offs and crisis events held, and the number of registered devices. It is part of this harness, not of the
 // product API. It also returns the sign-in link the API logged for an address (the product never sends it), read from
-// the API's own log lines, counts invites and nonces, and counts tickets by state.
+// the API's own log lines (and the no-login clinic link it logged for a ticket code), counts invites and nonces, and counts tickets by state.
 //
 // Usage: tsx src/cli/serve-e2e.ts   (E2E_API_PORT, E2E_INSPECT_PORT, E2E_ORIGIN, E2E_CLINICIAN_URL, E2E_OPS_URL)
 import { PGlite } from '@electric-sql/pglite';
@@ -47,6 +47,16 @@ const logStream = {
     if (/"level":(50|60)/.test(line)) process.stdout.write(line);
   },
 };
+
+/** The newest no-login clinic link the API logged for a ticket code, or null. */
+function loggedClinicLink(ticketCode: string): string | null {
+  for (const line of [...logLines].reverse()) {
+    if (!line.includes('clinic link (logged, not sent)')) continue;
+    const entry = JSON.parse(line) as { ticketCode?: string; link?: string };
+    if (entry.ticketCode === ticketCode && entry.link) return entry.link;
+  }
+  return null;
+}
 
 /** The newest link the API logged for an address, or null. */
 function loggedSignInLink(to: string): string | null {
@@ -155,6 +165,8 @@ const inspect = createServer(async (request, response) => {
     response.end(JSON.stringify(await db.select().from(schema.crisisEvents)));
   } else if (url.pathname === '/logged-sign-in-link') {
     response.end(JSON.stringify({ link: loggedSignInLink(url.searchParams.get('to') ?? '') }));
+  } else if (url.pathname === '/logged-clinic-link') {
+    response.end(JSON.stringify({ link: loggedClinicLink(url.searchParams.get('ticket') ?? '') }));
   } else if (url.pathname === '/ticket-state-counts') {
     // How many tickets sit in each state, counted from the table, so a test can hold the dashboard's overdue list to it.
     const rows = await db.select({ state: schema.tickets.state, n: sql<number>`count(*)::int` }).from(schema.tickets).groupBy(schema.tickets.state);

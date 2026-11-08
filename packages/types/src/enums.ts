@@ -77,7 +77,7 @@ export const StaffRoleSchema = z.enum(STAFF_ROLES);
 export type StaffRole = z.infer<typeof StaffRoleSchema>;
 
 /** What a route requires of its caller. Every API route declares exactly one. */
-export const ROUTE_ACCESS = ['public', 'person', 'clinician', 'ops', 'admin', 'crisis_line', 'inbound'] as const;
+export const ROUTE_ACCESS = ['public', 'person', 'clinician', 'ops', 'admin', 'crisis_line', 'inbound', 'clinic_link'] as const;
 export const RouteAccessSchema = z.enum(ROUTE_ACCESS);
 export type RouteAccess = z.infer<typeof RouteAccessSchema>;
 

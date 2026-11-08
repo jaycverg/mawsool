@@ -13,7 +13,9 @@ import { restoreDemoClock } from './demo/clock-store';
 import type { AppConfig } from './config';
 import { createCipher } from './crypto';
 import type { Db } from './db/client';
-import { LogMagicLinkNotifier, type MagicLinkNotifier } from './notifier';
+import { issueClinicLink } from './clinic-links/service';
+import { LogMagicLinkNotifier, type Notifier } from './notifier';
+import { registerClinicLinkRoutes } from './routes/clinic-links';
 import { registerAuth } from './plugins/auth';
 import { registerInboundAuth } from './plugins/inbound-auth';
 import { registerRouteRegistry } from './plugins/route-registry';
@@ -50,7 +52,7 @@ export interface AppDeps {
    * read this one, so a demo clock jump cannot sign staff out or refuse a good signature.
    */
   clock?: Clock;
-  notifier?: MagicLinkNotifier;
+  notifier?: Notifier;
   /** Fastify logger options; false silences it (tests). */
   logger?: FastifyServerOptions['logger'];
   /** Extra route registrations, used by tests to prove the registry refuses an undeclared route. */
@@ -108,10 +110,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerCrisisEventRoutes(app, { db: deps.db });
   registerTicketRoutes(app, { db: deps.db });
   registerInboundRoutes(app, { db: deps.db, clock, securityClock, personAppUrl: deps.config.personAppUrl ?? 'http://localhost:3000' });
-  const consentDeps = { db: deps.db, cipher, clock, securityClock };
+  const clinicLinks = { db: deps.db, clock, securityClock, notifier, clinicianAppUrl: deps.config.clinicianAppUrl, log: app.log };
+  // A ticket for a clinic without the portal gets its one-time link, logged, once the ticket is made. It can never fail the request.
+  const consentDeps = { db: deps.db, cipher, clock, securityClock, onTicketIssued: async (ticketId: string) => void (await issueClinicLink(clinicLinks, ticketId)) };
   registerTicketFlowRoutes(app, consentDeps);
   registerReminderRoutes(app, consentDeps);
   registerCrisisHandoffRoutes(app, consentDeps);
+  registerClinicLinkRoutes(app, clinicLinks);
   registerPersonDataRoutes(app, { ...consentDeps, summary: { enabled: deps.config.summaryLlmEnabled, provider: deps.summaryProvider ?? null } });
   registerClockRoute(app, { demoClock });
   registerMetricsRoutes(app, { db: deps.db, clock, encryptionKey: deps.config.encryptionKey });

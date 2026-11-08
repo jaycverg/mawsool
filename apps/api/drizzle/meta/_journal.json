@@ -78,6 +78,13 @@
       "when": 1794117857419,
       "tag": "0010_revoked_handoffs_without_person",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794133030072,
+      "tag": "0011_clinic_links",
+      "breakpoints": true
     }
   ]
 }

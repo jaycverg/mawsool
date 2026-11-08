@@ -326,6 +326,48 @@ export type TicketEventRequest = z.infer<typeof TicketEventRequestSchema>;
 export const TicketEventResultSchema = z.object({ state: TicketStateSchema, event: TicketEventViewSchema });
 export type TicketEventResult = z.infer<typeof TicketEventResultSchema>;
 
+/** The moves a clinic can make through a no-login link: acknowledge, or mark the person seen. Nothing else. */
+export const CLINIC_LINK_MOVES = ['acknowledged', 'seen'] as const;
+export const ClinicLinkMoveSchema = z.enum(CLINIC_LINK_MOVES);
+export type ClinicLinkMove = z.infer<typeof ClinicLinkMoveSchema>;
+
+/**
+ * The link's whole credential. The ticket id is in the link beside the token, so a token used against another ticket is refused like any
+ * bad one. Both are plain strings here on purpose: a malformed id or token is the same refusal as a wrong one, never a different error.
+ */
+export const ClinicLinkCredentialSchema = z.object({ ticketId: z.string().max(64), token: z.string().max(200) }).strict();
+export type ClinicLinkCredential = z.infer<typeof ClinicLinkCredentialSchema>;
+
+/** POST /clinic-link/act: the credential and the move. */
+export const ClinicLinkActRequestSchema = ClinicLinkCredentialSchema.extend({ to: ClinicLinkMoveSchema }).strict();
+export type ClinicLinkActRequest = z.infer<typeof ClinicLinkActRequestSchema>;
+
+/**
+ * What a no-login link shows: only what is needed to act on one ticket. No bundle, no summary, no score, no note, and no
+ * language, source or service. `moves` is what the clinic may do from the ticket's state now.
+ */
+export const ClinicLinkTicketSchema = z.object({
+  shortCode: z.string(),
+  tier: TierSchema,
+  state: TicketStateSchema,
+  deadlineAt: z.iso.datetime({ offset: true }),
+  moves: z.array(ClinicLinkMoveSchema),
+  /** When this link stops working, on the wall clock. */
+  expiresAt: z.iso.datetime({ offset: true }),
+});
+export type ClinicLinkTicket = z.infer<typeof ClinicLinkTicketSchema>;
+
+export const ClinicLinkActResultSchema = z.object({
+  state: TicketStateSchema,
+  /** A fresh link was logged for the clinic because another move of theirs remains. */
+  freshLink: z.boolean(),
+});
+export type ClinicLinkActResult = z.infer<typeof ClinicLinkActResultSchema>;
+
+/** PUT /facilities/:id/portal-access. */
+export const PortalAccessRequestSchema = z.object({ portalAccess: z.boolean() }).strict();
+export type PortalAccessRequest = z.infer<typeof PortalAccessRequestSchema>;
+
 /** POST /consents: adds one element to a live ticket after the fact. */
 export const GrantConsentRequestSchema = z
   .object({ ticketId: z.uuid(), element: ConsentElementSchema, content: ReferralContentSchema })

@@ -15,6 +15,8 @@ export interface TicketDeps {
   db: Db;
   cipher: Cipher;
   clock: Clock;
+  /** Runs once after a new ticket is committed (not for a replay). It must not throw: nothing it does can fail the request. */
+  onTicketIssued?: (ticketId: string) => Promise<void>;
 }
 
 /** What the QR on the ticket encodes. A reception desk scans it, or reads the six-character code beside it. */
@@ -201,6 +203,7 @@ export async function issueTicket(deps: TicketDeps, personId: string, request: C
       }
       return ticket.id;
     });
+    await deps.onTicketIssued?.(ticketId);
     return { kind: 'created', ticketId };
   } catch (error) {
     if (error instanceof ReplayRace) return (await replay()) ?? { kind: 'conflict', message: 'This request id is already used' };

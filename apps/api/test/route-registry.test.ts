@@ -89,6 +89,23 @@ describe('route registry', () => {
     await app.close();
   });
 
+  it('refuses to start when a route outside /clinic-link/ gives the no-login clinic link access', async () => {
+    await expect(
+      build((app) => {
+        app.post('/tickets/:id/link-events', { config: { access: 'clinic_link' } }, async () => ({ ok: true }));
+      }),
+    ).rejects.toThrow(/no-login clinic link access outside \/clinic-link\//);
+  });
+
+  it('starts when a clinic-link route sits under /clinic-link/, and no bearer token is asked of it', async () => {
+    const app = await build((a) => {
+      a.post('/clinic-link/probe', { config: { access: 'clinic_link' } }, async () => ({ ok: true }));
+    });
+    expect(app.routeRegistry.some((r) => r.url === '/clinic-link/probe' && r.access === 'clinic_link')).toBe(true);
+    expect((await app.inject({ method: 'POST', url: '/clinic-link/probe', payload: {} })).statusCode).toBe(200);
+    await app.close();
+  });
+
   it('starts when a clinician ticket route declares the facility scope', async () => {
     const app = await build((a) => {
       a.get('/tickets/:id/notes', { config: { access: 'clinician', facilityScoped: true } }, async () => ({ ok: true }));
