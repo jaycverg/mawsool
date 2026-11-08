@@ -35,7 +35,7 @@ describe('enums', () => {
   });
 
   it('declares the route access values the registry accepts', () => {
-    expect([...ROUTE_ACCESS]).toEqual(['public', 'person', 'clinician', 'ops', 'admin', 'crisis_line', 'inbound']);
+    expect([...ROUTE_ACCESS]).toEqual(['public', 'person', 'clinician', 'ops', 'admin', 'crisis_line', 'inbound', 'clinic_link']);
   });
 });
 
