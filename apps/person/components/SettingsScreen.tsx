@@ -26,6 +26,7 @@ import { callServer, markServerFootprint, type ServerDeps } from '../lib/server'
 import { loadEquity, saveEquity } from '../lib/share';
 import { useDevice, type Device } from '../lib/use-device';
 import { BottomNav } from './BottomNav';
+import { CrisisHandoffPanel } from './CrisisHandoffPanel';
 import { HomeHeader } from './HomeHeader';
 
 type ReminderNote = 'none' | 'working' | 'failed' | 'blocked' | 'invalid' | 'denied';
@@ -270,6 +271,8 @@ export function SettingsScreen() {
             {equityState === 'failed' && <p role="alert" className="text-[15px] font-semibold text-danger">{t('equityFailed')}</p>}
           </section>
         )}
+
+        {usable && <CrisisHandoffPanel device={device} lang={lang} mode="settings" />}
 
         <section className="flex flex-col gap-2.5 rounded-card border border-border bg-surface p-5">
           <h2 className="text-[16px] font-semibold">{t('deleteTitle')}</h2>

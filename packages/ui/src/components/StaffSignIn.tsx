@@ -31,6 +31,8 @@ export interface StaffSignInProps {
   labels: StaffSignInLabels;
   /** Where "Continue" goes after signing in: the app's home for this language. */
   homeHref: string;
+  /** A different "Continue" target for a role whose screen is not the app's home (the crisis-line console). */
+  homeHrefByRole?: Partial<Record<StaffRole, string>>;
 }
 
 type Phase = 'idle' | 'signing_in' | 'signed_in' | 'not_saved' | 'failed' | 'wrong_app';
@@ -45,8 +47,9 @@ type RequestPhase = 'idle' | 'sending' | 'sent' | 'failed';
  * With no token, or after a link that failed, belonged to the other app or could not be kept, it offers a form to
  * request a new link. The form's answer is the same whether or not the address is registered.
  */
-export function StaffSignIn({ token, apiUrl, allowedRoles, labels, homeHref }: StaffSignInProps) {
+export function StaffSignIn({ token, apiUrl, allowedRoles, labels, homeHref, homeHrefByRole }: StaffSignInProps) {
   const [phase, setPhase] = useState<Phase>('idle');
+  const [role, setRole] = useState<StaffRole | null>(null);
   const [requestPhase, setRequestPhase] = useState<RequestPhase>('idle');
   const [email, setEmail] = useState('');
 
@@ -55,6 +58,7 @@ export function StaffSignIn({ token, apiUrl, allowedRoles, labels, homeHref }: S
     setPhase('signing_in');
     const result = await verifySignIn({ fetch: globalThis.fetch.bind(globalThis), apiUrl, token, allowedRoles });
     if (result.status === 'signed_in') {
+      setRole(result.session.role);
       setPhase(storeStaffSession(safeSessionStorage(), result.session) ? 'signed_in' : 'not_saved');
     } else {
       setPhase(result.status);
@@ -89,7 +93,7 @@ export function StaffSignIn({ token, apiUrl, allowedRoles, labels, homeHref }: S
         </p>
       ) : null}
       {phase === 'signed_in' ? (
-        <a href={homeHref} className="btn-primary" data-continue>
+        <a href={(role && homeHrefByRole?.[role]) || homeHref} className="btn-primary" data-continue>
           {labels.continue}
         </a>
       ) : null}

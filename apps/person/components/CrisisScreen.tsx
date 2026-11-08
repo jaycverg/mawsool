@@ -9,12 +9,15 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CrisisRecord } from '../lib/crisis';
 import { crisisTexts } from '../lib/crisis-copy';
+import { scheduleFollowUp } from '../lib/follow-up';
+import { deviceNow } from '../lib/clock';
 import { crisisLines } from '../lib/crisis-numbers';
 import { href } from '../lib/routes';
 import { loadScreenings } from '../lib/screening-store';
 import { useDevice, type Device } from '../lib/use-device';
 import { repairNow, syncNow } from '../lib/sync';
 import { within } from '../lib/within';
+import { CrisisHandoffPanel } from './CrisisHandoffPanel';
 
 type Reached = 'unasked' | 'asking' | 'yes' | 'later';
 
@@ -96,8 +99,14 @@ export function CrisisScreen() {
     if (device && device !== 'unavailable') {
       // Releasing never waits long on storage: the tab flag is cleared first thing, and a store that hangs must
       // not keep a person on this screen.
-      const resumeId = (await within(device.crisis.read(), 500, null))?.record?.resumeScreeningId;
+      const open = (await within(device.crisis.read(), 500, null))?.record;
+      const resumeId = open?.resumeScreeningId;
+      // The next-day check is scheduled for the crisis being released, alongside the release and never ahead of it: it is
+      // bounded by the same kind of wait, and a store that fails to take it changes nothing about the release.
+      const eventId = (open?.blocked ? open.event?.id : undefined) ?? device.tabMark.get()?.eventId;
+      const scheduled = eventId ? scheduleFollowUp(device.storage, { eventId, resolvedAt: deviceNow() }) : Promise.resolve('failed' as const);
       const result = await within(device.crisis.resolve(), 1500, null);
+      await within(scheduled, 500, null);
       saved = result?.status === 'saved';
       syncNow(lang);
       if (resumeId) {
@@ -198,6 +207,10 @@ export function CrisisScreen() {
             {reached === 'yes' && <p className="t-body">{t('reachedThanks')}</p>}
             {reached === 'later' && <p className="t-body">{t('reachedLater')}</p>}
           </section>
+        )}
+
+        {device && device !== 'unavailable' && (
+          <CrisisHandoffPanel device={device} lang={lang} mode="crisis" open={record?.blocked && record.event ? { eventId: record.event.id, trigger: record.event.trigger } : null} />
         )}
 
         <button type="button" className={choice} onClick={() => void release()}>

@@ -52,7 +52,7 @@ describe('download and delete', () => {
     const { storage } = memoryStorage(full);
     const json = await exportDeviceData(storage, () => new Date('2026-11-02T08:00:00+04:00'));
     const parsed = JSON.parse(json);
-    expect(Object.keys(parsed).sort()).toEqual(['choice', 'crisis', 'exportedAt', 'insurance', 'preferences', 'reminders', 'screenings', 'sharing', 'tickets']);
+    expect(Object.keys(parsed).sort()).toEqual(['choice', 'crisis', 'crisisHandoff', 'exportedAt', 'followUp', 'insurance', 'preferences', 'reminders', 'screenings', 'sharing', 'tickets']);
     expect(parsed.screenings).toEqual(full.screenings);
     expect(parsed.reminders).toBeNull();
     expect(json).not.toContain('device-secret-value');
@@ -90,5 +90,23 @@ describe('download and delete', () => {
     await deleteDeviceData(storage);
     expect(data.size).toBe(0);
     expect(await storage.keys()).toEqual([]);
+  });
+});
+
+describe('Delete everything reaches every key the app keeps on the phone', () => {
+  it('leaves an empty store after a wipe with a value under every name in KEYS', async () => {
+    const { KEYS } = await import('../lib/keys');
+    const { data, storage } = memoryStorage(Object.fromEntries(Object.values(KEYS).map((key) => [key, { marker: key }])));
+    expect(data.size).toBe(Object.values(KEYS).length);
+    await deleteDeviceData(storage);
+    expect([...data.keys()]).toEqual([]);
+  });
+
+  it('puts the hand-off record and the next-day check in the download, because they are the person’s data', async () => {
+    const { KEYS } = await import('../lib/keys');
+    const { storage } = memoryStorage({ [KEYS.crisisHandoff]: { handoffId: 'h' }, [KEYS.followUp]: { eventId: 'e' } });
+    const parsed = JSON.parse(await exportDeviceData(storage, () => new Date('2026-11-02T08:00:00+04:00')));
+    expect(parsed.crisisHandoff).toEqual({ handoffId: 'h' });
+    expect(parsed.followUp).toEqual({ eventId: 'e' });
   });
 });

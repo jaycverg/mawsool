@@ -3,12 +3,13 @@ import { KEYS } from './keys';
 
 /**
  * Everything the person put on this phone, as JSON they can copy: check-ins, preferences, health plan, choice, the
- * reminder settings (with the number they gave for text reminders, if any) and the crisis record. The device
+ * reminder settings (with the number they gave for text reminders, if any), the crisis record, the note handed to the crisis line
+ * (its ids, never its contents: the number typed for it is not kept on the phone) and the next-day check with the person's answer. The device
  * credential, the cached directory and the unsent queue are left out: the first is a secret, the others are not the person's data.
  */
 export async function exportDeviceData(storage: StorageAdapter, now: () => Date): Promise<string> {
-  const [screenings, preferences, insurance, choice, crisis, tickets, sharing, reminders] = await Promise.all(
-    [KEYS.screenings, KEYS.preferences, KEYS.insurance, KEYS.choice, KEYS.crisisBlock, KEYS.tickets, KEYS.sharing, KEYS.reminders].map((key) => storage.get<unknown>(key)),
+  const [screenings, preferences, insurance, choice, crisis, tickets, sharing, reminders, crisisHandoff, followUp] = await Promise.all(
+    [KEYS.screenings, KEYS.preferences, KEYS.insurance, KEYS.choice, KEYS.crisisBlock, KEYS.tickets, KEYS.sharing, KEYS.reminders, KEYS.crisisHandoff, KEYS.followUp].map((key) => storage.get<unknown>(key)),
   );
   return JSON.stringify(
     {
@@ -21,6 +22,8 @@ export async function exportDeviceData(storage: StorageAdapter, now: () => Date)
       tickets: tickets ?? [],
       sharing: sharing ?? null,
       reminders: reminders ?? null,
+      crisisHandoff: crisisHandoff ?? null,
+      followUp: followUp ?? null,
     },
     null,
     2,

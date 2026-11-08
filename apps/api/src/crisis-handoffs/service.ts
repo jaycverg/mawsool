@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { CRISIS_HANDOFF_ELEMENT, CRISIS_LINE_RECIPIENT, CrisisHandoffContentSchema, type CreateCrisisHandoffRequest, type CrisisHandoffReceipt, type CrisisHandoffView } from '@mawsool/types';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import type { Clock } from '../clock';
@@ -42,23 +41,23 @@ export type CreateHandoffResult = { kind: 'created' | 'replayed'; receipt: Crisi
  * Records the person's consent to hand a short template to the crisis line, and stores the template, in one
  * transaction. The ledger row (element `crisis_handoff`, recipient `crisis_line`, no ticket) and the encrypted row are
  * written together or not at all. The crisis event must already be on the server (the phone sends it first); the
- * event is marked "context shared" and nothing else about it changes. The same crisis event handed off twice, by the
- * same person, answers the first one again; a different person's id on it is a conflict.
+ * event is marked "context shared" and nothing else about it changes. The same hand-off id sent again for the same event
+ * answers the first one (a lost reply); a crisis event that already has another hand-off, or an id that is another person's,
+ * is a conflict.
  */
 export async function createHandoff(deps: CrisisHandoffDeps, personId: string, request: CreateCrisisHandoffRequest): Promise<CreateHandoffResult> {
   const { db, cipher } = deps;
-  const { crisisEventId, consented: _consented, ...content } = request;
+  const { handoffId: id, crisisEventId, consented: _consented, ...content } = request;
   const now = deps.clock.now();
   try {
     return await db.transaction(async (tx) => {
       const [event] = await tx.select({ id: schema.crisisEvents.id }).from(schema.crisisEvents).where(eq(schema.crisisEvents.id, crisisEventId)).for('update');
       if (!event) return { kind: 'unknown_event' as const };
       const [consent] = await tx.insert(schema.consents).values({ personId, ticketId: null, recipient: CRISIS_LINE_RECIPIENT, element: CRISIS_HANDOFF_ELEMENT, grantedAt: now }).returning();
-      const id = randomUUID();
       const inserted = await tx
         .insert(schema.crisisHandoffs)
         .values({ id, personId, crisisEventId, consentId: consent!.id, contentCiphertext: cipher.encrypt(JSON.stringify(content), crisisHandoffContext(id)), createdAt: now })
-        .onConflictDoNothing({ target: schema.crisisHandoffs.crisisEventId })
+        .onConflictDoNothing()
         .returning({ id: schema.crisisHandoffs.id });
       if (inserted.length === 0) throw new AlreadyHandedOff();
       await tx.update(schema.crisisEvents).set({ contextShared: true }).where(eq(schema.crisisEvents.id, crisisEventId));
@@ -69,12 +68,12 @@ export async function createHandoff(deps: CrisisHandoffDeps, personId: string, r
   }
   // The transaction above was abandoned, so its consent row is gone with it. Answer from the hand-off that is already there.
   const [existing] = await db
-    .select({ id: schema.crisisHandoffs.id, personId: schema.crisisHandoffs.personId, consentId: schema.crisisHandoffs.consentId, grantedAt: schema.consents.grantedAt })
+    .select({ id: schema.crisisHandoffs.id, personId: schema.crisisHandoffs.personId, crisisEventId: schema.crisisHandoffs.crisisEventId, consentId: schema.crisisHandoffs.consentId, grantedAt: schema.consents.grantedAt })
     .from(schema.crisisHandoffs)
     .innerJoin(schema.consents, eq(schema.consents.id, schema.crisisHandoffs.consentId))
-    .where(eq(schema.crisisHandoffs.crisisEventId, crisisEventId))
+    .where(eq(schema.crisisHandoffs.id, id))
     .limit(1);
-  if (!existing || existing.personId !== personId) return { kind: 'conflict' };
+  if (!existing || existing.personId !== personId || existing.crisisEventId !== crisisEventId) return { kind: 'conflict' };
   return { kind: 'replayed', receipt: { handoffId: existing.id, consentId: existing.consentId, grantedAt: existing.grantedAt.toISOString(), created: false } };
 }
 

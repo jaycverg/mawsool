@@ -246,3 +246,22 @@ describe('the page reads the token from the link it was opened with', () => {
     expect(screen.getByText(labels.missingToken)).toBeTruthy();
   });
 });
+
+describe('where Continue goes', () => {
+  const operator = { ...SESSION, role: 'crisis_line' as const, facilityId: null };
+  const showWith = () => render(<StaffSignIn token="tok" apiUrl="http://api.test" allowedRoles={['ops', 'crisis_line']} labels={labels} homeHref="/en/" homeHrefByRole={{ crisis_line: '/en/crisis-line/' }} />);
+
+  it('sends a role with its own screen there, and every other role to the app home', async () => {
+    vi.stubGlobal('fetch', reply(200, operator));
+    showWith();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    const link = await screen.findByRole('link', { name: 'Continue' });
+    expect(link.getAttribute('href')).toBe('/en/crisis-line/');
+    cleanup();
+    window.sessionStorage.clear();
+    vi.stubGlobal('fetch', reply(200, { ...SESSION, role: 'ops', facilityId: null }));
+    showWith();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect((await screen.findByRole('link', { name: 'Continue' })).getAttribute('href')).toBe('/en/');
+  });
+});
