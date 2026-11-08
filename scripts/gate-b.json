@@ -1391,13 +1391,17 @@
     "browser": "anonymous-session-makes-no-request-to-the-api"
   },
   {
-    "id": "anonymous-session-keeps-only-the-checkins-and-is-erased",
-    "sentence": "An anonymous session keeps only the check-ins (in the tab, gone with it) and the crisis block (on the device), refuses to keep anything else, and is emptied by clear, by Delete everything with no request, and by Delete everything done outside the session",
+    "id": "anonymous-session-keeps-only-the-checkins-as-ciphertext",
+    "sentence": "An anonymous session keeps only the check-ins, as AES-GCM ciphertext under a key that cannot be exported, in a database of its own, and the crisis block on the device; it refuses to keep anything else, never falls back to plain text when the browser refuses its database, reads its check-ins back on every page load of the session, and the tab's own note is a random id and nothing else; in the browser nothing in sessionStorage or localStorage holds an answer, score or result",
     "project": "apps/person",
     "tests": [
       {
         "file": "test/anonymous.test.ts",
-        "name": "keeps the check-ins for the tab"
+        "name": "keeps the check-ins as ciphertext under a key that cannot be exported"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "is read back by a new page load of the same session"
       },
       {
         "file": "test/anonymous.test.ts",
@@ -1409,25 +1413,98 @@
       },
       {
         "file": "test/anonymous.test.ts",
-        "name": "is emptied by clear()"
+        "name": "does not fall back to plain text when the browser refuses its database"
       },
       {
         "file": "test/anonymous.test.ts",
-        "name": "holds on to the check-ins in memory"
+        "name": "is a note on the tab that holds a random id and nothing else"
       },
       {
         "file": "test/anonymous.test.ts",
-        "name": "is wiped by wipeAnonymousData"
-      },
-      {
-        "file": "test/anonymous.test.ts",
-        "name": "erases the session without a request"
-      },
-      {
-        "file": "test/anonymous.test.ts",
-        "name": "reaches what an anonymous session left in the tab"
+        "name": "accepts only the note it writes"
       }
-    ]
+    ],
+    "browser": "anonymous-check-ins-and-results-stay-out-of-plain-text-storage"
+  },
+  {
+    "id": "anonymous-store-and-key-are-deleted-on-every-wipe-path",
+    "sentence": "The anonymous session's database, with its ciphertext and its key, is deleted by leaving the session (which still ends it when the deletion fails or hangs), by clear, by Delete everything inside and outside the session with no request, and at the next start of the app in a tab that is not that session (a closed tab could not wipe it), while a start in the same session keeps it; after a wipe the next write makes a new key",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "leaving the session deletes the database, the ciphertext and the key with it"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "leaving still ends the session when the database cannot be deleted"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "leaving does not wait for ever on a database that hangs"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "Delete everything deletes the database too, in an anonymous session and outside one"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "clear() deletes the database and the crisis block"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "after a wipe the next write makes a new key"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "a start in a tab that is not anonymous deletes what an earlier anonymous session left"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "a start in a new anonymous session deletes the earlier session"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "a start in the same session keeps its check-ins and key"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "a start that fails or finds no IndexedDB throws nothing"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "erases the session without a request: the encrypted check-ins"
+      }
+    ],
+    "browser": "anonymous-store-and-key-are-deleted-on-leaving-on-delete-everything-and-on-a-new-tab-session"
+  },
+  {
+    "id": "anonymous-crisis-screen-opens-when-the-store-refuses",
+    "sentence": "When the anonymous session's database refuses, the answer that fires the crisis path still takes it, the block is saved on the device, and in the browser the screen shows every number, holds through Back, a direct visit and a reload, and is released by the person",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "takes the crisis path and saves the block on the device when the anonymous database refuses"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "reads the block and resolves it without ever asking the anonymous database"
+      }
+    ],
+    "browser": "anonymous-crisis-screen-opens-when-the-store-refuses"
+  },
+  {
+    "id": "anonymous-crisis-screen-opens-when-the-store-hangs",
+    "sentence": "When the anonymous session's database never answers, the answer that fires the crisis path still takes it within its patience and the tab still says blocked, and in the browser the screen shows every number, holds through Back, a direct visit and a reload, and is released by the person",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "takes the crisis path, within its patience, when the anonymous database hangs"
+      }
+    ],
+    "browser": "anonymous-crisis-screen-opens-when-the-store-hangs"
   },
   {
     "id": "anonymous-crisis-is-never-queued-or-sent",
