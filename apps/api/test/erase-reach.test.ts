@@ -16,8 +16,7 @@ const REVIEWED: Record<string, { fate: 'deleted' | 'kept'; why: string; proof: s
   consents: { fate: 'kept', why: 'the append-only ledger keeps the revocation', proof: 'consent.test.ts' },
   summary_logs: { fate: 'deleted', why: 'logged summaries are health text', proof: 'revoke-reach.test.ts' },
   inbound_invites: { fate: 'deleted', why: 'ties a person to a positive screen, a front door and a time', proof: 'inbound.test.ts' },
-  crisis_handoffs: { fate: 'deleted', why: 'ties a person to a crisis event and holds the template they handed over, with the callback number; the consent ledger keeps a timestamped revoked row and the event keeps context_shared, so the two can still be matched by time (accepted, a decision for the user)', proof: 'crisis-handoffs.test.ts' },
-  revoked_handoffs: { fate: 'kept', why: 'a random id the phone made and a time, kept so a send already on its way cannot recreate a stopped or erased hand-off; it holds nothing the person said', proof: 'crisis-handoffs.test.ts' },
+  crisis_handoffs: { fate: 'deleted', why: 'ties a person to a crisis event and holds the template they handed over, with the callback number; its ledger row is deleted with it, so nothing the server keeps ties the person to the event afterwards', proof: 'crisis-handoffs.test.ts' },
   reminder_phones: { fate: 'deleted', why: 'the optional number for text reminders', proof: 'reminders.test.ts' },
 };
 

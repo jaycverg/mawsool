@@ -1,5 +1,5 @@
 import { CRISIS_HANDOFF_ELEMENT, CRISIS_LINE_RECIPIENT, CrisisHandoffContentSchema, type CreateCrisisHandoffRequest, type CrisisHandoffReceipt, type CrisisHandoffView } from '@mawsool/types';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, lt, sql } from 'drizzle-orm';
 import type { Clock } from '../clock';
 import type { Cipher } from '../crypto';
 import { schema, type Db } from '../db/client';
@@ -18,6 +18,15 @@ export function crisisHandoffContext(handoffId: string): string {
 }
 
 type HandoffRow = typeof schema.crisisHandoffs.$inferSelect;
+
+/**
+ * Takes a transaction-scoped lock on one hand-off id. Creating, stopping and erasing a hand-off each take it first, so for one
+ * id they run one after another: a send cannot miss a stop that is committing, and a stop cannot miss a hand-off that is being
+ * written (under READ COMMITTED each would otherwise be blind to the other's uncommitted row). Released at commit or rollback.
+ */
+async function lockHandoffId(executor: Executor, handoffId: string): Promise<void> {
+  await executor.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${handoffId}, 0))`);
+}
 
 class AlreadyHandedOff extends Error {}
 
@@ -52,9 +61,10 @@ export async function createHandoff(deps: CrisisHandoffDeps, personId: string, r
   const now = deps.clock.now();
   try {
     return await db.transaction(async (tx) => {
+      await lockHandoffId(tx, id);
       const [event] = await tx.select({ id: schema.crisisEvents.id }).from(schema.crisisEvents).where(eq(schema.crisisEvents.id, crisisEventId)).for('update');
       if (!event) return { kind: 'unknown_event' as const };
-      const [stopped] = await tx.select({ id: schema.revokedHandoffs.handoffId }).from(schema.revokedHandoffs).where(and(eq(schema.revokedHandoffs.personId, personId), eq(schema.revokedHandoffs.handoffId, id)));
+      const [stopped] = await tx.select({ id: schema.revokedHandoffs.handoffId }).from(schema.revokedHandoffs).where(eq(schema.revokedHandoffs.handoffId, id));
       if (stopped) return { kind: 'stopped' as const };
       const [consent] = await tx.insert(schema.consents).values({ personId, ticketId: null, recipient: CRISIS_LINE_RECIPIENT, element: CRISIS_HANDOFF_ELEMENT, grantedAt: now }).returning();
       const inserted = await tx
@@ -83,35 +93,38 @@ export async function createHandoff(deps: CrisisHandoffDeps, personId: string, r
 export type RevokeHandoffResult = { kind: 'revoked'; revokedAt: Date } | { kind: 'not_found' };
 
 /**
- * The person stops the hand-off: the ledger row is revoked and the stored template is deleted in one transaction, so
+ * The person stops the hand-off: the stored template and its ledger row are deleted in one transaction, so
  * after it the console has nothing to read. Only the caller's own hand-off can be reached; anyone else's is not found.
  */
 export async function revokeHandoff(deps: CrisisHandoffDeps, personId: string, handoffId: string): Promise<RevokeHandoffResult> {
   const now = deps.clock.now();
   return deps.db.transaction(async (tx) => {
+    await lockHandoffId(tx, handoffId);
     // The id is remembered whether or not a row exists yet: a send that is still on its way must find it stopped.
-    await tx.insert(schema.revokedHandoffs).values({ personId, handoffId, revokedAt: now }).onConflictDoNothing();
+    await tx.insert(schema.revokedHandoffs).values({ handoffId, revokedAt: now }).onConflictDoNothing();
     const [row] = await tx.select().from(schema.crisisHandoffs).where(and(eq(schema.crisisHandoffs.id, handoffId), eq(schema.crisisHandoffs.personId, personId))).for('update');
     if (!row) return { kind: 'not_found' as const };
-    await tx.update(schema.consents).set({ revokedAt: now }).where(and(eq(schema.consents.id, row.consentId), isNull(schema.consents.revokedAt)));
     await tx.delete(schema.crisisHandoffs).where(eq(schema.crisisHandoffs.id, row.id));
+    // The ledger row goes too: left behind it would keep the person's name against the time of the hand-off.
+    await tx.delete(schema.consents).where(eq(schema.consents.id, row.consentId));
     return { kind: 'revoked' as const, revokedAt: now };
   });
 }
 
 /**
- * "Delete everything": revokes every live hand-off consent of the person and deletes their hand-off rows, inside the
- * caller's transaction or on the database. Returns how many hand-offs went. The ledger keeps the revocations, and the ids go
- * into `revoked_handoffs` so a send still on its way cannot recreate one.
+ * "Delete everything": deletes every hand-off of the person and every ledger row of the hand-off consent, and remembers the
+ * ids of the hand-offs it deleted together with `unseenIds`, the ids the phone made for sends the server may not have seen yet,
+ * so a send still on its way cannot recreate one. Must run in a transaction. Nothing of the person is kept: the ledger row is
+ * deleted, not revoked, and the remembered ids carry no person. Returns how many hand-offs went.
  */
-export async function eraseHandoffs(executor: Executor, personId: string, now: Date): Promise<number> {
+export async function eraseHandoffs(executor: Executor, personId: string, now: Date, unseenIds: readonly string[] = []): Promise<number> {
   const standing = await executor.select({ id: schema.crisisHandoffs.id }).from(schema.crisisHandoffs).where(eq(schema.crisisHandoffs.personId, personId));
-  if (standing.length > 0) await executor.insert(schema.revokedHandoffs).values(standing.map((row) => ({ personId, handoffId: row.id, revokedAt: now }))).onConflictDoNothing();
-  await executor
-    .update(schema.consents)
-    .set({ revokedAt: now })
-    .where(and(eq(schema.consents.personId, personId), eq(schema.consents.element, CRISIS_HANDOFF_ELEMENT), isNull(schema.consents.revokedAt)));
+  const ids = [...new Set([...standing.map((row) => row.id), ...unseenIds])].sort();
+  // Always in the same order, so two erases (or an erase and a send) that share an id cannot wait on each other in a circle.
+  for (const id of ids) await lockHandoffId(executor, id);
+  if (ids.length > 0) await executor.insert(schema.revokedHandoffs).values(ids.map((handoffId) => ({ handoffId, revokedAt: now }))).onConflictDoNothing();
   const gone = await executor.delete(schema.crisisHandoffs).where(eq(schema.crisisHandoffs.personId, personId)).returning({ id: schema.crisisHandoffs.id });
+  await executor.delete(schema.consents).where(and(eq(schema.consents.personId, personId), eq(schema.consents.element, CRISIS_HANDOFF_ELEMENT)));
   return gone.length;
 }
 
@@ -166,4 +179,13 @@ export async function markContactMade(deps: CrisisHandoffDeps, handoffId: string
     if (found.handoff.contactMadeAt === null) await tx.update(schema.crisisHandoffs).set({ contactMadeAt }).where(eq(schema.crisisHandoffs.id, found.handoff.id));
     return view(deps.cipher, { ...found.handoff, contactMadeAt });
   });
+}
+
+/** How long a remembered stop is kept: far longer than any request still on its way can take. */
+export const REVOKED_HANDOFF_TTL_MS = 60 * 60 * 1000;
+
+/** Deletes the remembered stops older than an hour. Called by the sweep, as it purges spent request nonces. */
+export async function deleteStaleRevokedHandoffs(db: Pick<Db, 'delete'>, now: Date): Promise<number> {
+  const gone = await db.delete(schema.revokedHandoffs).where(lt(schema.revokedHandoffs.revokedAt, new Date(now.getTime() - REVOKED_HANDOFF_TTL_MS))).returning({ id: schema.revokedHandoffs.handoffId });
+  return gone.length;
 }

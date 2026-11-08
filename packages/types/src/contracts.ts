@@ -433,3 +433,10 @@ export type CrisisHandoffView = z.infer<typeof CrisisHandoffViewSchema>;
 
 export const CrisisHandoffListSchema = z.object({ items: z.array(CrisisHandoffViewSchema) });
 export type CrisisHandoffList = z.infer<typeof CrisisHandoffListSchema>;
+
+/**
+ * DELETE /me/data may carry the ids of hand-offs the phone made, including ones whose send it never heard back from, so the
+ * server can refuse any of them that is still on its way. The body is optional: a phone that never handed anything over sends none.
+ */
+export const EraseRequestSchema = z.object({ handoffIds: z.array(z.uuid()).max(100) }).strict();
+export type EraseRequest = z.infer<typeof EraseRequestSchema>;

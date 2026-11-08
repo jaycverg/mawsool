@@ -4,7 +4,7 @@ import { schema, type Db } from '../db/client';
 import { evaluate, evaluateUnable, type Verdict } from './transitions';
 
 /** Anything with the query surface of a database or an open transaction. */
-export type Executor = Pick<Db, 'select' | 'insert' | 'update' | 'delete'>;
+export type Executor = Pick<Db, 'select' | 'insert' | 'update' | 'delete' | 'execute'>;
 
 export interface LastEvent {
   seq: number;

@@ -344,8 +344,8 @@ export const reminderPhones = pgTable(
 );
 
 /**
- * Carries no person id and no item answers, so a crisis can never be traced to a ticket or read as a person's own. The one
- * link to a person is a hand-off the person chose to make (`crisis_handoffs`, and its trace in the consent ledger).
+ * Carries no person id and no item answers, so a crisis is never tied to a ticket or to a person. The one link is a hand-off the
+ * person chose to make (`crisis_handoffs` and its ledger row), and both are deleted when they stop it or erase everything.
  */
 export const crisisEvents = pgTable(
   'crisis_events',
@@ -370,29 +370,22 @@ export const crisisEvents = pgTable(
 
 /**
  * The ids of hand-offs that were stopped or erased, so a send that was already on its way (its reply lost, or its request
- * still in flight when the person pressed Stop) cannot create the hand-off after the stop. Keyed by person and id: nobody
- * else's stop blocks a person's send. It holds a random id the phone made and a time, nothing the person said.
+ * still in flight when the person pressed Stop or Delete everything) cannot create the hand-off after the stop. It holds a
+ * random id the phone made and the time of the stop, and nothing else: no person, no event, no content, so it ties nobody to
+ * anything. `sweep` deletes a row an hour after it was written, long past any request still on its way.
  */
-export const revokedHandoffs = pgTable(
-  'revoked_handoffs',
-  {
-    personId: uuid('person_id')
-      .notNull()
-      .references(() => persons.id),
-    handoffId: uuid('handoff_id').notNull(),
-    revokedAt: at('revoked_at').notNull(),
-  },
-  (t) => [primaryKey({ columns: [t.personId, t.handoffId] })],
-);
+export const revokedHandoffs = pgTable('revoked_handoffs', {
+  handoffId: uuid('handoff_id').primaryKey(),
+  revokedAt: at('revoked_at').notNull(),
+});
 
 /**
  * What a person handed to the mock crisis line, one row per hand-off. The template (language, trigger, the totals of their
  * latest check-ins and the callback number if they gave one) is AES-256-GCM ciphertext bound to this row's id. The row
- * exists only while its ledger consent (`consent_id`, element `crisis_handoff`) is live: revoking the consent and
- * "Delete everything" both delete it. While it stands it is the row that ties a person to a crisis event, which is why
- * `crisis_events` itself carries no person id. It is not the only trace: the append-only consent ledger keeps a
- * timestamped `crisis_handoff` row for the person after a stop or an erase, and the event keeps `context_shared`, so the
- * two can be matched by time. That is accepted for now and is a decision for the user, not something this table hides.
+ * exists only while its ledger consent (`consent_id`, element `crisis_handoff`) is live. Stopping and "Delete everything"
+ * delete both the row and that ledger row, so afterwards nothing the server keeps ties the person to the crisis event, by id
+ * or by time: the event keeps only an anonymous `context_shared` flag. While a hand-off stands, this row is what ties a person
+ * to a crisis event, which is why `crisis_events` itself carries no person id.
  */
 export const crisisHandoffs = pgTable(
   'crisis_handoffs',

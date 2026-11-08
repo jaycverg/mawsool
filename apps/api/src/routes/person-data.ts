@@ -1,5 +1,6 @@
 import {
   EquityRequestSchema,
+  EraseRequestSchema,
   ErrorResponseSchema,
   GrantConsentRequestSchema,
   ConsentRecordSchema,
@@ -59,9 +60,14 @@ export function registerPersonDataRoutes(app: FastifyInstance, deps: PersonDataD
     '/me/data',
     {
       config: { access: 'person' },
-      schema: { response: { 200: z.object({ ticketsWithdrawn: z.number(), consentsRevoked: z.number(), summariesDeleted: z.number() }) } },
+      schema: { response: { 200: z.object({ ticketsWithdrawn: z.number(), consentsRevoked: z.number(), summariesDeleted: z.number() }), 400: ErrorResponseSchema } },
     },
-    async (request) => eraseEverything(deps, personId(request)),
+    async (request, reply) => {
+      // The body is optional, so it is checked here: a phone that never handed anything over sends none at all.
+      const body = EraseRequestSchema.optional().safeParse(request.body ?? undefined);
+      if (!body.success) return sendError(reply, 400, 'invalid_request', 'The request did not match the expected shape');
+      return eraseEverything(deps, personId(request), body.data?.handoffIds ?? []);
+    },
   );
 
   typed.put(

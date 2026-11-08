@@ -237,7 +237,7 @@ export interface EraseResult {
  * clears the equity buckets. The invites the person claimed, the number they gave for text reminders and any hand-off to the crisis line are deleted too (see below). The tickets themselves
  * and their events remain, as pseudonymous timings with no data: an event's reason is a code from a fixed list, never free text.
  */
-export async function eraseEverything(deps: ConsentDeps, personId: string): Promise<EraseResult> {
+export async function eraseEverything(deps: ConsentDeps, personId: string, unseenHandoffIds: readonly string[] = []): Promise<EraseResult> {
   const { db } = deps;
   const live = await db
     .select({ id: schema.consents.id, ticketId: schema.consents.ticketId })
@@ -257,8 +257,9 @@ export async function eraseEverything(deps: ConsentDeps, personId: string): Prom
   // unclaimed: an unclaimed invite could be claimed again, and a used one cannot be unclaimed. A ticket keeps its own `source`.
   await db.delete(schema.inboundInvites).where(eq(schema.inboundInvites.claimedBy, personId));
   await removeReminderPhone(db, personId);
-  // The hand-offs to the crisis line go the same way: the consent is revoked in the ledger and the stored template is deleted.
-  await eraseHandoffs(db, personId, deps.clock.now());
+  // The hand-offs to the crisis line go the same way: the stored template and its ledger row are deleted, and the ids of the ones
+  // the phone may have sent without hearing back are remembered, so a send still on its way cannot recreate one.
+  await db.transaction((tx) => eraseHandoffs(tx, personId, deps.clock.now(), unseenHandoffIds));
   await db
     .update(schema.persons)
     .set({ equityOptIn: false, ageBand: null, gender: null, language: null, region: null })
