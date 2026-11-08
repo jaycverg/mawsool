@@ -9,6 +9,7 @@ import {
   answerAll,
   computed,
   crisisUrl,
+  goOffline,
   installFailingIndexedDb,
   msg,
   rawStoreKeys,
@@ -18,6 +19,7 @@ import {
   tapOwners,
   triggerCrisis,
   visitOnline,
+  waitForStored,
   type Locale,
 } from './helpers';
 
@@ -1362,6 +1364,81 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
       ['issued', 'seen', 'person'],
       ['seen', 'closed', 'person'],
     ]);
+  },
+
+  async 'next-day-check-follows-the-clock-opens-offline-and-keeps-the-answer-on-the-phone'({ page, context, locale }) {
+    const nextDayUrl = new RegExp(`/${locale}/next-day/$`);
+    await visitOnline(page, locale);
+    await triggerCrisis(page, locale);
+    await page.getByRole('button', { name: msg(locale, 'crisis.safeNow'), exact: true }).click();
+    await waitForStored(page, 'crisis:follow-up');
+    expect(await rawStoreKeys(page)).toContain('crisis:follow-up');
+
+    // Neither the card on home nor the screen says anything is due a minute short of a day on.
+    const now = Date.now();
+    await context.clock.setFixedTime(new Date(now + DAY_MS - 60_000));
+    await page.goto(`/${locale}/`);
+    await expect(page.locator('[data-trend], [data-prompt="reminder"], h1').first()).toBeVisible();
+    await expect(page.locator('[data-prompt="next-day"]')).toHaveCount(0);
+    await page.goto(`/${locale}/next-day/`);
+    await expect(page.locator('[data-state="not-due"]')).toBeVisible();
+    await expect(page.locator('[data-state="question"]')).toHaveCount(0);
+
+    // A day and a minute on, with the network cut, the card is on home and the screen asks how the person is.
+    await context.clock.setFixedTime(new Date(now + DAY_MS + 60_000));
+    const sent: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().startsWith(API) && request.method() !== 'GET') sent.push(`${request.method()} ${new URL(request.url()).pathname}`);
+    });
+    await goOffline(context);
+    await page.goto(`/${locale}/`);
+    const card = page.locator('[data-prompt="next-day"]');
+    await expect(card).toBeVisible();
+    await expect(card).toContainText(msg(locale, 'nextDay.cardBody'));
+    await card.getByRole('link', { name: msg(locale, 'nextDay.cardAction'), exact: true }).click();
+    await expect(page).toHaveURL(nextDayUrl);
+    await expect(page.locator('[data-state="question"] h1')).toHaveText(msg(locale, 'nextDay.title'));
+    await page.locator('[data-answer="worse"]').click();
+    await expect(page.locator('[data-answer-given="worse"]')).toBeVisible();
+    await expect(page.locator('[data-answer-given="worse"] [role="status"]')).toHaveText(msg(locale, 'nextDay.afterWorse'));
+    // A worse answer puts "Help now" first, and the offer of a GP or a specialist follows.
+    await expect(page.locator('[data-help-now]')).toHaveAttribute('href', `/${locale}/crisis/`);
+    await expect(page.locator('[data-offer]')).toContainText(msg(locale, 'nextDay.offerTitle'));
+
+    // The answer is kept on the phone: it survives a reload, the home card is gone, and nothing was written to the server.
+    await page.reload();
+    await expect(page.locator('[data-answer-given="worse"]')).toBeVisible();
+    await page.goto(`/${locale}/`);
+    await expect(page.locator('[data-trend], [data-prompt="reminder"], h1').first()).toBeVisible();
+    await expect(page.locator('[data-prompt="next-day"]')).toHaveCount(0);
+    expect(sent).toEqual([]);
+  },
+
+  async 'next-day-check-offers-a-ticket-through-matching-consent-and-the-crisis-guard'({ page, context, locale }) {
+    await visitOnline(page, locale);
+    await triggerCrisis(page, locale);
+    await page.getByRole('button', { name: msg(locale, 'crisis.safeNow'), exact: true }).click();
+    await waitForStored(page, 'crisis:follow-up');
+    await context.clock.setFixedTime(new Date(Date.now() + DAY_MS + 60_000));
+
+    // The offer leads into the ordinary flow: the options screen is matching on the phone ...
+    await page.goto(`/${locale}/next-day/`);
+    await page.locator('[data-answer="same"]').click();
+    await page.locator('[data-offer-options]').click();
+    await expect(page).toHaveURL(new RegExp(`/${locale}/options/$`));
+    await expect(page.locator('[data-tier]').first()).toBeVisible();
+    // ... and a fresh check-in then reaches the consent screen like any other referral.
+    await page.goto(`/${locale}/next-day/`);
+    await page.getByRole('link', { name: msg(locale, 'nextDay.checkInAction'), exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/${locale}/check-in/$`));
+    await toConsent(page, locale);
+    await expect(page).toHaveURL(consentUrl(locale));
+
+    // A new crisis shuts the next-day screen like every other: it lands on the crisis screen, whatever the address.
+    await triggerCrisis(page, locale);
+    await page.goto(`/${locale}/next-day/`);
+    await expect(page).toHaveURL(crisisUrl(locale), { timeout: 15_000 });
+    await expect(page.locator('[data-screen="next-day"]')).toHaveCount(0);
   },
 };
 

@@ -5,8 +5,9 @@
 // in-process Postgres (PGlite, no Docker), then checks every sentence of the exit acceptance against the tests that ran:
 // each named test must exist, be unambiguous and have passed, and no test in those projects may have failed, been
 // skipped or been left todo. A sentence that only a browser can prove names its test in the browser gate's registry
-// (apps/person/e2e/acceptance-phase3.json); run `pnpm gate:phase3` for those. Nothing here needs a network.
+// (apps/person/e2e/acceptance-phase3.json), or, for the crisis-line console, names a `delegated` test in the receiving-side gate's registry
+// (acceptance-phase4.json); run `pnpm gate:phase3` and `pnpm gate:phase4` for those. Nothing here needs a network.
 import { runServerSide } from './gate-server.mjs';
 
-const ok = await runServerSide({ name: 'gate:b', registry: 'scripts/gate-b.json', browser: 'acceptance-phase3.json', timeLimitMs: 9 * 60_000 });
+const ok = await runServerSide({ name: 'gate:b', registry: 'scripts/gate-b.json', browser: 'acceptance-phase3.json', delegated: { 'gate:phase4': 'acceptance-phase4.json' }, timeLimitMs: 9 * 60_000 });
 process.exit(ok ? 0 : 1);

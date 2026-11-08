@@ -912,5 +912,308 @@
         "name": "in the precache list of both languages"
       }
     ]
+  },
+  {
+    "id": "crisis-handoff-needs-the-explicit-consent",
+    "sentence": "A hand-off to the crisis line posted without the person's consent is refused and writes no row: no hand-off, no ledger entry and no change to the crisis event; neither does a body that carries more than the template, or one for a crisis event the server does not hold",
+    "tests": [
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "refuses a hand-off posted without the consent, and writes no row at all"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "refuses a body that carries anything beyond the template"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "refuses a hand-off for a crisis event the server does not hold yet"
+      },
+      {
+        "project": "packages/types",
+        "file": "test/types.test.ts",
+        "name": "accepts a consented template and refuses a missing or false consent"
+      }
+    ]
+  },
+  {
+    "id": "crisis-handoff-is-ledgered-encrypted-and-apart-from-the-event",
+    "sentence": "The consent is recorded in the ledger for the crisis line with no ticket, the template is ciphertext bound to its own row, and the crisis event itself holds no person",
+    "tests": [
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "records the consent in the ledger for the crisis line"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "keeps the person off the crisis event"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "answers a repeated send of the same hand-off"
+      }
+    ]
+  },
+  {
+    "id": "crisis-line-reads-a-consented-handoff",
+    "sentence": "The crisis_line role reads a hand-off the person consented to, and signs in through the staff page to a console labelled as a mock",
+    "tests": [
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "lets the crisis-line role read a consented hand-off"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/access.test.ts",
+        "name": "lets the right principals through"
+      },
+      {
+        "project": "packages/ui",
+        "file": "test/staff-signin-dom.test.tsx",
+        "name": "sends a role with its own screen there, and every other role to the app home"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/seed.test.ts",
+        "name": "has demo staff: a clinician at each facility, ops, admin and the mock crisis-line operator"
+      }
+    ],
+    "delegated": {
+      "gate": "gate:phase4",
+      "id": "crisis-line-console-reads-a-consented-handoff-and-marks-contact"
+    }
+  },
+  {
+    "id": "revoking-a-handoff-deletes-its-row-and-the-read-is-404",
+    "sentence": "After the person revokes, the raw hand-off row is gone, the ledger keeps the revocation, the console's read returns 404, a consent revoked with a row left behind is not readable, and Delete everything reaches it too",
+    "tests": [
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "deletes the row on revoke"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "checks the ledger on every console read"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "reaches only the caller"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "the consent is revoked, the row is deleted and the console reads 404"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "the generic revoke route cannot reach a hand-off consent"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/erase-reach.test.ts"
+      }
+    ],
+    "delegated": {
+      "gate": "gate:phase4",
+      "id": "stale-contact-made-after-the-person-stopped-sharing-is-refused"
+    }
+  },
+  {
+    "id": "every-other-route-refuses-the-crisis-line-role",
+    "sentence": "The crisis_line role is allowed on the three hand-off routes only, a route outside /crisis-handoffs cannot give it access, and every other route refuses it without returning data",
+    "tests": [
+      {
+        "project": "apps/api",
+        "file": "test/access.test.ts",
+        "name": "gives the crisis-line role exactly the three hand-off routes and no other route"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/access.test.ts",
+        "name": "refuses every principal that is not the right one"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/access.test.ts",
+        "name": "has a reviewed entry for every registered route"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/route-registry.test.ts",
+        "name": "refuses to start when a route outside /crisis-handoffs gives the crisis-line role access"
+      }
+    ],
+    "delegated": {
+      "gate": "gate:phase4",
+      "id": "crisis-line-role-is-confined-to-its-console"
+    }
+  },
+  {
+    "id": "contact-made-completes-the-event-once",
+    "sentence": "Marking contact made completes the crisis event as confirmed by the mock line and resolved, a second press or a contact the person already confirmed changes nothing, and the dashboard counts the contact once",
+    "tests": [
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "completes the event on"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "counts one contact once"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "shows up once in the dashboard"
+      }
+    ]
+  },
+  {
+    "id": "handoff-leaves-the-crisis-path-alone",
+    "sentence": "The phone sends the hand-off only after the crisis record, online and on an explicit action; every failure is an outcome that leaves the crisis block and its queue untouched, and a reply lost after the server stored it still leaves a record to stop from",
+    "tests": [
+      {
+        "project": "apps/person",
+        "file": "test/crisis-handoff.test.ts",
+        "name": "sends the crisis record first, then the note with the consent flag"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/crisis-handoff.test.ts",
+        "name": "holds the language, the reason, the latest finished totals and the number typed, and no item answer"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/crisis-handoff.test.ts",
+        "name": "refuses a number that is not international before anything leaves the phone"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/crisis-handoff.test.ts",
+        "name": "never touches the crisis block or its queue, whatever the outcome"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/crisis-handoff.test.ts",
+        "name": "can stop a hand-off whose reply was lost"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/crisis-handoff.test.ts",
+        "name": "deletes it on the server first, and only then drops the record"
+      }
+    ],
+    "delegated": {
+      "gate": "gate:phase4",
+      "id": "crisis-handoff-failure-leaves-the-crisis-screen-alone"
+    }
+  },
+  {
+    "id": "handoff-and-next-day-records-are-wiped-and-downloadable",
+    "sentence": "Every key the person app keeps on the phone, the hand-off record and the next-day check among them, is removed by Delete everything and the two new ones are in the download",
+    "tests": [
+      {
+        "project": "apps/person",
+        "file": "test/prefs-and-data.test.ts",
+        "name": "leaves an empty store after a wipe with a value under every name in KEYS"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/prefs-and-data.test.ts",
+        "name": "puts the hand-off record and the next-day check in the download"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/crisis-handoff.test.ts",
+        "name": "is wiped with the rest by Delete everything on the phone"
+      }
+    ]
+  },
+  {
+    "id": "next-day-check-is-scheduled-a-day-on-and-answered-on-the-phone",
+    "sentence": "A crisis released on the phone schedules a check a day later on the care clock (the demo clock moves it), once per crisis, which shows as a card and a neutral notification only when due and never prompts for permission; the answer stays on the phone",
+    "tests": [
+      {
+        "project": "apps/person",
+        "file": "test/follow-up.test.ts",
+        "name": "is due a day after the crisis was resolved"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/follow-up.test.ts",
+        "name": "keeps the schedule and the answer of a crisis it already knows"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/follow-up.test.ts",
+        "name": "reports a failed store instead of throwing"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/follow-up.test.ts",
+        "name": "follows the demo clock: a week-long jump"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/follow-up.test.ts",
+        "name": "shows once, with its tag, and never asks for permission"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/follow-up.test.ts",
+        "name": "is in-app only, and still marked"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/follow-up.test.ts",
+        "name": "keeps the answer and when it was given, on the phone only"
+      }
+    ],
+    "browser": "next-day-check-follows-the-clock-opens-offline-and-keeps-the-answer-on-the-phone"
+  },
+  {
+    "id": "next-day-notification-is-neutral",
+    "sentence": "The next-day notification names no crisis, score or service, in either language",
+    "tests": [
+      {
+        "project": "apps/person",
+        "file": "test/follow-up.test.ts",
+        "name": "in the en notification"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/follow-up.test.ts",
+        "name": "in the ar notification"
+      }
+    ]
+  },
+  {
+    "id": "next-day-offer-goes-through-the-ordinary-flow",
+    "sentence": "The next-day screen is a guarded route that opens offline, and its offer of a GP or specialist leads into matching, the consent screen and the crisis guard like any other referral",
+    "tests": [
+      {
+        "project": "apps/person",
+        "file": "test/follow-up.test.ts",
+        "name": "is a guarded screen, so a crisis block sends the person to the crisis screen first"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/follow-up.test.ts",
+        "name": "opens offline, and every offline screen is a page that exists"
+      }
+    ],
+    "browser": "next-day-check-offers-a-ticket-through-matching-consent-and-the-crisis-guard"
   }
 ]

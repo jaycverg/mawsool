@@ -3,6 +3,8 @@ import type { BrowserContext } from '@playwright/test';
 import { E2E_INBOUND_KEYS } from '../../api/src/cli/e2e-keys';
 import commonAr from '../../../packages/ui/messages/ar.json';
 import commonEn from '../../../packages/ui/messages/en.json';
+import opsAr from '../../ops/messages/ar.json';
+import opsEn from '../../ops/messages/en.json';
 import clinicianAr from '../../clinician/messages/ar.json';
 import clinicianEn from '../../clinician/messages/en.json';
 import { API, INSPECT, type Locale } from './helpers';
@@ -16,6 +18,7 @@ export const FACILITY_B = '00000000-0000-4000-8000-00000000fb02';
 export const CLINICIAN_A = 'clinician.a@demo.mawsool.test';
 export const CLINICIAN_B = 'clinician.b@demo.mawsool.test';
 export const OPS_USER = 'ops@demo.mawsool.test';
+export const CRISIS_LINE_USER = 'crisisline@demo.mawsool.test';
 export const SESSION_KEY = 'mawsool.staffSession';
 
 const CLINICIAN_MESSAGES = { ar: { ...commonAr, ...clinicianAr }, en: { ...commonEn, ...clinicianEn } } as unknown as Record<Locale, Record<string, unknown>>;
@@ -24,6 +27,15 @@ const CLINICIAN_MESSAGES = { ar: { ...commonAr, ...clinicianAr }, en: { ...commo
 export function cmsg(locale: Locale, path: string): string {
   const found = path.split('.').reduce<unknown>((node, key) => (node as Record<string, unknown> | undefined)?.[key], CLINICIAN_MESSAGES[locale]);
   if (typeof found !== 'string') throw new Error(`no clinician message ${path} in ${locale}`);
+  return found;
+}
+
+const OPS_MESSAGES = { ar: { ...commonAr, ...opsAr }, en: { ...commonEn, ...opsEn } } as unknown as Record<Locale, Record<string, unknown>>;
+
+/** A message in the ops app's own message files (and the shared ones), so the tests read the words the console shows. */
+export function omsg(locale: Locale, path: string): string {
+  const found = path.split('.').reduce<unknown>((node, key) => (node as Record<string, unknown> | undefined)?.[key], OPS_MESSAGES[locale]);
+  if (typeof found !== 'string') throw new Error(`no ops message ${path} in ${locale}`);
   return found;
 }
 
@@ -62,7 +74,7 @@ export async function newPerson(): Promise<Person> {
 export interface StaffSession {
   sessionToken: string;
   expiresAt: string;
-  role: 'clinician' | 'ops' | 'admin';
+  role: 'clinician' | 'ops' | 'admin' | 'crisis_line';
   facilityId: string | null;
 }
 

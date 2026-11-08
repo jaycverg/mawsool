@@ -158,5 +158,13 @@
   {
     "id": "repeat-check-starts-a-fresh-check-in-and-never-finishes-an-old-one",
     "sentence": "The repeat check starts a fresh PHQ-9 at question 1 even when an unfinished one from before the clinic saw the person is on the phone, and both start links, and the link to the GAD-7, carry the exact moment the check opened"
+  },
+  {
+    "id": "next-day-check-follows-the-clock-opens-offline-and-keeps-the-answer-on-the-phone",
+    "sentence": "A day after the person releases a crisis screen, and not a minute before, home carries a neutral \"how are you today\" card and the next-day screen asks how they are; both work with the network cut, a worse answer puts Help now first and offers a GP or specialist, and the answer stays on the phone and nothing is written to the server"
+  },
+  {
+    "id": "next-day-check-offers-a-ticket-through-matching-consent-and-the-crisis-guard",
+    "sentence": "The next-day offer leads into the ordinary flow: the options screen matches on the phone, a fresh check-in reaches the consent screen, and a new crisis sends the next-day screen to the crisis screen"
   }
 ]
