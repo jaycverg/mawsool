@@ -1553,7 +1553,7 @@
       },
       {
         "file": "test/anonymous.test.ts",
-        "name": "walls /en/options/"
+        "name": "walls /en/consent/"
       }
     ],
     "browser": "anonymous-session-says-what-it-cannot-do-and-walls-the-screens-that-need-the-server"
