@@ -58,6 +58,7 @@ export const STAFF: StaffFixture[] = [
   { id: '00000000-0000-4000-8000-0000000000c2', email: 'clinician.b@demo.mawsool.test', name: 'Demo clinician B', role: 'clinician', facilityId: FACILITY_B_ID },
   { id: '00000000-0000-4000-8000-0000000000c3', email: 'ops@demo.mawsool.test', name: 'Demo ops lead', role: 'ops', facilityId: null },
   { id: '00000000-0000-4000-8000-0000000000c4', email: 'admin@demo.mawsool.test', name: 'Demo admin', role: 'admin', facilityId: null },
+  { id: '00000000-0000-4000-8000-0000000000c5', email: 'crisisline@demo.mawsool.test', name: 'Demo crisis-line operator (mock)', role: 'crisis_line', facilityId: null },
 ];
 
 export interface ServiceFixture {

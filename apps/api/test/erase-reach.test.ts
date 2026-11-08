@@ -16,6 +16,7 @@ const REVIEWED: Record<string, { fate: 'deleted' | 'kept'; why: string; proof: s
   consents: { fate: 'kept', why: 'the append-only ledger keeps the revocation', proof: 'consent.test.ts' },
   summary_logs: { fate: 'deleted', why: 'logged summaries are health text', proof: 'revoke-reach.test.ts' },
   inbound_invites: { fate: 'deleted', why: 'ties a person to a positive screen, a front door and a time', proof: 'inbound.test.ts' },
+  crisis_handoffs: { fate: 'deleted', why: 'ties a person to a crisis event and holds the template they handed over, with the callback number', proof: 'crisis-handoffs.test.ts' },
   reminder_phones: { fate: 'deleted', why: 'the optional number for text reminders', proof: 'reminders.test.ts' },
 };
 

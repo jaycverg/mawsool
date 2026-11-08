@@ -85,8 +85,8 @@ describe('seed content', () => {
     expect(data.crisisEvents.some((c) => c.callTapped === null)).toBe(true);
   });
 
-  it('has demo staff: a clinician at each facility, ops and admin', () => {
-    expect(data.staffUsers.map((s) => s.role).sort()).toEqual(['admin', 'clinician', 'clinician', 'ops']);
+  it('has demo staff: a clinician at each facility, ops, admin and the mock crisis-line operator', () => {
+    expect(data.staffUsers.map((s) => s.role).sort()).toEqual(['admin', 'clinician', 'clinician', 'crisis_line', 'ops']);
     expect(new Set(data.staffUsers.filter((s) => s.role === 'clinician').map((s) => s.facilityId))).toEqual(
       new Set([FACILITY_A_ID, FACILITY_B_ID]),
     );
@@ -197,7 +197,7 @@ describe('seeded database', () => {
   it('holds the same data in two separate databases seeded at different times', async () => {
     const [a, b] = await Promise.all([dumpDatabase(first.db), dumpDatabase(second.db)]);
     expect(Object.keys(a)).toHaveLength(ALL_TABLE_NAMES.length);
-    expect(ALL_TABLE_NAMES).toHaveLength(18);
+    expect(ALL_TABLE_NAMES).toHaveLength(19);
     expect(a['tickets']).toHaveLength(TICKET_COUNT);
     expect(b).toEqual(a);
   });

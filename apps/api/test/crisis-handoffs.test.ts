@@ -1,0 +1,227 @@
+import { randomUUID } from 'node:crypto';
+import { CRISIS_HANDOFF_ELEMENT, CrisisHandoffViewSchema } from '@mawsool/types';
+import { and, eq } from 'drizzle-orm';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { crisisHandoffContext } from '../src/crisis-handoffs/service';
+import { schema } from '../src/db/client';
+import { loadCrisisFacts } from '../src/metrics/facts';
+import { buildCrisis } from '../src/metrics/crisis';
+import { runSeed } from '../src/seed/run';
+import { createTestApp, signIn, type TestApp } from './helpers/app';
+import { createTestDb, type TestDb } from './helpers/db';
+import { CALLBACK, cipher, handoffBody, registerPerson, sendCrisisEvent, type TestPerson } from './helpers/flow';
+
+describe('the optional hand-off to the mock crisis line', () => {
+  let testDb: TestDb;
+  let ctx: TestApp;
+  let line: { authorization: string };
+
+  beforeAll(async () => {
+    testDb = await createTestDb();
+    await runSeed(testDb.db);
+    ctx = await createTestApp(testDb.db);
+    line = { authorization: `Bearer ${await signIn(ctx, 'crisisline@demo.mawsool.test')}` };
+  });
+
+  afterAll(async () => {
+    await ctx.app.close();
+    await testDb.close();
+  });
+
+  const post = (person: TestPerson, body: unknown) => ctx.app.inject({ method: 'POST', url: '/me/crisis-handoffs', headers: person.headers, payload: body as object });
+  const consoleGet = (url: string) => ctx.app.inject({ method: 'GET', url, headers: line });
+  const handoffRows = () => testDb.db.select().from(schema.crisisHandoffs);
+  const handoffConsents = () => testDb.db.select().from(schema.consents).where(eq(schema.consents.element, CRISIS_HANDOFF_ELEMENT));
+  const eventRow = async (id: string) => (await testDb.db.select().from(schema.crisisEvents).where(eq(schema.crisisEvents.id, id)))[0]!;
+
+  /** A person with a crisis event on the server and a consented hand-off. */
+  async function handedOff(overrides: Record<string, unknown> = {}) {
+    const person = await registerPerson(ctx);
+    const eventId = await sendCrisisEvent(ctx, person);
+    const res = await post(person, handoffBody(eventId, overrides));
+    expect(res.statusCode).toBe(201);
+    return { person, eventId, receipt: res.json() as { handoffId: string; consentId: string; grantedAt: string; created: boolean } };
+  }
+
+  it('records the consent in the ledger for the crisis line, with no ticket, and stores the template as ciphertext bound to its row', async () => {
+    const { person, eventId, receipt } = await handedOff();
+    const [consent] = await testDb.db.select().from(schema.consents).where(eq(schema.consents.id, receipt.consentId));
+    expect(consent).toMatchObject({ personId: person.id, ticketId: null, recipient: 'crisis_line', element: 'crisis_handoff', revokedAt: null });
+    const [row] = await testDb.db.select().from(schema.crisisHandoffs).where(eq(schema.crisisHandoffs.id, receipt.handoffId));
+    expect(row).toMatchObject({ personId: person.id, crisisEventId: eventId, consentId: receipt.consentId });
+    expect(row!.contentCiphertext).toMatch(/^v1\./);
+    expect(row!.contentCiphertext).not.toContain(CALLBACK);
+    expect(JSON.stringify(row)).not.toContain(CALLBACK);
+    expect(JSON.parse(cipher.decrypt(row!.contentCiphertext, crisisHandoffContext(row!.id))).callbackNumber).toBe(CALLBACK);
+    expect(() => cipher.decrypt(row!.contentCiphertext, crisisHandoffContext(randomUUID()))).toThrow();
+    expect((await eventRow(eventId)).contextShared).toBe(true);
+  });
+
+  it('keeps the person off the crisis event: the event table has no person column, and the console sees neither id', async () => {
+    const { person, eventId, receipt } = await handedOff();
+    const columns = Object.keys(schema.crisisEvents).filter((name) => /person/i.test(name));
+    expect(columns).toEqual([]);
+    const read = await consoleGet(`/crisis-handoffs/${receipt.handoffId}`);
+    expect(read.statusCode).toBe(200);
+    expect(read.body).not.toContain(person.id);
+    expect(read.body).not.toContain(eventId);
+  });
+
+  it('refuses a hand-off posted without the consent, and writes no row at all', async () => {
+    const person = await registerPerson(ctx);
+    const eventId = await sendCrisisEvent(ctx, person);
+    const before = { handoffs: (await handoffRows()).length, consents: (await handoffConsents()).length };
+    const withoutField = { ...handoffBody(eventId) } as Record<string, unknown>;
+    delete withoutField.consented;
+    for (const body of [withoutField, handoffBody(eventId, { consented: false }), handoffBody(eventId, { consented: 'yes' })]) {
+      expect((await post(person, body)).statusCode).toBe(400);
+    }
+    expect({ handoffs: (await handoffRows()).length, consents: (await handoffConsents()).length }).toEqual(before);
+    expect((await eventRow(eventId)).contextShared).toBe(false);
+  });
+
+  it('refuses a body that carries anything beyond the template, or a number that is not one, with no row', async () => {
+    const person = await registerPerson(ctx);
+    const eventId = await sendCrisisEvent(ctx, person);
+    const before = (await handoffRows()).length;
+    for (const extra of [{ answers: [0, 1, 3] }, { callbackNumber: '0501234567' }, { scores: Array.from({ length: 4 }, () => handoffBody(eventId).scores[0]) }, { language: 'ur' }]) {
+      expect((await post(person, handoffBody(eventId, extra))).statusCode, JSON.stringify(Object.keys(extra))).toBe(400);
+    }
+    expect((await handoffRows()).length).toBe(before);
+  });
+
+  it('takes a hand-off with no callback number and no scores, because both are optional', async () => {
+    const { receipt } = await handedOff({ callbackNumber: null, scores: [] });
+    const read = await consoleGet(`/crisis-handoffs/${receipt.handoffId}`);
+    expect(CrisisHandoffViewSchema.parse(read.json())).toMatchObject({ callbackNumber: null, scores: [], trigger: 'phq9_item9', language: 'en' });
+  });
+
+  it('refuses a hand-off for a crisis event the server does not hold yet, and leaves no consent behind', async () => {
+    const person = await registerPerson(ctx);
+    const before = { handoffs: (await handoffRows()).length, consents: (await handoffConsents()).length };
+    const res = await post(person, handoffBody(randomUUID()));
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('crisis_event_unknown');
+    expect({ handoffs: (await handoffRows()).length, consents: (await handoffConsents()).length }).toEqual(before);
+  });
+
+  it('answers a repeated send with the first hand-off (a lost reply), leaving one row and one consent; another person on the same event is a conflict', async () => {
+    const person = await registerPerson(ctx);
+    const eventId = await sendCrisisEvent(ctx, person);
+    const first = await post(person, handoffBody(eventId));
+    const again = await post(person, handoffBody(eventId));
+    expect([first.statusCode, again.statusCode]).toEqual([201, 200]);
+    expect(again.json()).toMatchObject({ handoffId: first.json().handoffId, consentId: first.json().consentId, created: false });
+    expect((await handoffRows()).filter((row) => row.crisisEventId === eventId)).toHaveLength(1);
+    expect((await handoffConsents()).filter((row) => row.personId === person.id)).toHaveLength(1);
+    const stranger = await registerPerson(ctx);
+    expect((await post(stranger, handoffBody(eventId))).statusCode).toBe(409);
+    expect((await handoffConsents()).filter((row) => row.personId === stranger.id)).toHaveLength(0);
+  });
+
+  it('lets the crisis-line role read a consented hand-off, in the list and singly', async () => {
+    const { receipt } = await handedOff();
+    const list = await consoleGet('/crisis-handoffs');
+    expect(list.statusCode).toBe(200);
+    const item = list.json().items.find((entry: { id: string }) => entry.id === receipt.handoffId);
+    expect(item).toMatchObject({ language: 'en', trigger: 'phq9_item9', callbackNumber: CALLBACK, contactMadeAt: null, scores: [{ instrument: 'phq9', total: 14 }] });
+    expect(Object.keys(item).sort()).toEqual(['callbackNumber', 'contactMadeAt', 'id', 'language', 'receivedAt', 'scores', 'trigger']);
+  });
+
+  it('deletes the row on revoke: the raw row is gone, the ledger keeps the revocation, and the console read is 404', async () => {
+    const { person, eventId, receipt } = await handedOff();
+    const revoked = await ctx.app.inject({ method: 'DELETE', url: `/me/crisis-handoffs/${receipt.handoffId}`, headers: person.headers });
+    expect(revoked.statusCode).toBe(200);
+    expect(await testDb.db.select().from(schema.crisisHandoffs).where(eq(schema.crisisHandoffs.id, receipt.handoffId))).toEqual([]);
+    const [consent] = await testDb.db.select().from(schema.consents).where(eq(schema.consents.id, receipt.consentId));
+    expect(consent!.revokedAt).not.toBeNull();
+    expect((await consoleGet(`/crisis-handoffs/${receipt.handoffId}`)).statusCode).toBe(404);
+    expect((await consoleGet('/crisis-handoffs')).json().items.map((entry: { id: string }) => entry.id)).not.toContain(receipt.handoffId);
+    const contact = await ctx.app.inject({ method: 'POST', url: `/crisis-handoffs/${receipt.handoffId}/contact`, headers: line });
+    expect(contact.statusCode).toBe(404);
+    expect((await eventRow(eventId)).humanContactConfirmed).toBe(false);
+    expect((await ctx.app.inject({ method: 'DELETE', url: `/me/crisis-handoffs/${receipt.handoffId}`, headers: person.headers })).statusCode).toBe(404);
+  });
+
+  it('lets a person send again after stopping, as a new hand-off with a new consent', async () => {
+    const { person, eventId, receipt } = await handedOff();
+    await ctx.app.inject({ method: 'DELETE', url: `/me/crisis-handoffs/${receipt.handoffId}`, headers: person.headers });
+    const again = await post(person, handoffBody(eventId));
+    expect(again.statusCode).toBe(201);
+    expect(again.json().handoffId).not.toBe(receipt.handoffId);
+    expect(again.json().consentId).not.toBe(receipt.consentId);
+  });
+
+  it('reaches only the caller’s own hand-off to revoke: another person gets 404 and the row stays', async () => {
+    const { receipt } = await handedOff();
+    const stranger = await registerPerson(ctx);
+    expect((await ctx.app.inject({ method: 'DELETE', url: `/me/crisis-handoffs/${receipt.handoffId}`, headers: stranger.headers })).statusCode).toBe(404);
+    expect((await consoleGet(`/crisis-handoffs/${receipt.handoffId}`)).statusCode).toBe(200);
+  });
+
+  it('checks the ledger on every console read, not only the row: a revoked consent with a row left behind is not readable and cannot be marked', async () => {
+    const { eventId, receipt } = await handedOff();
+    await testDb.db.update(schema.consents).set({ revokedAt: new Date() }).where(eq(schema.consents.id, receipt.consentId));
+    expect((await handoffRows()).some((row) => row.id === receipt.handoffId)).toBe(true);
+    expect((await consoleGet(`/crisis-handoffs/${receipt.handoffId}`)).statusCode).toBe(404);
+    expect((await consoleGet('/crisis-handoffs')).json().items.map((entry: { id: string }) => entry.id)).not.toContain(receipt.handoffId);
+    expect((await ctx.app.inject({ method: 'POST', url: `/crisis-handoffs/${receipt.handoffId}/contact`, headers: line })).statusCode).toBe(404);
+    expect((await eventRow(eventId)).humanContactConfirmed).toBe(false);
+  });
+
+  it('completes the event on "contact made": confirmed by the mock line, resolved, stamped on the care clock', async () => {
+    const { eventId, receipt } = await handedOff();
+    ctx.clock.set(new Date('2026-11-01T08:12:00+04:00'));
+    const res = await ctx.app.inject({ method: 'POST', url: `/crisis-handoffs/${receipt.handoffId}/contact`, headers: line });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().contactMadeAt).toBe('2026-11-01T04:12:00.000Z');
+    expect(await eventRow(eventId)).toMatchObject({ humanContactConfirmed: true, contactSource: 'mock_line', contactAt: new Date('2026-11-01T04:12:00.000Z'), resolvedAt: new Date('2026-11-01T04:12:00.000Z') });
+  });
+
+  it('counts one contact once: a second press changes nothing, and a contact the person already confirmed keeps its source and time', async () => {
+    const mine = await handedOff();
+    ctx.clock.set(new Date('2026-11-01T09:00:00+04:00'));
+    await ctx.app.inject({ method: 'POST', url: `/crisis-handoffs/${mine.receipt.handoffId}/contact`, headers: line });
+    ctx.clock.set(new Date('2026-11-01T10:00:00+04:00'));
+    const second = await ctx.app.inject({ method: 'POST', url: `/crisis-handoffs/${mine.receipt.handoffId}/contact`, headers: line });
+    expect(second.json().contactMadeAt).toBe('2026-11-01T05:00:00.000Z');
+    expect((await eventRow(mine.eventId)).contactAt).toEqual(new Date('2026-11-01T05:00:00.000Z'));
+
+    const person = await registerPerson(ctx);
+    const eventId = await sendCrisisEvent(ctx, person, { humanContactConfirmed: true, contactSource: 'self_report', contactAt: '2026-11-01T08:30:00+04:00' });
+    const receipt = (await post(person, handoffBody(eventId))).json();
+    ctx.clock.set(new Date('2026-11-01T11:00:00+04:00'));
+    await ctx.app.inject({ method: 'POST', url: `/crisis-handoffs/${receipt.handoffId}/contact`, headers: line });
+    expect(await eventRow(eventId)).toMatchObject({ contactSource: 'self_report', contactAt: new Date('2026-11-01T04:30:00.000Z'), resolvedAt: new Date('2026-11-01T07:00:00.000Z') });
+  });
+
+  it('shows up once in the dashboard’s crisis figures: confirmations from the console and from the phone are one row each', async () => {
+    const before = (await loadCrisisFacts(testDb.db)).filter((fact) => fact.contactConfirmed).length;
+    const { receipt } = await handedOff();
+    await ctx.app.inject({ method: 'POST', url: `/crisis-handoffs/${receipt.handoffId}/contact`, headers: line });
+    await ctx.app.inject({ method: 'POST', url: `/crisis-handoffs/${receipt.handoffId}/contact`, headers: line });
+    const facts = await loadCrisisFacts(testDb.db);
+    expect(facts.filter((fact) => fact.contactConfirmed)).toHaveLength(before + 1);
+    // Through the same suppression as every figure: a count under ten is not published as a number.
+    const figures = buildCrisis('all', facts.slice(0, 3), null);
+    expect(figures.contactConfirmed).toEqual({ suppressed: true });
+  });
+
+  it('is reached by "Delete everything": the consent is revoked, the row is deleted and the console reads 404', async () => {
+    const { person, receipt } = await handedOff();
+    const erased = await ctx.app.inject({ method: 'DELETE', url: '/me/data', headers: person.headers });
+    expect(erased.statusCode).toBe(200);
+    expect(await testDb.db.select().from(schema.crisisHandoffs).where(eq(schema.crisisHandoffs.personId, person.id))).toEqual([]);
+    const ledger = await testDb.db.select().from(schema.consents).where(and(eq(schema.consents.personId, person.id), eq(schema.consents.element, CRISIS_HANDOFF_ELEMENT)));
+    expect(ledger).toHaveLength(1);
+    expect(ledger[0]!.revokedAt).not.toBeNull();
+    expect((await consoleGet(`/crisis-handoffs/${receipt.handoffId}`)).statusCode).toBe(404);
+  });
+
+  it('leaves a ticket consent alone and the generic revoke route cannot reach a hand-off consent', async () => {
+    const { person, receipt } = await handedOff();
+    const res = await ctx.app.inject({ method: 'DELETE', url: `/consents/${receipt.consentId}`, headers: person.headers });
+    expect(res.statusCode).toBe(404);
+    expect((await consoleGet(`/crisis-handoffs/${receipt.handoffId}`)).statusCode).toBe(200);
+  });
+});

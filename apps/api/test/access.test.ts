@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runSeed } from '../src/seed/run';
 import { createTestApp, signIn, type TestApp } from './helpers/app';
 import { createTestDb, type TestDb } from './helpers/db';
-import { CONDITION, FREE_TEXT, issue, registerPerson, serviceAt, ticketRequest, type TestPerson } from './helpers/flow';
+import { CALLBACK, CONDITION, FREE_TEXT, handoffBody, issue, registerPerson, sendCrisisEvent, serviceAt, ticketRequest, type TestPerson } from './helpers/flow';
 
 /**
  * No employer or insurer access (the spec's guardrail), enforced by walking the live route registry. Every route the
@@ -16,8 +16,10 @@ import { CONDITION, FREE_TEXT, issue, registerPerson, serviceAt, ticketRequest, 
  *  - inbound-signed:   a front door's hand-over: no bearer token works on it, only a valid per-source signature
  *                      (`inbound.test.ts` holds the signature cases); it returns a claim code and no wellbeing data
  *  - ops-aggregate:    the dashboard's numbers, behind an ops session; every figure is suppressed under ten (`metrics.test.ts` holds the cases)
+ *  - crisis-line-consented: the mock crisis line's console, behind a crisis_line session and only under /crisis-handoffs: it reads a
+ *                      hand-off while the person's consent for it is live, and 404s once it is revoked (`crisis-handoffs.test.ts`)
  */
-type Kind = 'open' | 'person-own' | 'clinician-scoped' | 'inbound-signed' | 'ops-aggregate';
+type Kind = 'open' | 'person-own' | 'clinician-scoped' | 'inbound-signed' | 'ops-aggregate' | 'crisis-line-consented';
 
 const REVIEWED: Record<string, { access: RouteAccess; kind: Kind }> = {
   'GET /health': { access: 'public', kind: 'open' },
@@ -33,6 +35,11 @@ const REVIEWED: Record<string, { access: RouteAccess; kind: Kind }> = {
   'GET /metrics/crisis': { access: 'ops', kind: 'ops-aggregate' },
   'GET /metrics/equity': { access: 'ops', kind: 'ops-aggregate' },
   'POST /crisis-events': { access: 'person', kind: 'person-own' },
+  'POST /me/crisis-handoffs': { access: 'person', kind: 'person-own' },
+  'DELETE /me/crisis-handoffs/:id': { access: 'person', kind: 'person-own' },
+  'GET /crisis-handoffs': { access: 'crisis_line', kind: 'crisis-line-consented' },
+  'GET /crisis-handoffs/:id': { access: 'crisis_line', kind: 'crisis-line-consented' },
+  'POST /crisis-handoffs/:id/contact': { access: 'crisis_line', kind: 'crisis-line-consented' },
   'POST /tickets': { access: 'person', kind: 'person-own' },
   'GET /me/tickets': { access: 'person', kind: 'person-own' },
   'GET /me/tickets/:id': { access: 'person', kind: 'person-own' },
@@ -63,6 +70,7 @@ describe('no employer or insurer access (MW-505)', () => {
   let stranger: TestPerson;
   let ticketId: string;
   let consentId: string;
+  let handoffId: string;
   const tokens: Record<string, string> = {};
 
   beforeAll(async () => {
@@ -78,6 +86,10 @@ describe('no employer or insurer access (MW-505)', () => {
     tokens['clinician B'] = await signIn(ctx, 'clinician.b@demo.mawsool.test');
     tokens['ops'] = await signIn(ctx, 'ops@demo.mawsool.test');
     tokens['admin'] = await signIn(ctx, 'admin@demo.mawsool.test');
+    tokens['crisis line'] = await signIn(ctx, 'crisisline@demo.mawsool.test');
+    const eventId = await sendCrisisEvent(ctx, owner);
+    const handoff = await ctx.app.inject({ method: 'POST', url: '/me/crisis-handoffs', headers: owner.headers, payload: handoffBody(eventId) });
+    handoffId = handoff.json().handoffId;
   });
 
   afterAll(async () => {
@@ -99,16 +111,22 @@ describe('no employer or insurer access (MW-505)', () => {
   });
 
   it('serves wellbeing data only through person and clinician routes: no other role, and no employer or insurer role at all', () => {
-    expect([...STAFF_ROLES]).toEqual(['clinician', 'ops', 'admin']);
-    expect([...ROUTE_ACCESS]).toEqual(['public', 'person', 'clinician', 'ops', 'admin', 'inbound']);
+    expect([...STAFF_ROLES]).toEqual(['clinician', 'ops', 'admin', 'crisis_line']);
+    expect([...ROUTE_ACCESS]).toEqual(['public', 'person', 'clinician', 'ops', 'admin', 'crisis_line', 'inbound']);
     for (const route of registered()) {
       const { kind } = REVIEWED[key(route)]!;
       if (kind === 'person-own') expect(route.access).toBe('person');
       if (kind === 'clinician-scoped') expect(route.access).toBe('clinician');
       if (kind === 'inbound-signed') expect(route.access).toBe('inbound');
       if (kind === 'ops-aggregate') expect(route.access).toBe('ops');
+      if (kind === 'crisis-line-consented') expect(route.access).toBe('crisis_line');
       if (kind === 'open') expect(route.access).toBe('public');
     }
+  });
+
+  it('gives the crisis-line role exactly the three hand-off routes and no other route', () => {
+    const open = registered().filter((route) => route.access === 'crisis_line').map(key).sort();
+    expect(open).toEqual(['GET /crisis-handoffs', 'GET /crisis-handoffs/:id', 'POST /crisis-handoffs/:id/contact']);
   });
 
   it('refuses every principal that is not the right one, on every person and clinician route, without returning any data', async () => {
@@ -118,6 +136,7 @@ describe('no employer or insurer access (MW-505)', () => {
       'POST /inbound/screens': { result: 'positive', screenedAt: '2026-11-01T08:00:00+04:00', locale: 'ar' },
       'POST /me/invites/claim': { code: 'ABCD-EFGH' },
       'POST /crisis-events': {},
+      'POST /me/crisis-handoffs': handoffBody('00000000-0000-4000-8000-000000000002'),
       'POST /tickets': ticketRequest('00000000-0000-4000-8000-000000000001'),
       'POST /me/tickets/:id/events': { to: 'declined' },
       'POST /me/tickets/:id/remeasure': { scores: [] },
@@ -135,6 +154,7 @@ describe('no employer or insurer access (MW-505)', () => {
         { name: 'clinician', headers: { authorization: `Bearer ${tokens['clinician A']}` } },
         { name: 'ops', headers: { authorization: `Bearer ${tokens['ops']}` } },
         { name: 'admin', headers: { authorization: `Bearer ${tokens['admin']}` } },
+        { name: 'the crisis line', headers: { authorization: `Bearer ${tokens['crisis line']}` } },
       ],
       clinician: [
         { name: 'no credential', headers: {} },
@@ -142,6 +162,7 @@ describe('no employer or insurer access (MW-505)', () => {
         { name: 'ops', headers: { authorization: `Bearer ${tokens['ops']}` } },
         { name: 'admin', headers: { authorization: `Bearer ${tokens['admin']}` } },
         { name: 'a clinician at another facility', headers: { authorization: `Bearer ${tokens['clinician B']}` } },
+        { name: 'the crisis line', headers: { authorization: `Bearer ${tokens['crisis line']}` } },
       ],
       public: [],
       // The dashboard is for the ops role alone: a clinician, a person, an anonymous caller (and an admin, whose panel is separate) are refused.
@@ -151,20 +172,31 @@ describe('no employer or insurer access (MW-505)', () => {
         { name: 'a clinician', headers: { authorization: `Bearer ${tokens['clinician A']}` } },
         { name: 'a clinician at another facility', headers: { authorization: `Bearer ${tokens['clinician B']}` } },
         { name: 'admin', headers: { authorization: `Bearer ${tokens['admin']}` } },
+        { name: 'the crisis line', headers: { authorization: `Bearer ${tokens['crisis line']}` } },
       ],
       admin: [],
+      // The console reads a person's hand-off and nothing else: a person (even the one who made it), every other staff role and an anonymous caller are refused.
+      crisis_line: [
+        { name: 'no credential', headers: {} },
+        { name: 'the owner', headers: owner.headers },
+        { name: 'a clinician', headers: { authorization: `Bearer ${tokens['clinician A']}` } },
+        { name: 'ops', headers: { authorization: `Bearer ${tokens['ops']}` } },
+        { name: 'admin', headers: { authorization: `Bearer ${tokens['admin']}` } },
+      ],
       // A bearer token of any kind is no substitute for a signature. Unsigned and mis-signed requests are in inbound.test.ts.
       inbound: [
         { name: 'no credential', headers: {} },
         { name: 'a person', headers: owner.headers },
         { name: 'a clinician', headers: { authorization: `Bearer ${tokens['clinician A']}` } },
         { name: 'ops', headers: { authorization: `Bearer ${tokens['ops']}` } },
+        { name: 'the crisis line', headers: { authorization: `Bearer ${tokens['crisis line']}` } },
       ],
     };
     const leaked: string[] = [];
     let attempts = 0;
     for (const route of routes) {
-      const url = route.url.replace(':id', route.url.startsWith('/consents') ? consentId : ticketId);
+      const idFor = route.url.includes('crisis-handoffs') ? handoffId : route.url.startsWith('/consents') ? consentId : ticketId;
+      const url = route.url.replace(':id', idFor);
       for (const outsider of outsiders[route.access]) {
         const isOtherPersonsOwn = outsider.name === 'another person';
         if (isOtherPersonsOwn && !route.url.includes(':id') && route.url !== '/consents') continue; // those routes act on the caller's own rows
@@ -172,7 +204,7 @@ describe('no employer or insurer access (MW-505)', () => {
         if (outsider.name === 'a clinician at another facility' && route.url === '/tickets') continue;
         const res = await ctx.app.inject({ method: route.method as 'GET', url, headers: outsider.headers, payload: bodies[key(route)] as object | undefined });
         attempts += 1;
-        if (![401, 403, 404].includes(res.statusCode) || res.body.includes(FREE_TEXT) || res.body.includes(CONDITION) || res.body.includes('SUMMARY-MARKER')) {
+        if (![401, 403, 404].includes(res.statusCode) || res.body.includes(FREE_TEXT) || res.body.includes(CONDITION) || res.body.includes('SUMMARY-MARKER') || res.body.includes(CALLBACK)) {
           leaked.push(`${key(route)} as ${outsider.name}: ${res.statusCode}`);
         }
       }
@@ -192,6 +224,9 @@ describe('no employer or insurer access (MW-505)', () => {
     expect(queue.json().items.map((item: { id: string }) => item.id)).toContain(ticketId);
     const asOwner = await ctx.app.inject({ method: 'GET', url: `/me/tickets/${ticketId}`, headers: owner.headers });
     expect(asOwner.statusCode).toBe(200);
+    const asLine = await ctx.app.inject({ method: 'GET', url: `/crisis-handoffs/${handoffId}`, headers: { authorization: `Bearer ${tokens['crisis line']}` } });
+    expect(asLine.statusCode).toBe(200);
+    expect(asLine.body).toContain(CALLBACK);
     for (const path of ['funnel', 'timeliness', 'crisis', 'equity']) {
       const asOps = await ctx.app.inject({ method: 'GET', url: `/metrics/${path}`, headers: { authorization: `Bearer ${tokens['ops']}` } });
       expect(asOps.statusCode, path).toBe(200);

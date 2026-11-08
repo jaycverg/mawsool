@@ -1,3 +1,4 @@
+import { ticketElement } from '../consents/elements';
 import { randomInt } from 'node:crypto';
 import { redact, withinWordLimit } from '@mawsool/consent';
 import { HANDOFF_WINDOWS_DAYS, computeDeadline } from '@mawsool/rules';
@@ -250,7 +251,7 @@ export async function personTicketView(db: Db, ticketId: string, locale: Locale)
     })),
     consents: consents.map((consent) => ({
       id: consent.id,
-      element: consent.element,
+      element: ticketElement(consent.element),
       recipient: consent.recipient,
       grantedAt: consent.grantedAt.toISOString(),
       revokedAt: consent.revokedAt?.toISOString() ?? null,
