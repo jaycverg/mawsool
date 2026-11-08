@@ -7,6 +7,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { API_URL } from '../lib/api';
+import { CLINIC_FOCUS, clinicFirst } from '../lib/clinic-first';
 import { deviceNow } from '../lib/clock';
 import { loadDirectory, type Directory } from '../lib/directory';
 import { currentTier, loadChoice, loadInsurance, loadPreferences, pendingFrom, saveChoice, savePendingChoice, saveInsurance, savePreferences, type Choice, type PendingChoice } from '../lib/prefs';
@@ -47,6 +48,8 @@ export function OptionsScreen() {
   const params = useSearchParams();
   const rerouteReason = RerouteReasonSchema.safeParse(params.get('reason'));
   const rerouteId = params.get('reroute');
+  /** Set when the person came from the next-day check asking to see a doctor or a specialist: those lead. */
+  const clinicFocus = params.get('focus') === CLINIC_FOCUS;
   /** Set when the person came here to replace a stalled referral: the ticket and the reason they gave. */
   const reroute: PendingChoice['reroute'] = rerouteId && /^[0-9a-f-]{36}$/.test(rerouteId) && rerouteReason.success ? { ticketId: rerouteId, reason: rerouteReason.data } : null;
 
@@ -129,7 +132,7 @@ export function OptionsScreen() {
 
   // A reroute replaces a clinic referral, so guided self-help is not offered there.
   const offered = options && reroute ? options.filter((option) => option.tier !== 'self_help') : options;
-  const { cards, others } = offered ? splitCards(offered) : { cards: [], others: [] };
+  const { cards, others } = offered ? (clinicFocus && !reroute ? clinicFirst(offered) : splitCards(offered)) : { cards: [], others: [] };
 
   return (
     <>
@@ -137,7 +140,7 @@ export function OptionsScreen() {
       <main className="mx-auto flex max-w-md flex-col gap-3.5 px-4 py-5">
         <div className="flex flex-col gap-1">
           <h1 className="t-h1">{t(reroute ? 'rerouteHeading' : 'heading')}</h1>
-          <p className="t-body text-muted">{t(reroute ? 'rerouteIntro' : 'intro')}</p>
+          <p className="t-body text-muted">{t(reroute ? 'rerouteIntro' : clinicFocus ? 'clinicIntro' : 'intro')}</p>
         </div>
 
         {loaded && (
@@ -182,7 +185,7 @@ export function OptionsScreen() {
             {directory.source === 'cache' && <p className="t-small text-muted">{t('fromCopy')}</p>}
             {cards.length === 0 && <p className="t-body">{t('noOptions')}</p>}
             {cards.map((option, position) => (
-              <OptionCard key={option.rank} t={t} option={option} insurance={loaded.insurance} lead={position === 0 && option.kind === 'recommended'} onChoose={choose} />
+              <OptionCard key={option.rank} t={t} option={option} insurance={loaded.insurance} lead={position === 0 && (option.kind === 'recommended' || clinicFocus)} onChoose={choose} />
             ))}
             {others.length > 0 && (
               <>

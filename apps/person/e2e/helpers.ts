@@ -20,6 +20,9 @@ export function msg(locale: Locale, path: string): string {
   return found;
 }
 
+/** A string as a regular expression that matches it exactly, for anchoring a URL check on the whole address. */
+export const escapeRe = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 export const crisisUrl = (locale: Locale) => new RegExp(`/${locale}/crisis/$`);
 
 /** How many requests each path has made to the static server (from the Node side, so offline mode does not touch it). */

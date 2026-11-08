@@ -5,6 +5,7 @@ import { useDemoOffsetMs } from '@mawsool/ui/components';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { deviceNow } from '../lib/clock';
+import { CLINIC_FOCUS } from '../lib/clinic-first';
 import { answerFollowUp, FOLLOW_UP_ANSWERS, followUpDue, loadFollowUp, type FollowUp, type FollowUpAnswer } from '../lib/follow-up';
 import { href } from '../lib/routes';
 import { useDevice } from '../lib/use-device';
@@ -92,7 +93,7 @@ export function NextDayScreen() {
             <section className="flex flex-col gap-2.5 rounded-card border border-border bg-surface p-4" data-offer>
               <h2 className="text-[16px] font-semibold">{t('offerTitle')}</h2>
               <p className="t-body">{t('offerBody')}</p>
-              <a className="btn-primary" href={href(lang, 'options')} data-offer-options>{t('offerAction')}</a>
+              <a className="btn-primary" href={href(lang, 'options', { focus: CLINIC_FOCUS })} data-offer-options>{t('offerAction')}</a>
               <a className="tap flex items-center font-semibold text-accent" href={href(lang, 'check-in')}>{t('checkInAction')}</a>
             </section>
           </>

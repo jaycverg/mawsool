@@ -9,6 +9,7 @@ import {
   answerAll,
   computed,
   crisisUrl,
+  escapeRe,
   goOffline,
   installFailingIndexedDb,
   msg,
@@ -1429,8 +1430,15 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await page.goto(`/${locale}/next-day/`);
     await page.locator('[data-answer="same"]').click();
     await page.locator('[data-offer-options]').click();
-    await expect(page).toHaveURL(new RegExp(`/${locale}/options/$`));
-    await expect(page.locator('[data-tier]').first()).toBeVisible();
+    // After a crisis from item 9 alone the only finished PHQ-9 totals 1, which ranks guided self-help first; the offer is for a
+    // GP or a specialist, so those lead here and self-help waits behind "Show other options".
+    await expect(page).toHaveURL(new RegExp(`^${escapeRe(BASE)}/${locale}/options/\\?focus=clinic$`));
+    await expect(page.locator('[data-tier="gp"]')).toBeVisible();
+    await expect(page.locator('[data-tier="specialist"]')).toBeVisible();
+    await expect(page.locator('[data-tier="self_help"]')).toHaveCount(0);
+    // Choosing the GP goes on to the consent screen: nothing is sent from here.
+    await page.locator('[data-tier="gp"]').getByRole('button', { name: msg(locale, 'options.choose'), exact: true }).click();
+    await expect(page).toHaveURL(consentUrl(locale));
     // ... and a fresh check-in then reaches the consent screen like any other referral.
     await page.goto(`/${locale}/next-day/`);
     await page.getByRole('link', { name: msg(locale, 'nextDay.checkInAction'), exact: true }).click();

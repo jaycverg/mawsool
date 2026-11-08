@@ -1082,12 +1082,22 @@
   },
   {
     "id": "handoff-leaves-the-crisis-path-alone",
-    "sentence": "The phone sends the hand-off only after the crisis record, online and on an explicit action; every failure is an outcome that leaves the crisis block and its queue untouched, and a reply lost after the server stored it still leaves a record to stop from",
+    "sentence": "The phone sends the hand-off only after the crisis record has been flushed (when it cannot be, nothing is sent or recorded), online and on an explicit action; every failure is an outcome that leaves the crisis block and its queue untouched, and a reply lost after the server stored it still leaves a record to stop from",
     "tests": [
       {
         "project": "apps/person",
         "file": "test/crisis-handoff.test.ts",
         "name": "sends the crisis record first, then the note with the consent flag"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/crisis-handoff.test.ts",
+        "name": "says offline, and sends and records nothing, when the crisis record cannot be flushed"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/crisis-handoff.test.ts",
+        "name": "says offline when the flush itself throws"
       },
       {
         "project": "apps/person",
@@ -1121,6 +1131,77 @@
     }
   },
   {
+    "id": "handoff-records-are-kept-per-crisis",
+    "sentence": "The phone keeps one hand-off record per crisis: a later crisis still gets the offer and its own send, an earlier crisis's unconfirmed note survives and can still be stopped, a stop or a refusal removes only its own record, and Delete everything removes every one",
+    "tests": [
+      {
+        "project": "apps/person",
+        "file": "test/crisis-handoff.test.ts",
+        "name": "shows the offer for a new crisis even though an earlier"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/crisis-handoff.test.ts",
+        "name": "shows the form, not the offer or the sent line"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/crisis-handoff.test.ts",
+        "name": "keeps an earlier crisis"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/crisis-handoff.test.ts",
+        "name": "stops only its own record and leaves a sent note of another crisis alone"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/crisis-handoff.test.ts",
+        "name": "drops only the refused crisis"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/crisis-handoff.test.ts",
+        "name": "is reached by Delete everything on the phone, every record at once"
+      }
+    ]
+  },
+  {
+    "id": "a-send-already-on-its-way-cannot-bring-a-stopped-handoff-back",
+    "sentence": "A send that was already on its way when the person pressed Stop, or pressed Delete everything, is refused with nothing written (409, no hand-off, no ledger entry), whether the stop found a hand-off or not; nobody else's stop blocks a person's send; and the phone drops the refused record and sends a different id next time",
+    "tests": [
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "is refused when the stop arrived first"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "is refused when the hand-off had already been stopped once"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "is refused after Delete everything too"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "is not blocked by"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/erase-reach.test.ts"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/crisis-handoff.test.ts",
+        "name": "drops the record, tells the person to try again, and the next send is a different hand-off id"
+      }
+    ]
+  },
+  {
     "id": "handoff-and-next-day-records-are-wiped-and-downloadable",
     "sentence": "Every key the person app keeps on the phone, the hand-off record and the next-day check among them, is removed by Delete everything and the two new ones are in the download",
     "tests": [
@@ -1143,7 +1224,7 @@
   },
   {
     "id": "next-day-check-is-scheduled-a-day-on-and-answered-on-the-phone",
-    "sentence": "A crisis released on the phone schedules a check a day later on the care clock (the demo clock moves it), once per crisis, which shows as a card and a neutral notification only when due and never prompts for permission; the answer stays on the phone",
+    "sentence": "A crisis released on the phone schedules a check a day later on the care clock (the demo clock moves it), once per crisis, which shows as a home card only when due; the notification helper shows it once, in neutral words, and never prompts for permission (that the layout calls the helper is not asserted); the answer stays on the phone",
     "tests": [
       {
         "project": "apps/person",
@@ -1201,7 +1282,7 @@
   },
   {
     "id": "next-day-offer-goes-through-the-ordinary-flow",
-    "sentence": "The next-day screen is a guarded route that opens offline, and its offer of a GP or specialist leads into matching, the consent screen and the crisis guard like any other referral",
+    "sentence": "The next-day screen is a guarded route that opens offline; its offer opens the options screen with a GP and a specialist leading even when the latest scores rank self-help first (self-help waits behind the other options), choosing the GP goes on to the consent screen, a fresh check-in reaches it like any referral, and a new crisis sends the next-day screen to the crisis screen",
     "tests": [
       {
         "project": "apps/person",
@@ -1212,6 +1293,21 @@
         "project": "apps/person",
         "file": "test/follow-up.test.ts",
         "name": "opens offline, and every offline screen is a page that exists"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/clinic-first.test.ts",
+        "name": "leads with the GP and the specialist as the cards, and keeps everything else behind the other options"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/clinic-first.test.ts",
+        "name": "starts from a ranking that leads with something else"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/clinic-first.test.ts",
+        "name": "keeps the ordinary split when the directory holds no GP and no specialist"
       }
     ],
     "browser": "next-day-check-offers-a-ticket-through-matching-consent-and-the-crisis-guard"
