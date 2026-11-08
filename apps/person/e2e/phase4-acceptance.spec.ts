@@ -1190,6 +1190,62 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page).toHaveURL(new RegExp(`^${escapeRe(BASE)}/${locale}/result/\\?id=[0-9a-f-]{36}$`));
   },
 
+  async 'a-second-crisis-offers-a-new-note-and-both-notes-stay-stoppable'({ page, locale }) {
+    const baseline = (await storedHandoffs()).map((row) => row.id);
+    const first = await handOffFromPhone(page, locale);
+    await page.getByRole('button', { name: msg(locale, 'crisis.safeNow'), exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`^${escapeRe(BASE)}/${locale}/result/\\?id=[0-9a-f-]{36}$`));
+
+    // A second crisis on the same phone: the first note's "sent" line is not shown for it, and the offer is.
+    await triggerCrisis(page, locale);
+    await expect(page.locator('[data-handoff-offer]')).toBeVisible();
+    await expect(page.locator('[data-handoff-sent]')).toHaveCount(0);
+    // The collapsed offer is as tall and as round as the crisis screen's own choices and aligned as they are (never a physical left).
+    const offer = await computed(page, '[data-handoff-offer]', ['border-radius', 'text-align', 'border-top-width', 'min-height']);
+    const sibling = await computed(page, '[data-screen="crisis"] > main > button', ['border-radius', 'border-top-width', 'min-height', 'text-align']);
+    expect(offer.height).toBeGreaterThanOrEqual(52);
+    expect(offer['border-radius']).toBe(sibling['border-radius']);
+    expect(offer['border-top-width']).toBe(sibling['border-top-width']);
+    expect(offer['min-height']).toBe(sibling['min-height']);
+    expect(offer['text-align']).toBe(sibling['text-align']);
+    expect(offer['text-align']).not.toBe('left');
+    await page.locator('[data-handoff-offer]').click();
+    // The number typed is isolated left-to-right and the example in the hint does not break across lines.
+    await page.locator('[data-handoff-number]').fill('+971 50 123 4567');
+    await expect(page.locator('[data-handoff-preview] bdi')).toHaveAttribute('dir', 'ltr');
+    await expect(page.locator('[data-handoff-preview] bdi')).toHaveText('+971501234567');
+    const hint = await computed(page, '[data-panel="crisis-handoff"] label bdi', ['white-space']);
+    expect(hint['white-space']).toBe('nowrap');
+    await page.locator('[data-handoff-number]').fill('');
+    await page.locator('[data-handoff-consent]').check();
+    await page.locator('[data-handoff-send]').click();
+    await expect(page.locator('[data-handoff-sent]')).toBeVisible();
+    const held = (await storedHandoffs()).filter((row) => !baseline.includes(row.id));
+    expect(held).toHaveLength(2);
+    expect(new Set(held.map((row) => row.crisisEventId)).size).toBe(2);
+    expect(held.map((row) => row.id)).toContain(first.id);
+
+    // Settings lists both, each Stop described by its own note, and stopping one leaves the other.
+    await page.goto(`/${locale}/settings/`);
+    const stops = page.locator('[data-handoff-stop]');
+    await expect(stops).toHaveCount(2);
+    const prefix = (n: number) => msg(locale, 'crisis.handoffNote').replace('{n}', String(n)).replace('{total}', '2').split('{when}')[0]!;
+    const described: string[] = [];
+    for (const index of [0, 1]) {
+      const id = await stops.nth(index).getAttribute('aria-describedby');
+      expect(id).not.toBeNull();
+      const note = (await page.locator(`[id="${id}"]`).textContent()) ?? '';
+      expect(note.startsWith(prefix(index + 1))).toBe(true);
+      expect(note.length).toBeGreaterThan(prefix(index + 1).length);
+      described.push(note);
+    }
+    expect(new Set(described).size).toBe(2);
+    await stops.first().click();
+    await expect(stops).toHaveCount(1);
+    const left = (await storedHandoffs()).filter((row) => !baseline.includes(row.id));
+    expect(left.map((row) => row.id)).toEqual(held.map((row) => row.id).filter((id) => id !== first.id));
+  },
+
   async 'stale-contact-made-after-the-person-stopped-sharing-is-refused'({ page, context, locale, consoleGuard }) {
     const handoff = await handOffFromPhone(page, locale);
     provoke(consoleGuard, 'the operator presses "contact made" on a hand-off the person has since stopped sharing, which the API refuses with 404', [[`/crisis-handoffs/${handoff.id}/contact`, 404]]);
