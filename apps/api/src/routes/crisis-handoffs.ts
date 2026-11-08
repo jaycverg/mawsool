@@ -28,6 +28,7 @@ export function registerCrisisHandoffRoutes(app: FastifyInstance, deps: CrisisHa
       const result = await createHandoff(deps, personIdOf(request), request.body);
       if (result.kind === 'unknown_event') return sendError(reply, 409, 'crisis_event_unknown', 'The crisis record has not reached the server yet');
       if (result.kind === 'conflict') return sendError(reply, 409, 'conflict', 'This crisis record was already handed over');
+      if (result.kind === 'stopped') return sendError(reply, 409, 'handoff_stopped', 'This hand-off was stopped');
       return reply.code(result.kind === 'created' ? 201 : 200).send(result.receipt);
     },
   );

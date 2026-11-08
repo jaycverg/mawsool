@@ -229,4 +229,49 @@ describe('the optional hand-off to the mock crisis line', () => {
     expect(res.statusCode).toBe(404);
     expect((await consoleGet(`/crisis-handoffs/${receipt.handoffId}`)).statusCode).toBe(200);
   });
+
+  describe('a send that was already on its way when the person stopped', () => {
+    const rowsFor = (id: string) => testDb.db.select().from(schema.crisisHandoffs).where(eq(schema.crisisHandoffs.id, id));
+
+    it('is refused when the stop arrived first: the id is unknown to the server, the stop is 404, and the late send is 409 with no row and no ledger entry', async () => {
+      const person = await registerPerson(ctx);
+      const eventId = await sendCrisisEvent(ctx, person);
+      const body = handoffBody(eventId);
+      const consentsBefore = (await handoffConsents()).length;
+      expect((await ctx.app.inject({ method: 'DELETE', url: `/me/crisis-handoffs/${body.handoffId}`, headers: person.headers })).statusCode).toBe(404);
+      expect(await testDb.db.select().from(schema.revokedHandoffs).where(eq(schema.revokedHandoffs.handoffId, body.handoffId))).toMatchObject([{ personId: person.id }]);
+      const late = await post(person, body);
+      expect(late.statusCode).toBe(409);
+      expect(late.json().error).toBe('handoff_stopped');
+      expect(await rowsFor(body.handoffId)).toEqual([]);
+      expect((await handoffConsents()).length).toBe(consentsBefore);
+      expect((await eventRow(eventId)).contextShared).toBe(false);
+      expect((await consoleGet(`/crisis-handoffs/${body.handoffId}`)).statusCode).toBe(404);
+    });
+
+    it('is refused when the hand-off had already been stopped once, so a repeated request cannot bring it back', async () => {
+      const { person, eventId, receipt } = await handedOff();
+      await ctx.app.inject({ method: 'DELETE', url: `/me/crisis-handoffs/${receipt.handoffId}`, headers: person.headers });
+      const again = await post(person, { ...handoffBody(eventId), handoffId: receipt.handoffId });
+      expect(again.statusCode).toBe(409);
+      expect(await rowsFor(receipt.handoffId)).toEqual([]);
+    });
+
+    it('is refused after Delete everything too', async () => {
+      const { person, eventId, receipt } = await handedOff();
+      await ctx.app.inject({ method: 'DELETE', url: '/me/data', headers: person.headers });
+      const again = await post(person, { ...handoffBody(eventId), handoffId: receipt.handoffId });
+      expect(again.statusCode).toBe(409);
+      expect(await rowsFor(receipt.handoffId)).toEqual([]);
+    });
+
+    it('is not blocked by somebody else’s stop of the same id', async () => {
+      const person = await registerPerson(ctx);
+      const eventId = await sendCrisisEvent(ctx, person);
+      const body = handoffBody(eventId);
+      const stranger = await registerPerson(ctx);
+      expect((await ctx.app.inject({ method: 'DELETE', url: `/me/crisis-handoffs/${body.handoffId}`, headers: stranger.headers })).statusCode).toBe(404);
+      expect((await post(person, body)).statusCode).toBe(201);
+    });
+  });
 });

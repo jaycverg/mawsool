@@ -29,7 +29,8 @@ export function mergeCrisisEvent(existing: CrisisRow, incoming: CrisisEventSubmi
  * event that is sent twice arrives once.
  *
  * The caller must be a registered device, but the handler never reads who it is: the row has no person column, no
- * item answers and no free text, so a crisis can never be traced to a person or a ticket. The body schema is
+ * item answers and no free text, so a crisis event is never tied to a person or a ticket by this route. (A person who later
+ * chooses to hand a note to the crisis line is tied to the event by that hand-off and its ledger entry, see `crisis_handoffs`.) The body schema is
  * strict, so a request that adds any of those is refused.
  */
 export function registerCrisisEventRoutes(app: FastifyInstance, deps: { db: Db }): void {

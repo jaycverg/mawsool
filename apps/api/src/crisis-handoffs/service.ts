@@ -35,7 +35,7 @@ function view(cipher: Cipher, row: HandoffRow): CrisisHandoffView {
   return { id: row.id, receivedAt: row.createdAt.toISOString(), contactMadeAt: row.contactMadeAt?.toISOString() ?? null, ...content };
 }
 
-export type CreateHandoffResult = { kind: 'created' | 'replayed'; receipt: CrisisHandoffReceipt } | { kind: 'unknown_event' } | { kind: 'conflict' };
+export type CreateHandoffResult = { kind: 'created' | 'replayed'; receipt: CrisisHandoffReceipt } | { kind: 'unknown_event' } | { kind: 'conflict' } | { kind: 'stopped' };
 
 /**
  * Records the person's consent to hand a short template to the crisis line, and stores the template, in one
@@ -43,7 +43,8 @@ export type CreateHandoffResult = { kind: 'created' | 'replayed'; receipt: Crisi
  * written together or not at all. The crisis event must already be on the server (the phone sends it first); the
  * event is marked "context shared" and nothing else about it changes. The same hand-off id sent again for the same event
  * answers the first one (a lost reply); a crisis event that already has another hand-off, or an id that is another person's,
- * is a conflict.
+ * is a conflict. An id the person already stopped (or erased) is refused too, so a send still on its way when they pressed
+ * Stop cannot bring the hand-off back: `stopped`, with nothing written.
  */
 export async function createHandoff(deps: CrisisHandoffDeps, personId: string, request: CreateCrisisHandoffRequest): Promise<CreateHandoffResult> {
   const { db, cipher } = deps;
@@ -53,6 +54,8 @@ export async function createHandoff(deps: CrisisHandoffDeps, personId: string, r
     return await db.transaction(async (tx) => {
       const [event] = await tx.select({ id: schema.crisisEvents.id }).from(schema.crisisEvents).where(eq(schema.crisisEvents.id, crisisEventId)).for('update');
       if (!event) return { kind: 'unknown_event' as const };
+      const [stopped] = await tx.select({ id: schema.revokedHandoffs.handoffId }).from(schema.revokedHandoffs).where(and(eq(schema.revokedHandoffs.personId, personId), eq(schema.revokedHandoffs.handoffId, id)));
+      if (stopped) return { kind: 'stopped' as const };
       const [consent] = await tx.insert(schema.consents).values({ personId, ticketId: null, recipient: CRISIS_LINE_RECIPIENT, element: CRISIS_HANDOFF_ELEMENT, grantedAt: now }).returning();
       const inserted = await tx
         .insert(schema.crisisHandoffs)
@@ -86,6 +89,8 @@ export type RevokeHandoffResult = { kind: 'revoked'; revokedAt: Date } | { kind:
 export async function revokeHandoff(deps: CrisisHandoffDeps, personId: string, handoffId: string): Promise<RevokeHandoffResult> {
   const now = deps.clock.now();
   return deps.db.transaction(async (tx) => {
+    // The id is remembered whether or not a row exists yet: a send that is still on its way must find it stopped.
+    await tx.insert(schema.revokedHandoffs).values({ personId, handoffId, revokedAt: now }).onConflictDoNothing();
     const [row] = await tx.select().from(schema.crisisHandoffs).where(and(eq(schema.crisisHandoffs.id, handoffId), eq(schema.crisisHandoffs.personId, personId))).for('update');
     if (!row) return { kind: 'not_found' as const };
     await tx.update(schema.consents).set({ revokedAt: now }).where(and(eq(schema.consents.id, row.consentId), isNull(schema.consents.revokedAt)));
@@ -96,9 +101,12 @@ export async function revokeHandoff(deps: CrisisHandoffDeps, personId: string, h
 
 /**
  * "Delete everything": revokes every live hand-off consent of the person and deletes their hand-off rows, inside the
- * caller's transaction or on the database. Returns how many hand-offs went. The ledger keeps the revocations.
+ * caller's transaction or on the database. Returns how many hand-offs went. The ledger keeps the revocations, and the ids go
+ * into `revoked_handoffs` so a send still on its way cannot recreate one.
  */
 export async function eraseHandoffs(executor: Executor, personId: string, now: Date): Promise<number> {
+  const standing = await executor.select({ id: schema.crisisHandoffs.id }).from(schema.crisisHandoffs).where(eq(schema.crisisHandoffs.personId, personId));
+  if (standing.length > 0) await executor.insert(schema.revokedHandoffs).values(standing.map((row) => ({ personId, handoffId: row.id, revokedAt: now }))).onConflictDoNothing();
   await executor
     .update(schema.consents)
     .set({ revokedAt: now })
