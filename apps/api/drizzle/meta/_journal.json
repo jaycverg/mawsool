@@ -64,6 +64,13 @@
       "when": 1794112290226,
       "tag": "0008_crisis_handoffs",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794115619779,
+      "tag": "0009_revoked_handoffs",
+      "breakpoints": true
     }
   ]
 }
