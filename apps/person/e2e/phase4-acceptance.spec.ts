@@ -1284,8 +1284,8 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
       // Acknowledge: one move, through the state machine, as the clinic by link; the link is spent and a fresh one is logged.
       await page.locator('[data-move="acknowledged"]').click();
       await expect(page.locator('[data-link-state="done"][data-move-made="acknowledged"]')).toBeVisible();
-      await expect(page.locator('[data-fresh-link]')).toHaveAttribute('data-fresh-link', 'yes');
-      await expect(page.locator('[data-fresh-link]')).toHaveText(cmsg(locale, 'clinicLink.freshLink'));
+      await expect(page.locator('[data-next-link]')).toHaveAttribute('data-next-link', 'issued');
+      await expect(page.locator('[data-next-link]')).toHaveText(cmsg(locale, 'clinicLink.freshLink'));
       const afterAck = (await stored(ticket.id)).events;
       expect(afterAck.map((event) => [event.toState, event.actor])).toEqual([['issued', 'person'], ['acknowledged', 'clinic']]);
       expect((afterAck.at(-1) as unknown as { channel: string }).channel).toBe('link');
@@ -1304,7 +1304,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
       await expect(page.locator('[data-move="seen"]')).toBeVisible();
       await page.locator('[data-move="seen"]').click();
       await expect(page.locator('[data-link-state="done"][data-move-made="seen"]')).toBeVisible();
-      await expect(page.locator('[data-fresh-link]')).toHaveAttribute('data-fresh-link', 'no');
+      await expect(page.locator('[data-next-link]')).toHaveAttribute('data-next-link', 'not_needed');
       expect((await stored(ticket.id)).events.map((event) => event.toState)).toEqual(['issued', 'acknowledged', 'seen']);
       expect(await loggedClinicLink(ticket.shortCode)).toBe(fresh);
 
@@ -1326,6 +1326,40 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
       await expect(page.locator('[data-link-state="withdrawn"]')).toHaveText(cmsg(locale, 'clinicLink.refused.withdrawn'));
       await expect(page.locator('[data-code]')).toHaveCount(0);
       await expect(page.locator('[data-move]')).toHaveCount(0);
+      await visitor.close();
+    } finally {
+      expect((await portal(true)).status).toBe(200);
+    }
+  },
+
+  async 'clinic-link-page-is-honest-about-an-unconfirmed-answer-and-a-next-step-that-failed'({ context, locale, consoleGuard }) {
+    consoleGuard.allow({ url: `${API}/clinic-link/act`, expect: 'net::ERR_FAILED', reason: 'the test drops the act call on purpose, as a connection lost after a move may have committed' });
+    const admin = bearer(await staffSession(ADMIN_USER));
+    const portal = (portalAccess: boolean) => call('PUT', `/facilities/${FACILITY_A}/portal-access`, { headers: admin, body: { portalAccess } });
+    expect((await portal(false)).status).toBe(200);
+    try {
+      const person = await newPerson();
+      const ticket = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A) });
+      const link = (await loggedClinicLink(ticket.shortCode))!;
+      const visitor = await context.browser()!.newContext();
+      const page = await visitor.newPage();
+      await page.goto(link.replace('/en/', `/${locale}/`));
+      await expect(page.locator('[data-link-state="ready"]')).toBeVisible();
+
+      // An answer that never arrived: the page does not say the link was not used, and sends the clinic back to the link itself.
+      await page.route(`${API}/clinic-link/act`, (route) => route.abort());
+      await page.locator('[data-move="acknowledged"]').click();
+      await expect(page.locator('[data-link-note="failed"]')).toHaveText(cmsg(locale, 'clinicLink.note.failed'));
+      expect(cmsg('en', 'clinicLink.note.failed')).toContain('We could not confirm this went through');
+      expect(cmsg('en', 'clinicLink.note.failed')).not.toContain('has not been used');
+      await expect(page.locator('[data-move="acknowledged"]')).toBeEnabled();
+      await page.unroute(`${API}/clinic-link/act`);
+
+      // A move that was recorded but whose next link could not be made: never "nothing more is asked of your clinic".
+      await page.route(`${API}/clinic-link/act`, (route) => route.fulfill({ status: 200, json: { state: 'acknowledged', nextLink: 'failed' } }));
+      await page.locator('[data-move="acknowledged"]').click();
+      await expect(page.locator('[data-next-link="failed"]')).toHaveText(cmsg(locale, 'clinicLink.nextStepFailed'));
+      await expect(page.locator('body')).not.toContainText(cmsg(locale, 'clinicLink.noFreshLink'));
       await visitor.close();
     } finally {
       expect((await portal(true)).status).toBe(200);

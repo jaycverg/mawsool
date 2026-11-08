@@ -162,7 +162,7 @@ describe('the no-login clinic channel', () => {
       const logged = ctx.notifier.clinicLinks.length;
       const res = await act(credential, 'acknowledged');
       expect(res.statusCode).toBe(200);
-      expect(ClinicLinkActResultSchema.parse(res.json())).toEqual({ state: 'acknowledged', freshLink: true });
+      expect(ClinicLinkActResultSchema.parse(res.json())).toEqual({ state: 'acknowledged', nextLink: 'issued' });
       const last = (await events(ticket.id)).at(-1)!;
       expect(last).toMatchObject({ fromState: 'issued', toState: 'acknowledged', actor: 'clinic', channel: 'link', reason: null });
       const rows = await linkRows(ticket.id);
@@ -174,7 +174,7 @@ describe('the no-login clinic channel', () => {
       expect(fresh.token).not.toBe(credential.token);
       expect((await act(credential, 'seen')).statusCode).toBe(401);
       const seen = await act(fresh, 'seen');
-      expect(seen.json()).toEqual({ state: 'seen', freshLink: false });
+      expect(seen.json()).toEqual({ state: 'seen', nextLink: 'not_needed' });
       expect(ctx.notifier.clinicLinks).toHaveLength(logged + 1);
       expect((await events(ticket.id)).map((event) => event.toState)).toEqual(['issued', 'acknowledged', 'seen']);
       expect((await open(fresh)).statusCode).toBe(401);
@@ -183,9 +183,26 @@ describe('the no-login clinic channel', () => {
     it('marks seen straight from issued, and the ticket has no clinic move left afterwards, so no fresh link', async () => {
       const { ticket, credential } = await ticketWithLink();
       const logged = ctx.notifier.clinicLinks.length;
-      expect((await act(credential, 'seen')).json()).toEqual({ state: 'seen', freshLink: false });
+      expect((await act(credential, 'seen')).json()).toEqual({ state: 'seen', nextLink: 'not_needed' });
       expect(ctx.notifier.clinicLinks).toHaveLength(logged);
       expect((await events(ticket.id)).at(-1)).toMatchObject({ actor: 'clinic', toState: 'seen' });
+    });
+
+    it('commits the move and says the next link could not be made when the notifier fails, rather than that nothing more is asked', async () => {
+      const { ticket, credential } = await ticketWithLink();
+      const logged = ctx.notifier.clinicLinks.length;
+      ctx.notifier.failWith = new Error('the mock channel is down');
+      try {
+        const res = await act(credential, 'acknowledged');
+        expect(res.statusCode).toBe(200);
+        expect(ClinicLinkActResultSchema.parse(res.json())).toEqual({ state: 'acknowledged', nextLink: 'failed' });
+      } finally {
+        ctx.notifier.failWith = null;
+      }
+      expect((await events(ticket.id)).at(-1)).toMatchObject({ toState: 'acknowledged', actor: 'clinic', channel: 'link' });
+      expect(ctx.notifier.clinicLinks).toHaveLength(logged);
+      // The link that was used is spent; the clinic has a move left and no link, which is what `failed` tells it.
+      expect((await act(credential, 'seen')).statusCode).toBe(401);
     });
 
     it('stamps the event on the care clock and spends the link on the wall clock', async () => {

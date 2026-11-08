@@ -55,7 +55,15 @@ export interface CrisisMark {
   trigger: CrisisTrigger;
   eventId: string;
   shownAt: string;
+  /**
+   * The crisis opened in an anonymous session. It travels with the mark so that the crisis stays anonymous (its event is never
+   * queued) even if the stored record is only made later, by a repair that runs in a session that is no longer anonymous.
+   */
+  anonymous?: true;
 }
+
+/** Where the tab keeps the crisis mark. */
+export const CRISIS_MARK_KEY = 'mawsool.crisis-mark';
 
 export function isCrisisMark(value: unknown): value is CrisisMark {
   const candidate = value as Partial<CrisisMark> | null;
@@ -66,7 +74,8 @@ export function isCrisisMark(value: unknown): value is CrisisMark {
     typeof candidate.eventId === 'string' &&
     candidate.eventId.length > 0 &&
     typeof candidate.shownAt === 'string' &&
-    !Number.isNaN(Date.parse(candidate.shownAt))
+    !Number.isNaN(Date.parse(candidate.shownAt)) &&
+    (candidate.anonymous === undefined || candidate.anonymous === true)
   );
 }
 
@@ -177,7 +186,7 @@ export function createCrisisStore(storage: StorageAdapter, deps: CrisisDeps) {
   function ensureMark(trigger: CrisisTrigger): CrisisMark {
     const held = deps.fallback.get();
     if (held) return held;
-    const mark: CrisisMark = { trigger, eventId: deps.newId(), shownAt: deps.now().toISOString() };
+    const mark: CrisisMark = { trigger, eventId: deps.newId(), shownAt: deps.now().toISOString(), ...(deps.anonymous ? { anonymous: true as const } : {}) };
     deps.fallback.set(mark);
     return mark;
   }
@@ -208,7 +217,7 @@ export function createCrisisStore(storage: StorageAdapter, deps: CrisisDeps) {
     });
     // Whether this crisis is anonymous is decided by the mode it opens in, never inherited from an earlier, resolved one.
     const { anonymous: _earlier, ...rest } = current;
-    return { ...rest, blocked: true, trigger: mark.trigger, blockedAt: mark.shownAt, resumeScreeningId: screeningId, event, ...(deps.anonymous ? { anonymous: true as const } : {}) };
+    return { ...rest, blocked: true, trigger: mark.trigger, blockedAt: mark.shownAt, resumeScreeningId: screeningId, event, ...(deps.anonymous || mark.anonymous ? { anonymous: true as const } : {}) };
   }
 
   return {

@@ -188,29 +188,31 @@ export interface AnonymousDbRow {
   extractable?: boolean;
   /** For a sealed row: the names of its fields. A ciphertext row is an IV and the bytes and nothing else. */
   fields?: string[];
-  /** For a plain row: the text. Only the owner's random id is ever plain. */
-  text?: string;
 }
 
+/** What every anonymous session's database is called, followed by the session's id. */
+export const ANONYMOUS_DB_PREFIX = 'mawsool-anon-';
+
 /**
- * The anonymous session's IndexedDB database as the browser holds it: whether it exists at all, and its rows described by kind.
- * The database is looked up first, because opening a missing one would make it.
+ * The anonymous session databases as the browser holds them: whether any exists, the name of the first, and its rows described by
+ * kind. The databases are listed first, because opening a missing one would make it.
  */
-export async function anonymousDb(page: Page): Promise<{ exists: boolean; rows: Record<string, AnonymousDbRow> }> {
+export async function anonymousDb(page: Page): Promise<{ exists: boolean; name: string | null; rows: Record<string, AnonymousDbRow> }> {
   return page.evaluate(
-    () =>
-      new Promise<{ exists: boolean; rows: Record<string, AnonymousDbRow> }>((resolve, reject) => {
+    (prefix) =>
+      new Promise<{ exists: boolean; name: string | null; rows: Record<string, AnonymousDbRow> }>((resolve, reject) => {
         indexedDB
           .databases()
           .then((all) => {
-            if (!all.some((db) => db.name === 'mawsool-anon')) return resolve({ exists: false, rows: {} });
-            const opening = indexedDB.open('mawsool-anon');
+            const name = all.find((db) => db.name?.startsWith(prefix))?.name ?? null;
+            if (name === null) return resolve({ exists: false, name: null, rows: {} });
+            const opening = indexedDB.open(name);
             opening.onerror = () => reject(opening.error);
             opening.onsuccess = () => {
               const db = opening.result;
               if (!db.objectStoreNames.contains('kv')) {
                 db.close();
-                return resolve({ exists: true, rows: {} });
+                return resolve({ exists: true, name, rows: {} });
               }
               const store = db.transaction('kv').objectStore('kv');
               const keys = store.getAllKeys();
@@ -220,18 +222,19 @@ export async function anonymousDb(page: Page): Promise<{ exists: boolean; rows: 
                 keys.result.forEach((key, index) => {
                   const value = values.result[index] as unknown;
                   if (typeof CryptoKey !== 'undefined' && value instanceof CryptoKey) rows[String(key)] = { kind: 'key', extractable: value.extractable };
-                  else if (typeof value === 'string') rows[String(key)] = { kind: 'text', text: value };
+                  else if (typeof value === 'string') rows[String(key)] = { kind: 'text' };
                   else if (typeof value === 'object' && value !== null && (value as { ct?: unknown }).ct instanceof ArrayBuffer) rows[String(key)] = { kind: 'sealed', fields: Object.keys(value).sort() };
                   else rows[String(key)] = { kind: 'other' };
                 });
                 db.close();
-                resolve({ exists: true, rows });
+                resolve({ exists: true, name, rows });
               };
               values.onerror = () => reject(values.error);
             };
           })
           .catch(reject);
       }),
+    ANONYMOUS_DB_PREFIX,
   );
 }
 

@@ -19,7 +19,8 @@ const UUID = z.uuid();
  * mark seen one ticket. A mock channel.
  *
  * Both routes are `clinic_link` access: the credential is the link's token and ticket id, sent in the request body (the link
- * carries them in its URL fragment, so no request URL or log line holds them). A route here can open or act on the one ticket
+ * carries them in its URL fragment, which a browser never sends, so no request URL holds them; the link as a whole is logged on
+ * purpose, as the mock delivery, like a staff sign-in link). A route here can open or act on the one ticket
  * its link was made for and nothing else; the registry refuses any `clinic_link` route outside `/clinic-link/`.
  *
  *  - `/clinic-link/open` shows what is needed to act (code, tier, state, deadline, the moves open) and writes nothing. It never
@@ -51,7 +52,7 @@ export function registerClinicLinkRoutes(app: FastifyInstance, deps: ClinicLinkD
     if (done.kind === 'not_found') return sendError(reply, 404, 'not_found', 'Ticket not found');
     if (done.kind === 'withdrawn') return sendError(reply, 410, 'withdrawn', 'Withdrawn by the person');
     if (done.kind === 'conflict') return sendError(reply, 409, 'conflict', 'That change is not allowed from the current state');
-    return { state: done.state, freshLink: done.freshLink };
+    return { state: done.state, nextLink: done.nextLink };
   });
 
   typed.put(

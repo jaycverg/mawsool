@@ -24,6 +24,8 @@ export interface IndexedDbStorageOptions {
   indexedDB: IDBFactory;
   dbName?: string;
   storeName?: string;
+  /** Called when this connection is closed because the database is being deleted or changed from elsewhere, so a caller holding state derived from its contents (a cached key) can drop it. */
+  onVersionChange?: () => void;
 }
 
 function request<T>(req: IDBRequest<T>): Promise<T> {
@@ -73,6 +75,7 @@ export function createIndexedDbStorage(options: IndexedDbStorageOptions): Storag
       opened.onversionchange = () => {
         opened.close();
         connection = null;
+        options.onVersionChange?.();
       };
       return opened;
     }));
