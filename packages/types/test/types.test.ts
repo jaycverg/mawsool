@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   CONSENT_ELEMENTS,
+  CRISIS_HANDOFF_ELEMENT,
+  CreateCrisisHandoffRequestSchema,
+  LEDGER_ELEMENTS,
   CrisisEventSchema,
   DemographicsSchema,
   PhoneNumberSchema,
@@ -32,7 +35,7 @@ describe('enums', () => {
   });
 
   it('declares the route access values the registry accepts', () => {
-    expect([...ROUTE_ACCESS]).toEqual(['public', 'person', 'clinician', 'ops', 'admin', 'inbound']);
+    expect([...ROUTE_ACCESS]).toEqual(['public', 'person', 'clinician', 'ops', 'admin', 'crisis_line', 'inbound']);
   });
 });
 
@@ -93,5 +96,22 @@ describe('the number for text reminders', () => {
     expect(ReminderPhoneRequestSchema.safeParse({ phone: '+971501234567', intervalWeeks: 2 }).success).toBe(true);
     expect(ReminderPhoneRequestSchema.safeParse({ phone: '+971501234567', intervalWeeks: 3 }).success).toBe(false);
     expect(ReminderPhoneRequestSchema.safeParse({ phone: '+971501234567', intervalWeeks: 4, name: 'x' }).success).toBe(false);
+  });
+});
+
+describe('the crisis hand-off contracts', () => {
+  const body = { crisisEventId: '11111111-1111-4111-8111-111111111111', consented: true, language: 'ar', trigger: 'phq9_item9', scores: [], callbackNumber: null };
+
+  it('keeps the hand-off element out of the ticket consent list and in the ledger list', () => {
+    expect(CONSENT_ELEMENTS).not.toContain(CRISIS_HANDOFF_ELEMENT);
+    expect([...LEDGER_ELEMENTS]).toEqual([...CONSENT_ELEMENTS, 'crisis_handoff']);
+  });
+
+  it('accepts a consented template and refuses a missing or false consent, extra keys and a callback number that is not international', () => {
+    expect(CreateCrisisHandoffRequestSchema.safeParse(body).success).toBe(true);
+    expect(CreateCrisisHandoffRequestSchema.safeParse({ ...body, consented: false }).success).toBe(false);
+    expect(CreateCrisisHandoffRequestSchema.safeParse({ ...body, consented: undefined }).success).toBe(false);
+    expect(CreateCrisisHandoffRequestSchema.safeParse({ ...body, answers: [3] }).success).toBe(false);
+    expect(CreateCrisisHandoffRequestSchema.safeParse({ ...body, callbackNumber: '0501234567' }).success).toBe(false);
   });
 });

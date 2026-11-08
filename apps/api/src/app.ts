@@ -22,6 +22,7 @@ import { registerAuthRoutes } from './routes/auth';
 import { registerClockRoute, registerDemoRoutes } from './routes/demo';
 import { registerMetricsRoutes } from './routes/metrics';
 import { registerCrisisEventRoutes } from './routes/crisis-events';
+import { registerCrisisHandoffRoutes } from './routes/crisis-handoffs';
 import { registerHealthRoutes } from './routes/health';
 import { registerInboundRoutes } from './routes/inbound';
 import { registerPersonDataRoutes } from './routes/person-data';
@@ -110,6 +111,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const consentDeps = { db: deps.db, cipher, clock };
   registerTicketFlowRoutes(app, consentDeps);
   registerReminderRoutes(app, consentDeps);
+  registerCrisisHandoffRoutes(app, consentDeps);
   registerPersonDataRoutes(app, { ...consentDeps, summary: { enabled: deps.config.summaryLlmEnabled, provider: deps.summaryProvider ?? null } });
   registerClockRoute(app, { demoClock });
   registerMetricsRoutes(app, { db: deps.db, clock, encryptionKey: deps.config.encryptionKey });

@@ -83,3 +83,32 @@ export async function eventStates(db: Db, ticketId: string) {
 }
 
 export const ONE_DAY = 24 * 60 * 60 * 1000;
+
+/** A number the tests put in a hand-off, so a response or a raw row that carries it is easy to find. */
+export const CALLBACK = '+971509990123';
+
+/** The crisis event as a phone first sends it: shown, nothing else. The hand-off needs it on the server. */
+export async function sendCrisisEvent({ app }: Pick<TestApp, 'app'>, person: TestPerson, overrides: Record<string, unknown> = {}): Promise<string> {
+  const id = randomUUID();
+  const res = await app.inject({
+    method: 'POST',
+    url: '/crisis-events',
+    headers: person.headers,
+    payload: { id, trigger: 'phq9_item9', shownAt: '2026-11-01T08:00:00+04:00', callTapped: null, contextShared: false, humanContactConfirmed: false, contactSource: null, contactAt: null, resolvedAt: null, locale: 'en', ...overrides },
+  });
+  if (res.statusCode !== 201) throw new Error(`crisis event failed: ${res.statusCode} ${res.body}`);
+  return id;
+}
+
+/** A consented hand-off request body for a crisis event. */
+export function handoffBody(crisisEventId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    crisisEventId,
+    consented: true,
+    language: 'en',
+    trigger: 'phq9_item9',
+    scores: [{ instrument: 'phq9', total: 14, band: 'moderate', takenAt: '2026-11-01T08:00:00+04:00' }],
+    callbackNumber: CALLBACK,
+    ...overrides,
+  };
+}

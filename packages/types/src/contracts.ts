@@ -3,6 +3,7 @@ import {
   ActorSchema,
   CareLanguageSchema,
   ConsentElementSchema,
+  CrisisTriggerSchema,
   InboundSourceSchema,
   LocaleSchema,
   ModalitySchema,
@@ -393,3 +394,40 @@ export type ReminderPhoneRequest = z.infer<typeof ReminderPhoneRequestSchema>;
 /** What the server answers about the number it holds: that it holds one, never the number. */
 export const ReminderPhoneResultSchema = z.object({ stored: z.boolean(), intervalWeeks: ReminderIntervalSchema.nullable() });
 export type ReminderPhoneResult = z.infer<typeof ReminderPhoneResultSchema>;
+
+/**
+ * The short template a person may hand to the crisis line: the language they use, the totals of their latest finished
+ * check-ins (never item answers), which trigger fired (the console reads "item 9 positive" from `phq9_item9`) and, only if
+ * they chose to give one, a number to call back on. Strict, so nothing else can ride along.
+ */
+export const CrisisHandoffContentSchema = z
+  .object({
+    language: LocaleSchema,
+    trigger: CrisisTriggerSchema,
+    scores: z.array(ScoreEntrySchema).max(REFERRAL_SCORES_MAX),
+    callbackNumber: PhoneNumberSchema.nullable(),
+  })
+  .strict();
+export type CrisisHandoffContent = z.infer<typeof CrisisHandoffContentSchema>;
+
+/**
+ * POST /me/crisis-handoffs. `consented` must be literally `true`: a request without it is refused and writes nothing.
+ * `crisisEventId` is the id of the crisis event the phone already sent, the one the console's "contact made" completes.
+ */
+export const CreateCrisisHandoffRequestSchema = CrisisHandoffContentSchema.extend({ crisisEventId: z.uuid(), consented: z.literal(true) }).strict();
+export type CreateCrisisHandoffRequest = z.infer<typeof CreateCrisisHandoffRequestSchema>;
+
+/** What the phone keeps to be able to stop the hand-off: the row's id and the ledger row that consent lives in. */
+export const CrisisHandoffReceiptSchema = z.object({ handoffId: z.uuid(), consentId: z.uuid(), grantedAt: Instant, created: z.boolean() });
+export type CrisisHandoffReceipt = z.infer<typeof CrisisHandoffReceiptSchema>;
+
+/** DELETE /me/crisis-handoffs/:id: the consent is revoked and the hand-off row is gone. */
+export const CrisisHandoffRevokedSchema = z.object({ revokedAt: Instant });
+export type CrisisHandoffRevoked = z.infer<typeof CrisisHandoffRevokedSchema>;
+
+/** One hand-off as the crisis-line console reads it. It names no person and no crisis event. */
+export const CrisisHandoffViewSchema = CrisisHandoffContentSchema.extend({ id: z.uuid(), receivedAt: Instant, contactMadeAt: Instant.nullable() });
+export type CrisisHandoffView = z.infer<typeof CrisisHandoffViewSchema>;
+
+export const CrisisHandoffListSchema = z.object({ items: z.array(CrisisHandoffViewSchema) });
+export type CrisisHandoffList = z.infer<typeof CrisisHandoffListSchema>;

@@ -59,12 +59,25 @@ export const CONSENT_ELEMENTS = ['ticket', 'scores', 'trajectory', 'free_text', 
 export const ConsentElementSchema = z.enum(CONSENT_ELEMENTS);
 export type ConsentElement = z.infer<typeof ConsentElementSchema>;
 
-export const STAFF_ROLES = ['clinician', 'ops', 'admin'] as const;
+/**
+ * The ledger element of the optional hand-off to the crisis line. It is not a ticket element: it belongs to no ticket,
+ * has no place in a bundle and is never offered on the consent screen, so `CONSENT_ELEMENTS` does not hold it.
+ */
+export const CRISIS_HANDOFF_ELEMENT = 'crisis_handoff' as const;
+
+/** The only recipient a hand-off is ever consented to, as the ledger records it. */
+export const CRISIS_LINE_RECIPIENT = 'crisis_line' as const;
+
+/** Every element the consent ledger can hold: the ticket's and the crisis hand-off's. */
+export const LEDGER_ELEMENTS = [...CONSENT_ELEMENTS, CRISIS_HANDOFF_ELEMENT] as const;
+
+/** `crisis_line` is the operator of the mock crisis-line console: it reads hand-offs people consented to and nothing else. */
+export const STAFF_ROLES = ['clinician', 'ops', 'admin', 'crisis_line'] as const;
 export const StaffRoleSchema = z.enum(STAFF_ROLES);
 export type StaffRole = z.infer<typeof StaffRoleSchema>;
 
 /** What a route requires of its caller. Every API route declares exactly one. */
-export const ROUTE_ACCESS = ['public', 'person', 'clinician', 'ops', 'admin', 'inbound'] as const;
+export const ROUTE_ACCESS = ['public', 'person', 'clinician', 'ops', 'admin', 'crisis_line', 'inbound'] as const;
 export const RouteAccessSchema = z.enum(ROUTE_ACCESS);
 export type RouteAccess = z.infer<typeof RouteAccessSchema>;
 

@@ -4,6 +4,8 @@ import { type AnyColumn, type SQL, and, arrayContains, eq, isNull, or, sql } fro
 import type { Clock } from '../clock';
 import type { Cipher } from '../crypto';
 import { schema, type Db } from '../db/client';
+import { ticketElement } from './elements';
+import { eraseHandoffs } from '../crisis-handoffs/service';
 import { removeReminderPhone } from '../reminders/service';
 import { appendEvent, lastEvent, type Executor } from '../tickets/events';
 import { bundleContext, summaryContext } from '../tickets/service';
@@ -18,13 +20,13 @@ export interface ConsentDeps {
 type ConsentRow = typeof schema.consents.$inferSelect;
 
 function record(row: ConsentRow): ConsentRecord {
-  return { id: row.id, element: row.element, recipient: row.recipient, grantedAt: row.grantedAt.toISOString(), revokedAt: row.revokedAt?.toISOString() ?? null };
+  return { id: row.id, element: ticketElement(row.element), recipient: row.recipient, grantedAt: row.grantedAt.toISOString(), revokedAt: row.revokedAt?.toISOString() ?? null };
 }
 
 /** The elements of a ticket that are consented to right now. */
 async function liveElements(executor: Executor, ticketId: string): Promise<ConsentElement[]> {
   const rows = await executor.select({ element: schema.consents.element }).from(schema.consents).where(and(eq(schema.consents.ticketId, ticketId), isNull(schema.consents.revokedAt)));
-  return rows.map((row) => row.element);
+  return rows.map((row) => ticketElement(row.element));
 }
 
 function readContent(cipher: Cipher, ticketId: string, ciphertext: string | null): BundleContent {
@@ -50,6 +52,7 @@ export async function revokeConsent(deps: ConsentDeps, personId: string, consent
   const [consent] = await db.select().from(schema.consents).where(and(eq(schema.consents.id, consentId), eq(schema.consents.personId, personId))).limit(1);
   if (!consent || consent.ticketId === null) return { kind: 'not_found' };
   const ticketId = consent.ticketId;
+  const element = ticketElement(consent.element);
   const now = clock.now();
 
   if (consent.revokedAt !== null) {
@@ -58,7 +61,7 @@ export async function revokeConsent(deps: ConsentDeps, personId: string, consent
   }
 
   return db.transaction(async (tx) => {
-    const { revoked, state, summaryRemoved } = consent.element === 'ticket' ? await endShare(tx, personId, ticketId, now) : await dropElement(tx, cipher, consent, now);
+    const { revoked, state, summaryRemoved } = element === 'ticket' ? await endShare(tx, personId, ticketId, now) : await dropElement(tx, cipher, { ...consent, element }, now);
     return { kind: 'revoked' as const, revoked: revoked.map(record), ticketState: state, summaryRemoved };
   });
 }
@@ -98,7 +101,7 @@ async function deleteSummaryLogs(tx: Executor, personId: string, ticketId: strin
  * person's that was made from the stopped element (its `built_from` holds it) goes too, since the words in it came from
  * that element; log rows made from other elements stay.
  */
-async function dropElement(tx: Executor, cipher: Cipher, consent: ConsentRow, now: Date): Promise<Revoked> {
+async function dropElement(tx: Executor, cipher: Cipher, consent: Omit<ConsentRow, 'element'> & { element: ConsentElement }, now: Date): Promise<Revoked> {
   const ticketId = consent.ticketId!;
   const revoked = await tx.update(schema.consents).set({ revokedAt: now }).where(eq(schema.consents.id, consent.id)).returning();
   const [bundle] = await tx.select().from(schema.sharedBundles).where(eq(schema.sharedBundles.ticketId, ticketId)).for('update');
@@ -231,7 +234,7 @@ export interface EraseResult {
 /**
  * "Delete everything" on the server: revokes the `ticket` consent of every ticket the person holds that is still
  * shared (which revokes the rest and withdraws what is live), deletes every logged summary the person has, and
- * clears the equity buckets. The invites the person claimed and the number they gave for text reminders are deleted too (see below). The tickets themselves
+ * clears the equity buckets. The invites the person claimed, the number they gave for text reminders and any hand-off to the crisis line are deleted too (see below). The tickets themselves
  * and their events remain, as pseudonymous timings with no data: an event's reason is a code from a fixed list, never free text.
  */
 export async function eraseEverything(deps: ConsentDeps, personId: string): Promise<EraseResult> {
@@ -254,6 +257,8 @@ export async function eraseEverything(deps: ConsentDeps, personId: string): Prom
   // unclaimed: an unclaimed invite could be claimed again, and a used one cannot be unclaimed. A ticket keeps its own `source`.
   await db.delete(schema.inboundInvites).where(eq(schema.inboundInvites.claimedBy, personId));
   await removeReminderPhone(db, personId);
+  // The hand-offs to the crisis line go the same way: the consent is revoked in the ledger and the stored template is deleted.
+  await eraseHandoffs(db, personId, deps.clock.now());
   await db
     .update(schema.persons)
     .set({ equityOptIn: false, ageBand: null, gender: null, language: null, region: null })

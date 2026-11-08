@@ -18,10 +18,10 @@ import {
   ACTORS,
   AGE_BANDS,
   CARE_LANGUAGES,
-  CONSENT_ELEMENTS,
   CRISIS_NUMBERS,
   CRISIS_TRIGGERS,
   GENDERS,
+  LEDGER_ELEMENTS,
   INSURANCE_CLASSES,
   LOCALES,
   MODALITIES,
@@ -46,7 +46,7 @@ export const insuranceClassEnum = pgEnum('insurance_class', INSURANCE_CLASSES);
 export const ticketStateEnum = pgEnum('ticket_state', TICKET_STATES);
 export const actorEnum = pgEnum('actor', ACTORS);
 export const ticketSourceEnum = pgEnum('ticket_source', TICKET_SOURCES);
-export const consentElementEnum = pgEnum('consent_element', CONSENT_ELEMENTS);
+export const consentElementEnum = pgEnum('consent_element', LEDGER_ELEMENTS);
 export const staffRoleEnum = pgEnum('staff_role', STAFF_ROLES);
 export const ageBandEnum = pgEnum('age_band', AGE_BANDS);
 export const genderEnum = pgEnum('gender', GENDERS);
@@ -365,6 +365,34 @@ export const crisisEvents = pgTable(
   ],
 );
 
+/**
+ * What a person handed to the mock crisis line, one row per hand-off. The template (language, trigger, the totals of their
+ * latest check-ins and the callback number if they gave one) is AES-256-GCM ciphertext bound to this row's id. The row
+ * exists only while its ledger consent (`consent_id`, element `crisis_handoff`) is live: revoking the consent and
+ * "Delete everything" both delete it. It is the one place a person is tied to a crisis event, which is why
+ * `crisis_events` itself carries no person id.
+ */
+export const crisisHandoffs = pgTable(
+  'crisis_handoffs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    personId: uuid('person_id')
+      .notNull()
+      .references(() => persons.id),
+    crisisEventId: uuid('crisis_event_id')
+      .notNull()
+      .references(() => crisisEvents.id),
+    consentId: uuid('consent_id')
+      .notNull()
+      .references(() => consents.id),
+    contentCiphertext: text('content_ciphertext').notNull(),
+    createdAt: at('created_at').notNull(),
+    /** When the console's operator marked contact made; null until then. */
+    contactMadeAt: at('contact_made_at'),
+  },
+  (t) => [unique('crisis_handoffs_event_unique').on(t.crisisEventId), unique('crisis_handoffs_consent_unique').on(t.consentId), index('crisis_handoffs_person_idx').on(t.personId)],
+);
+
 export const adverseEvents = pgTable('adverse_events', {
   id: uuid('id').primaryKey().defaultRandom(),
   ticketId: uuid('ticket_id').references(() => tickets.id),
@@ -398,6 +426,7 @@ export const ALL_TABLE_NAMES = [
   'inbound_nonces',
   'bundle_reads',
   'summary_logs',
+  'crisis_handoffs',
   'crisis_events',
   'shared_bundles',
   'consents',

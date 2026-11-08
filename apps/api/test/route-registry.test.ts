@@ -73,6 +73,22 @@ describe('route registry', () => {
     ).rejects.toThrow(/facilityScoped/);
   });
 
+  it('refuses to start when a route outside /crisis-handoffs gives the crisis-line role access', async () => {
+    await expect(
+      build((app) => {
+        app.get('/tickets/:id/hand-off', { config: { access: 'crisis_line' } }, async () => ({ ok: true }));
+      }),
+    ).rejects.toThrow(/crisis-line role access outside \/crisis-handoffs/);
+  });
+
+  it('starts when a crisis-line route sits under /crisis-handoffs', async () => {
+    const app = await build((a) => {
+      a.get('/crisis-handoffs/probe', { config: { access: 'crisis_line' } }, async () => ({ ok: true }));
+    });
+    expect(app.routeRegistry.some((r) => r.url === '/crisis-handoffs/probe' && r.access === 'crisis_line')).toBe(true);
+    await app.close();
+  });
+
   it('starts when a clinician ticket route declares the facility scope', async () => {
     const app = await build((a) => {
       a.get('/tickets/:id/notes', { config: { access: 'clinician', facilityScoped: true } }, async () => ({ ok: true }));
