@@ -23,6 +23,10 @@ Source of the strings: `apps/person/messages/en.json` and `ar.json`, namespaces 
 | The same standard in Arabic | Met by reading; see the open items | `ar.json` |
 | "Did you reach someone?" does not press for a yes | Met: "Yes, I spoke to someone" and "Not yet" are equal buttons, and "Not yet" is answered kindly | `crisis.reachedTitle`, `reachedNo`, `reachedLater` |
 | The text avoids labels and diagnoses | Met: no diagnostic word on the screen | all `crisis.*` |
+| The optional note to the crisis line is the person's choice, says exactly what it sends, and can be stopped | Met by copy: a separate offer, a preview of every item, an explicit tick, no pressure, and a stop control that says it deletes the note; the trigger is shown as "item 9" or "screener: positive", never in words about harm | `crisis.handoffOffer`, `handoffPreviewTitle`, `handoffConsent`, `handoffStop` |
+| A failed send never alarms or blocks | Met: the failure lines say nothing was sent and that the numbers above still work | `crisis.handoffOffline`, `handoffNotReady`, `handoffRejected` |
+| The next-day check is gentle, asks rather than assumes, and its notification says nothing about a crisis | Met: "How are you today?", three equal answers, no score; the lock-screen text is neutral and is checked by a test | `nextDay.title`, `nextDay.intro`, `nextDay.notifyTitle`, `nextDay.notifyBody` |
+| A harder answer is met with help first, then options, never a lecture | Met: "Help now" comes first and the offer of a doctor or specialist is worded as a choice | `nextDay.afterWorse`, `nextDay.offerBody` |
 
 ## Copy awaiting clinical review
 

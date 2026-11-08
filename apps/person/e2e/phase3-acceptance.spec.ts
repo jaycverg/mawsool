@@ -1371,6 +1371,8 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await visitOnline(page, locale);
     await triggerCrisis(page, locale);
     await page.getByRole('button', { name: msg(locale, 'crisis.safeNow'), exact: true }).click();
+    await expect(page).not.toHaveURL(crisisUrl(locale));
+    await page.waitForLoadState('load');
     await waitForStored(page, 'crisis:follow-up');
     expect(await rawStoreKeys(page)).toContain('crisis:follow-up');
 
@@ -1418,6 +1420,8 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await visitOnline(page, locale);
     await triggerCrisis(page, locale);
     await page.getByRole('button', { name: msg(locale, 'crisis.safeNow'), exact: true }).click();
+    await expect(page).not.toHaveURL(crisisUrl(locale));
+    await page.waitForLoadState('load');
     await waitForStored(page, 'crisis:follow-up');
     await context.clock.setFixedTime(new Date(Date.now() + DAY_MS + 60_000));
 

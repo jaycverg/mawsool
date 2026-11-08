@@ -267,7 +267,7 @@
     },
     "handoffReason": {
       "phq9_item9": "PHQ-9 item 9: positive",
-      "cssrs": "Suicide-risk screener: positive"
+      "cssrs": "Screener answer: positive"
     },
     "handoffScores": "Check-in totals: {scores}",
     "handoffNoScores": "No finished check-in totals to send",
