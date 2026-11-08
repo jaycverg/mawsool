@@ -14,7 +14,10 @@ import { TERMINAL_STATES } from '../tickets/transitions';
 export interface ConsentDeps {
   db: Db;
   cipher: Cipher;
+  /** The care clock: deadlines, ticket events, consent times. */
   clock: Clock;
+  /** The wall clock: what guards a request still on its way (a remembered stop) must not follow a demo clock jump. */
+  securityClock: Clock;
 }
 
 type ConsentRow = typeof schema.consents.$inferSelect;
@@ -259,7 +262,7 @@ export async function eraseEverything(deps: ConsentDeps, personId: string, unsee
   await removeReminderPhone(db, personId);
   // The hand-offs to the crisis line go the same way: the stored template and its ledger row are deleted, and the ids of the ones
   // the phone may have sent without hearing back are remembered, so a send still on its way cannot recreate one.
-  await db.transaction((tx) => eraseHandoffs(tx, personId, deps.clock.now(), unseenHandoffIds));
+  await db.transaction((tx) => eraseHandoffs(tx, personId, deps.securityClock.now(), unseenHandoffIds));
   await db
     .update(schema.persons)
     .set({ equityOptIn: false, ageBand: null, gender: null, language: null, region: null })

@@ -8,7 +8,7 @@ import { sweep } from '../src/sweep';
 import { loadCrisisFacts } from '../src/metrics/facts';
 import { buildCrisis } from '../src/metrics/crisis';
 import { runSeed } from '../src/seed/run';
-import { createTestApp, signIn, type TestApp } from './helpers/app';
+import { createTestApp, signIn, TEST_START, type TestApp } from './helpers/app';
 import { createTestDb, type TestDb } from './helpers/db';
 import { CALLBACK, cipher, handoffBody, registerPerson, sendCrisisEvent, type TestPerson } from './helpers/flow';
 
@@ -285,6 +285,42 @@ describe('the optional hand-off to the mock crisis line', () => {
       expect((await ctx.app.inject({ method: 'DELETE', url: '/me/data', headers: person.headers, payload: { handoffIds: ['nope'] } })).statusCode).toBe(400);
     });
 
+    it('does not remember a stop for an id that another person holds: the answer is the unknown-id 404, nothing is written, and the owner can still replay and be read', async () => {
+      const { person: owner, eventId, receipt } = await handedOff();
+      const stranger = await registerPerson(ctx);
+      const stop = await ctx.app.inject({ method: 'DELETE', url: `/me/crisis-handoffs/${receipt.handoffId}`, headers: stranger.headers });
+      expect(stop.statusCode).toBe(404);
+      expect(await testDb.db.select().from(schema.revokedHandoffs).where(eq(schema.revokedHandoffs.handoffId, receipt.handoffId))).toEqual([]);
+      expect(await rowsFor(receipt.handoffId)).toHaveLength(1);
+      const replay = await post(owner, { ...handoffBody(eventId), handoffId: receipt.handoffId });
+      expect(replay.statusCode).toBe(200);
+      expect(replay.json().created).toBe(false);
+      expect((await consoleGet(`/crisis-handoffs/${receipt.handoffId}`)).statusCode).toBe(200);
+    });
+
+    it('does not remember an id that another person holds when it comes in a Delete everything list either, and still erases the sender’s own', async () => {
+      const { person: owner, eventId, receipt } = await handedOff();
+      const stranger = await registerPerson(ctx);
+      const strangersOwn = randomUUID();
+      const erased = await ctx.app.inject({ method: 'DELETE', url: '/me/data', headers: stranger.headers, payload: { handoffIds: [receipt.handoffId, strangersOwn] } });
+      expect(erased.statusCode).toBe(200);
+      const remembered = (await testDb.db.select().from(schema.revokedHandoffs)).map((row) => row.handoffId);
+      expect(remembered).toContain(strangersOwn);
+      expect(remembered).not.toContain(receipt.handoffId);
+      expect((await post(owner, { ...handoffBody(eventId), handoffId: receipt.handoffId })).statusCode).toBe(200);
+      expect((await consoleGet(`/crisis-handoffs/${receipt.handoffId}`)).statusCode).toBe(200);
+    });
+
+    it('still remembers a stop for an id nobody holds, so the late send of the real owner is refused', async () => {
+      const person = await registerPerson(ctx);
+      const eventId = await sendCrisisEvent(ctx, person);
+      const body = handoffBody(eventId);
+      const other = await registerPerson(ctx);
+      expect((await ctx.app.inject({ method: 'DELETE', url: `/me/crisis-handoffs/${body.handoffId}`, headers: other.headers })).statusCode).toBe(404);
+      expect(await testDb.db.select().from(schema.revokedHandoffs).where(eq(schema.revokedHandoffs.handoffId, body.handoffId))).toHaveLength(1);
+      expect((await post(person, body)).statusCode).toBe(409);
+    });
+
     it('remembers the id and the time of the stop and nothing else, then forgets it an hour later', async () => {
       expect(Object.keys(schema.revokedHandoffs).filter((name) => /person|event|consent|content/i.test(name))).toEqual([]);
       const old = randomUUID();
@@ -326,5 +362,56 @@ describe('the optional hand-off to the mock crisis line', () => {
       await ctx.app.inject({ method: 'DELETE', url: '/me/data', headers: person.headers });
       expect(await tiesOf(person.id, eventId, receipt)).toEqual({ ledger: 0, handoffs: 0, rememberedWithPerson: 0, eventHasPerson: false });
     });
+  });
+});
+
+describe('a remembered stop on the demo clock', () => {
+  let testDb: TestDb;
+  let ctx: TestApp;
+  let admin: { authorization: string };
+
+  beforeAll(async () => {
+    testDb = await createTestDb();
+    await runSeed(testDb.db);
+    ctx = await createTestApp(testDb.db, { demoMode: true });
+    admin = { authorization: `Bearer ${await signIn(ctx, 'admin@demo.mawsool.test')}` };
+  });
+
+  afterAll(async () => {
+    await ctx.app.close();
+    await testDb.close();
+  });
+
+  const stoppedAt = async (id: string) => (await testDb.db.select().from(schema.revokedHandoffs).where(eq(schema.revokedHandoffs.handoffId, id)))[0]?.revokedAt;
+
+  it('is written and kept on the wall clock: a care clock step of seven days and its sweep do not forget a fresh stop, and a late send is still refused', async () => {
+    const person = await registerPerson(ctx);
+    const eventId = await sendCrisisEvent(ctx, person);
+    const before = handoffBody(eventId);
+    const after = handoffBody(eventId);
+    expect((await ctx.app.inject({ method: 'DELETE', url: `/me/crisis-handoffs/${before.handoffId}`, headers: person.headers })).statusCode).toBe(404);
+    const advanced = await ctx.app.inject({ method: 'POST', url: '/demo/clock/advance', headers: admin, payload: { by: '7d' } });
+    expect(advanced.statusCode).toBe(200);
+    expect(await stoppedAt(before.handoffId)).toEqual(TEST_START);
+    // A stop made after the step is stamped with the wall clock too, not with the care clock a week ahead of it.
+    expect((await ctx.app.inject({ method: 'DELETE', url: `/me/crisis-handoffs/${after.handoffId}`, headers: person.headers })).statusCode).toBe(404);
+    expect(await stoppedAt(after.handoffId)).toEqual(TEST_START);
+    const sweptAgain = await sweep(testDb.db, ctx.app.careClock, {}, ctx.clock);
+    expect(sweptAgain.stopsForgotten).toBe(0);
+    for (const body of [before, after]) {
+      const late = await ctx.app.inject({ method: 'POST', url: '/me/crisis-handoffs', headers: person.headers, payload: body });
+      expect(late.statusCode).toBe(409);
+      expect(late.json().error).toBe('handoff_stopped');
+    }
+  });
+
+  it('is still forgotten an hour of wall time later', async () => {
+    const person = await registerPerson(ctx);
+    const body = handoffBody(await sendCrisisEvent(ctx, person));
+    await ctx.app.inject({ method: 'DELETE', url: `/me/crisis-handoffs/${body.handoffId}`, headers: person.headers });
+    ctx.clock.advance(61 * 60_000);
+    const swept = await sweep(testDb.db, ctx.app.careClock, {}, ctx.clock);
+    expect(swept.stopsForgotten).toBeGreaterThanOrEqual(1);
+    expect(await stoppedAt(body.handoffId)).toBeUndefined();
   });
 });

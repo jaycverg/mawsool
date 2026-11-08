@@ -1190,6 +1190,26 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page).toHaveURL(new RegExp(`^${escapeRe(BASE)}/${locale}/result/\\?id=[0-9a-f-]{36}$`));
   },
 
+  async 'a-note-the-server-says-was-stopped-leaves-the-form-with-its-send-button-not-ready'({ page, locale, consoleGuard }) {
+    consoleGuard.allow({ url: `${API}/me/crisis-handoffs`, expect: 409, reason: 'the hand-off send is answered as a stopped one, to show the form is not left ready to send again' });
+    await visitOnline(page, locale);
+    const before = (await storedHandoffs()).length;
+    await triggerCrisis(page, locale);
+    await page.route(`${API}/me/crisis-handoffs`, (route) => route.fulfill({ status: 409, json: { error: 'handoff_stopped', message: 'This hand-off was stopped' } }));
+    await page.locator('[data-handoff-offer]').click();
+    await page.locator('[data-handoff-consent]').check();
+    await expect(page.locator('[data-handoff-send]')).toBeEnabled();
+    await page.locator('[data-handoff-send]').click();
+    await expect(page.locator('[data-handoff-failure="stopped"]')).toHaveText(msg(locale, 'crisis.handoffStoppedNote'));
+    await expect(page.locator('[data-handoff-send]')).toBeDisabled();
+    await expect(page.locator('[data-handoff-consent]')).not.toBeChecked();
+    expect(await storedHandoffs()).toHaveLength(before);
+    // The person can still agree afresh, and the numbers are as they were.
+    await page.locator('[data-handoff-consent]').check();
+    await expect(page.locator('[data-handoff-send]')).toBeEnabled();
+    await expect(page.locator('a[href="tel:800725462"]')).toBeVisible();
+  },
+
   async 'a-second-crisis-offers-a-new-note-and-both-notes-stay-stoppable'({ page, locale }) {
     const baseline = (await storedHandoffs()).map((row) => row.id);
     const first = await handOffFromPhone(page, locale);

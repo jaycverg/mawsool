@@ -1,5 +1,5 @@
 import { CRISIS_HANDOFF_ELEMENT, CRISIS_LINE_RECIPIENT, CrisisHandoffContentSchema, type CreateCrisisHandoffRequest, type CrisisHandoffReceipt, type CrisisHandoffView } from '@mawsool/types';
-import { and, asc, eq, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
 import type { Clock } from '../clock';
 import type { Cipher } from '../crypto';
 import { schema, type Db } from '../db/client';
@@ -10,6 +10,8 @@ export interface CrisisHandoffDeps {
   cipher: Cipher;
   /** The care clock: the contact time sits beside the `shown_at` the phone wrote from its own (demo-shifted) clock. */
   clock: Clock;
+  /** The wall clock: a remembered stop guards a request still on its way, so a demo clock jump must neither write nor purge it. */
+  securityClock: Clock;
 }
 
 /** What a hand-off's ciphertext is bound to: its own row. A value copied onto another row does not decrypt there. */
@@ -94,15 +96,17 @@ export type RevokeHandoffResult = { kind: 'revoked'; revokedAt: Date } | { kind:
 
 /**
  * The person stops the hand-off: the stored template and its ledger row are deleted in one transaction, so
- * after it the console has nothing to read. Only the caller's own hand-off can be reached; anyone else's is not found.
+ * after it the console has nothing to read. Only the caller's own hand-off can be reached; anyone else's is not found and nothing
+ * is written for it, so a person who learned another's id cannot make the owner's later send or replay refuse. The id is
+ * remembered (on the wall clock) when no hand-off holds it at all: a send that is still on its way must find it stopped.
  */
 export async function revokeHandoff(deps: CrisisHandoffDeps, personId: string, handoffId: string): Promise<RevokeHandoffResult> {
-  const now = deps.clock.now();
+  const now = deps.securityClock.now();
   return deps.db.transaction(async (tx) => {
     await lockHandoffId(tx, handoffId);
-    // The id is remembered whether or not a row exists yet: a send that is still on its way must find it stopped.
+    const [row] = await tx.select().from(schema.crisisHandoffs).where(eq(schema.crisisHandoffs.id, handoffId)).for('update');
+    if (row && row.personId !== personId) return { kind: 'not_found' as const };
     await tx.insert(schema.revokedHandoffs).values({ handoffId, revokedAt: now }).onConflictDoNothing();
-    const [row] = await tx.select().from(schema.crisisHandoffs).where(and(eq(schema.crisisHandoffs.id, handoffId), eq(schema.crisisHandoffs.personId, personId))).for('update');
     if (!row) return { kind: 'not_found' as const };
     await tx.delete(schema.crisisHandoffs).where(eq(schema.crisisHandoffs.id, row.id));
     // The ledger row goes too: left behind it would keep the person's name against the time of the hand-off.
@@ -119,9 +123,13 @@ export async function revokeHandoff(deps: CrisisHandoffDeps, personId: string, h
  */
 export async function eraseHandoffs(executor: Executor, personId: string, now: Date, unseenIds: readonly string[] = []): Promise<number> {
   const standing = await executor.select({ id: schema.crisisHandoffs.id }).from(schema.crisisHandoffs).where(eq(schema.crisisHandoffs.personId, personId));
-  const ids = [...new Set([...standing.map((row) => row.id), ...unseenIds])].sort();
+  const candidates = [...new Set([...standing.map((row) => row.id), ...unseenIds])].sort();
   // Always in the same order, so two erases (or an erase and a send) that share an id cannot wait on each other in a circle.
-  for (const id of ids) await lockHandoffId(executor, id);
+  for (const id of candidates) await lockHandoffId(executor, id);
+  // An id a hand-off of someone else holds is not this person's to stop: remembering it would make its owner's replay refuse.
+  const others = candidates.length === 0 ? [] : await executor.select({ id: schema.crisisHandoffs.id }).from(schema.crisisHandoffs).where(and(inArray(schema.crisisHandoffs.id, candidates), ne(schema.crisisHandoffs.personId, personId)));
+  const notMine = new Set(others.map((row) => row.id));
+  const ids = candidates.filter((id) => !notMine.has(id));
   if (ids.length > 0) await executor.insert(schema.revokedHandoffs).values(ids.map((handoffId) => ({ handoffId, revokedAt: now }))).onConflictDoNothing();
   const gone = await executor.delete(schema.crisisHandoffs).where(eq(schema.crisisHandoffs.personId, personId)).returning({ id: schema.crisisHandoffs.id });
   await executor.delete(schema.consents).where(and(eq(schema.consents.personId, personId), eq(schema.consents.element, CRISIS_HANDOFF_ELEMENT)));

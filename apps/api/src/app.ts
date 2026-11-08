@@ -108,7 +108,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerCrisisEventRoutes(app, { db: deps.db });
   registerTicketRoutes(app, { db: deps.db });
   registerInboundRoutes(app, { db: deps.db, clock, securityClock, personAppUrl: deps.config.personAppUrl ?? 'http://localhost:3000' });
-  const consentDeps = { db: deps.db, cipher, clock };
+  const consentDeps = { db: deps.db, cipher, clock, securityClock };
   registerTicketFlowRoutes(app, consentDeps);
   registerReminderRoutes(app, consentDeps);
   registerCrisisHandoffRoutes(app, consentDeps);
