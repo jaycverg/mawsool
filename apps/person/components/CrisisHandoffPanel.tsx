@@ -14,6 +14,14 @@ import type { Device } from '../lib/use-device';
 
 type Phase = 'idle' | 'sending' | 'stopping' | SendOutcome | 'stopped' | 'stop_failed';
 
+/** The secondary button of the crisis screen's own choices, so the panel's buttons are as tall and as round as their neighbours. */
+const CHOICE = 'min-h-cta rounded-cta border-[1.5px] border-[#6B4A46] bg-surface px-4 text-[16px] font-semibold text-[#2A1414]';
+
+/** When a note was made, as the person reads it: date and time in Dubai, in the page's language. */
+function when(iso: string, lang: Locale): string {
+  return new Intl.DateTimeFormat(lang === 'ar' ? 'ar-AE-u-nu-latn' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Dubai' }).format(new Date(iso));
+}
+
 const INSTRUMENT_NAMES = { who5: 'WHO-5', phq9: 'PHQ-9', gad7: 'GAD-7' } as const;
 const FAILURES: Partial<Record<Phase, string>> = {
   offline: 'handoffOffline',
@@ -21,6 +29,7 @@ const FAILURES: Partial<Record<Phase, string>> = {
   rejected: 'handoffRejected',
   invalid_number: 'handoffInvalidNumber',
   failed: 'handoffFailed',
+  stopped: 'handoffStoppedNote',
   stop_failed: 'handoffStopFailed',
 };
 
@@ -86,10 +95,13 @@ export function CrisisHandoffPanel({ device, lang, mode, open }: { device: Devic
       <section className="flex flex-col gap-2.5 rounded-card border border-border bg-surface p-5" data-panel="crisis-handoff">
         <h2 className="text-[16px] font-semibold">{ts('handoffTitle')}</h2>
         <p className="t-body text-muted">{ts('handoffBody')}</p>
-        {records.map((record) => (
+        {records.map((record, index) => (
           <div key={record.handoffId} className="flex flex-col gap-1.5" data-handoff-record={record.state}>
+            <p id={`note-${record.handoffId}`} className="t-body font-semibold" data-handoff-note>
+              {t('handoffNote', { n: index + 1, total: records.length, when: when(record.startedAt, lang) })}
+            </p>
             {record.state === 'sending' && <p className="t-small text-muted">{t('handoffUnconfirmed')}</p>}
-            <button type="button" className="tap rounded-pill border-[1.5px] border-danger px-4 font-semibold text-danger" disabled={stopping === record.handoffId} onClick={() => void stop(record)} data-handoff-stop>
+            <button type="button" className="tap rounded-pill border-[1.5px] border-danger px-4 font-semibold text-danger" aria-describedby={`note-${record.handoffId}`} disabled={stopping === record.handoffId} onClick={() => void stop(record)} data-handoff-stop>
               {t('handoffStop')}
             </button>
           </div>
@@ -111,7 +123,7 @@ export function CrisisHandoffPanel({ device, lang, mode, open }: { device: Devic
   return (
     <section aria-labelledby="handoff-title" className="flex flex-col gap-2.5 rounded-card border border-[#E3C9C5] bg-surface p-4" data-panel="crisis-handoff" data-handoff-state={sent ? 'sent' : mine ? 'sending' : 'none'}>
       {!sent && !expanded && (
-        <button type="button" className="min-h-tap rounded-pill border-[1.5px] border-[#6B4A46] px-3 text-left font-semibold" aria-expanded={false} onClick={() => setExpanded(true)} data-handoff-offer>
+        <button type="button" className={CHOICE} aria-expanded={false} onClick={() => setExpanded(true)} data-handoff-offer>
           {t('handoffOffer')}
         </button>
       )}
@@ -135,12 +147,20 @@ export function CrisisHandoffPanel({ device, lang, mode, open }: { device: Devic
                     ? t('handoffNoScores')
                     : t('handoffScores', { scores: preview.scores.map((score) => `${INSTRUMENT_NAMES[score.instrument]} ${score.total}`).join(' · ') })}
                 </span>
-                <span dir="auto">{preview.callbackNumber ? t('handoffNumberSent', { number: preview.callbackNumber }) : t('handoffNoNumber')}</span>
+                <span>
+                  {preview.callbackNumber ? (
+                    <>
+                      {t('handoffNumberLabel')} <bdi dir="ltr" className="whitespace-nowrap">{preview.callbackNumber}</bdi>
+                    </>
+                  ) : (
+                    t('handoffNoNumber')
+                  )}
+                </span>
               </div>
               <label className="flex flex-col gap-1 text-[14px]">
                 {t('handoffCallbackLabel')}
                 <input type="tel" inputMode="tel" dir="ltr" autoComplete="off" value={callback} onChange={(event) => setCallback(event.target.value)} className="h-11 rounded-input border border-[#9AAAA7] bg-surface px-2.5 text-[16px]" data-handoff-number />
-                <span className="text-[13px] text-[#4D3330]">{t('handoffCallbackHint')}</span>
+                <span className="text-[13px] text-[#4D3330]">{t.rich('handoffCallbackHint', { num: (chunks) => <bdi dir="ltr" className="whitespace-nowrap">{chunks}</bdi> })}</span>
               </label>
               <label className="flex min-h-tap cursor-pointer items-center gap-3 text-[15px] font-semibold">
                 <input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} className="size-[22px] accent-accent" data-handoff-consent />
@@ -152,7 +172,7 @@ export function CrisisHandoffPanel({ device, lang, mode, open }: { device: Devic
             </>
           )}
           {mine && (
-            <button type="button" className="min-h-tap rounded-pill border-[1.5px] border-[#6B4A46] px-3 font-semibold" disabled={stopping === mine.handoffId} onClick={() => void stop(mine)} data-handoff-stop>
+            <button type="button" className={CHOICE} disabled={stopping === mine.handoffId} onClick={() => void stop(mine)} data-handoff-stop>
               {t('handoffStop')}
             </button>
           )}

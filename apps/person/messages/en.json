@@ -273,8 +273,7 @@
     "handoffScores": "Check-in totals: {scores}",
     "handoffNoScores": "No finished check-in totals to send",
     "handoffCallbackLabel": "A number to call you back on (optional)",
-    "handoffCallbackHint": "Leave it empty if you would rather not give one. Include the country code, for example +971 50 123 4567.",
-    "handoffNumberSent": "Number: {number}",
+    "handoffCallbackHint": "Leave it empty if you would rather not give one. Include the country code, for example <num>+971 50 123 4567</num>.",
     "handoffNoNumber": "No number will be sent",
     "handoffConsent": "I agree to send this note to the crisis line",
     "handoffSend": "Send the note",
@@ -288,7 +287,10 @@
     "handoffNotReady": "We could not send this yet. Try again in a moment. The numbers above still work.",
     "handoffRejected": "The note could not be sent. The numbers above still work.",
     "handoffInvalidNumber": "That number does not look right. Use the international form, like +971 50 123 4567, or leave it empty.",
-    "handoffFailed": "This phone could not prepare the note, so nothing was sent."
+    "handoffFailed": "This phone could not prepare the note, so nothing was sent.",
+    "handoffNumberLabel": "Number:",
+    "handoffNote": "Note {n} of {total}, made {when}",
+    "handoffStoppedNote": "You stopped this note before it was stored, so it was not sent."
   },
   "settings": {
     "title": "Privacy and your data",
