@@ -90,5 +90,21 @@
   {
     "id": "phone-recovers-when-the-server-forgets-it",
     "sentence": "A phone whose person the server no longer holds registers again, settles on a screen with no ticket and a way forward instead of an error, and can send a new referral"
+  },
+  {
+    "id": "crisis-line-console-reads-a-consented-handoff-and-marks-contact",
+    "sentence": "The crisis_line role signs in through the staff page, reads a hand-off the person consented to (language, totals, \"item 9 positive\", the callback number if given) in a console labelled as a mock, and marking contact made completes the crisis event as confirmed by the mock line; the raw row is ciphertext, and after the person stops sharing the raw row is gone, the console shows nothing and a direct read is 404"
+  },
+  {
+    "id": "crisis-line-role-is-confined-to-its-console",
+    "sentence": "A crisis_line session opens only the console: the ops pages send it to sign-in, an ops session is sent away from the console, and the API refuses it the dashboard, the queue, a ticket, its bundle and its export"
+  },
+  {
+    "id": "crisis-handoff-failure-leaves-the-crisis-screen-alone",
+    "sentence": "When the hand-off cannot be sent the panel says so, nothing is stored, and the crisis screen still shows every number, the block survives a reload and a direct visit to the options, and \"I'm safe right now\" still releases it"
+  },
+  {
+    "id": "stale-contact-made-after-the-person-stopped-sharing-is-refused",
+    "sentence": "Pressing \"contact made\" on a hand-off the person has since stopped sharing is refused with a message, the list is read again and empty, and the crisis event is not completed"
   }
 ]

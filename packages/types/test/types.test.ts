@@ -100,7 +100,7 @@ describe('the number for text reminders', () => {
 });
 
 describe('the crisis hand-off contracts', () => {
-  const body = { crisisEventId: '11111111-1111-4111-8111-111111111111', consented: true, language: 'ar', trigger: 'phq9_item9', scores: [], callbackNumber: null };
+  const body = { handoffId: '22222222-2222-4222-8222-222222222222', crisisEventId: '11111111-1111-4111-8111-111111111111', consented: true, language: 'ar', trigger: 'phq9_item9', scores: [], callbackNumber: null };
 
   it('keeps the hand-off element out of the ticket consent list and in the ledger list', () => {
     expect(CONSENT_ELEMENTS).not.toContain(CRISIS_HANDOFF_ELEMENT);

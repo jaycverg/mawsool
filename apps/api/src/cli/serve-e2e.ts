@@ -3,7 +3,7 @@
 //
 // A second, read-only listener lets a test look at what the API stored without going through the API: the rows of a
 // crisis event, the raw bundle of a ticket (as stored, and decrypted with this harness's own key), its events and
-// consents, a person's equity buckets, the reminder numbers held and the number of registered devices. It is part of this harness, not of the
+// consents, a person's equity buckets, the reminder numbers held, the crisis-line hand-offs and crisis events held, and the number of registered devices. It is part of this harness, not of the
 // product API. It also returns the sign-in link the API logged for an address (the product never sends it), read from
 // the API's own log lines, counts invites and nonces, and counts tickets by state.
 //
@@ -19,6 +19,7 @@ import { systemClock } from '../clock';
 import { createCipher } from '../crypto';
 import { schema, type Db } from '../db/client';
 import { MIGRATIONS_FOLDER } from '../db/migrate';
+import { crisisHandoffContext } from '../crisis-handoffs/service';
 import { reminderPhoneContext } from '../reminders/service';
 import { readStaffAccess, runSeed } from '../seed/run';
 import { startOfDubaiDay } from '../metrics/facts';
@@ -146,6 +147,12 @@ const inspect = createServer(async (request, response) => {
     response.end(
       JSON.stringify(rows.map((row) => ({ personId: row.personId, intervalWeeks: row.intervalWeeks, ciphertext: row.phoneCiphertext, phone: cipher.decrypt(row.phoneCiphertext, reminderPhoneContext(row.personId)) }))),
     );
+  } else if (url.pathname === '/crisis-handoffs') {
+    // Every stored hand-off to the crisis line: the raw ciphertext as the table holds it, and the template decrypted with this harness's key.
+    const rows = await db.select().from(schema.crisisHandoffs);
+    response.end(JSON.stringify(rows.map((row) => ({ id: row.id, crisisEventId: row.crisisEventId, consentId: row.consentId, contactMadeAt: row.contactMadeAt, ciphertext: row.contentCiphertext, content: JSON.parse(cipher.decrypt(row.contentCiphertext, crisisHandoffContext(row.id))) }))));
+  } else if (url.pathname === '/crisis-events') {
+    response.end(JSON.stringify(await db.select().from(schema.crisisEvents)));
   } else if (url.pathname === '/logged-sign-in-link') {
     response.end(JSON.stringify({ link: loggedSignInLink(url.searchParams.get('to') ?? '') }));
   } else if (url.pathname === '/ticket-state-counts') {

@@ -7,9 +7,11 @@ import {
   INSPECT,
   LOCALES,
   computed,
+  crisisUrl,
   msg,
   snapshot,
   takeCheckIn,
+  triggerCrisis,
   visitOnline,
   type Locale,
 } from './helpers';
@@ -18,6 +20,7 @@ import {
   CLINICIAN_A,
   CLINICIAN_B,
   CONDITION,
+  CRISIS_LINE_USER,
   FACILITY_A,
   FACILITY_B,
   FREE_TEXT,
@@ -34,6 +37,7 @@ import {
   loggedLink,
   makeTicket,
   newPerson,
+  omsg,
   requestLink,
   revokeConsent,
   sendScreen,
@@ -1094,6 +1098,111 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page.locator('[data-queue] tr[data-ticket]')).toHaveCount(6);
     await snapshot(page, `clinician-${locale}`);
   },
+
+  async 'crisis-line-console-reads-a-consented-handoff-and-marks-contact'({ page, context, locale }) {
+    await handOffFromPhone(page, locale);
+    const [handoff] = await storedHandoffs();
+    expect(handoff!.content).toMatchObject({ language: locale, trigger: 'phq9_item9', callbackNumber: HANDOFF_NUMBER, scores: [{ instrument: 'gad7', total: 9 }] });
+    // The raw row is ciphertext: neither the number nor a total is readable in it.
+    expect(handoff!.ciphertext).toMatch(/^v1\./);
+    expect(handoff!.ciphertext).not.toContain('971501234567');
+    const [event] = await storedCrisisEvents(handoff!.crisisEventId);
+    expect(event).toMatchObject({ contextShared: true, humanContactConfirmed: false, resolvedAt: null });
+    expect(Object.keys(event!)).not.toContain('personId');
+
+    // The operator signs in through the real page: a logged link, one press, then the console.
+    const console_ = await context.newPage();
+    const link = new URL(await requestLink(CRISIS_LINE_USER));
+    await console_.goto(`${OPS}/${locale}/sign-in/?token=${link.searchParams.get('token')}`);
+    await console_.getByRole('button', { name: omsg(locale, 'signIn.action'), exact: true }).click();
+    await console_.locator('[data-continue]').click();
+    await expect(console_).toHaveURL(`${OPS}/${locale}/crisis-line/`);
+    await expect(console_.locator('[data-mock-label]')).toHaveText(omsg(locale, 'crisisLine.mock'));
+    const item = console_.locator(`[data-handoff="${handoff!.id}"]`);
+    await expect(item).toHaveAttribute('data-contact', 'waiting');
+    await expect(item.locator('[data-callback]')).toHaveText(HANDOFF_NUMBER);
+    await expect(item.locator('[data-reason]')).toHaveText(omsg(locale, 'crisisLine.reason.phq9_item9'));
+    await expect(item).toContainText('GAD-7 9');
+
+    await item.locator('[data-mark-contact]').click();
+    await expect(item).toHaveAttribute('data-contact', 'made');
+    await expect(console_.locator('[data-console-message]')).toHaveText(omsg(locale, 'crisisLine.marked'));
+    const [done] = await storedCrisisEvents(handoff!.crisisEventId);
+    expect(done).toMatchObject({ humanContactConfirmed: true, contactSource: 'mock_line' });
+    expect(done!.resolvedAt).not.toBeNull();
+
+    // The person stops sharing: the raw row goes, the console shows nothing after a refresh, and the API answers 404 to a direct read.
+    await page.goto(`/${locale}/settings/`);
+    await page.locator('[data-handoff-stop]').click();
+    await expect(page.getByText(msg(locale, 'crisis.handoffStopped'), { exact: true })).toBeVisible();
+    expect(await storedHandoffs()).toEqual([]);
+    await console_.locator('[data-refresh]').click();
+    await expect(console_.locator('[data-empty]')).toBeVisible();
+    const session = await staffSession(CRISIS_LINE_USER);
+    expect((await call('GET', `/crisis-handoffs/${handoff!.id}`, { headers: bearer(session) })).status).toBe(404);
+  },
+
+  async 'crisis-line-role-is-confined-to-its-console'({ context, browser, locale }) {
+    const line = await staffSession(CRISIS_LINE_USER);
+    // Other staff's screens do not open for it, and the console does not open for them.
+    const asLine = await context.newPage();
+    await keepSession(context, OPS, line);
+    await asLine.goto(`${OPS}/${locale}/`, { waitUntil: 'commit' });
+    await expect(asLine).toHaveURL(`${OPS}/${locale}/sign-in/`);
+    const opsContext = await browser.newContext();
+    const asOps = await opsContext.newPage();
+    await keepSession(opsContext, OPS, await staffSession(OPS_USER));
+    await asOps.goto(`${OPS}/${locale}/crisis-line/`, { waitUntil: 'commit' });
+    await expect(asOps).toHaveURL(`${OPS}/${locale}/sign-in/`);
+    await opsContext.close();
+    // The API says the same: no dashboard, no queue, no ticket, no export; and a person (even a registered one) cannot read the console's routes.
+    for (const path of ['/metrics/funnel', '/metrics/crisis', '/tickets', '/tickets/00000000-0000-4000-8000-000000000001', '/tickets/00000000-0000-4000-8000-000000000001/bundle', '/tickets/00000000-0000-4000-8000-000000000001/fhir']) {
+      expect([401, 403], path).toContain((await call('GET', path, { headers: bearer(line) })).status);
+    }
+    const person = await newPerson();
+    expect((await call('GET', '/crisis-handoffs', { headers: person.headers })).status).toBe(401);
+    expect((await call('GET', '/crisis-handoffs')).status).toBe(401);
+    expect((await call('GET', '/crisis-handoffs', { headers: bearer(line) })).status).toBe(200);
+  },
+
+  async 'crisis-handoff-failure-leaves-the-crisis-screen-alone'({ page, locale, consoleGuard }) {
+    consoleGuard.allow({ url: `${API}/me/crisis-handoffs`, expect: 503, reason: 'the hand-off send is answered with a server error, to show the crisis screen carries on' });
+    await visitOnline(page, locale);
+    await triggerCrisis(page, locale);
+    await page.route(`${API}/me/crisis-handoffs`, (route) => route.fulfill({ status: 503, json: { error: 'unavailable' } }));
+    await page.locator('[data-handoff-offer]').click();
+    await page.locator('[data-handoff-consent]').check();
+    await page.locator('[data-handoff-send]').click();
+    await expect(page.locator('[data-handoff-failure="offline"]')).toHaveText(msg(locale, 'crisis.handoffOffline'));
+    // The numbers, the block and the choices are as they were.
+    for (const number of ['800725462', '998', '999']) await expect(page.locator(`a[href="tel:${number}"]`)).toBeVisible();
+    expect(await storedHandoffs()).toEqual([]);
+    await page.reload();
+    await expect(page).toHaveURL(crisisUrl(locale));
+    await page.goto(`/${locale}/options/`);
+    await expect(page).toHaveURL(crisisUrl(locale));
+    await page.getByRole('button', { name: msg(locale, 'crisis.safeNow'), exact: true }).click();
+    await expect(page).toHaveURL(`${BASE}/${locale}/`);
+  },
+
+  async 'stale-contact-made-after-the-person-stopped-sharing-is-refused'({ page, context, locale }) {
+    await handOffFromPhone(page, locale);
+    const [handoff] = await storedHandoffs();
+    const console_ = await context.newPage();
+    await keepSession(context, OPS, await staffSession(CRISIS_LINE_USER));
+    await console_.goto(`${OPS}/${locale}/crisis-line/`);
+    await expect(console_.locator(`[data-handoff="${handoff!.id}"]`)).toBeVisible();
+    // The person stops sharing while the operator's list is open.
+    await page.goto(`/${locale}/settings/`);
+    await page.locator('[data-handoff-stop]').click();
+    await expect(page.getByText(msg(locale, 'crisis.handoffStopped'), { exact: true })).toBeVisible();
+    // The stale list still shows it; pressing the button is refused, and the list is read again.
+    await console_.locator(`[data-handoff="${handoff!.id}"] [data-mark-contact]`).click();
+    await expect(console_.locator('[data-console-message]')).toHaveText(omsg(locale, 'crisisLine.gone'));
+    await expect(console_.locator('[data-empty]')).toBeVisible();
+    const [event] = await storedCrisisEvents(handoff!.crisisEventId);
+    expect(event).toMatchObject({ humanContactConfirmed: false, resolvedAt: null });
+  },
 };
 
 /** Opens a ticket the person has ended the share of, from a link, and checks the clinic is shown the banner and nothing else. */
@@ -1104,6 +1213,50 @@ async function openWithdrawn(clinic: Page, locale: Locale, id: string): Promise<
   await expect(banner.getByRole('heading')).toHaveText(cmsg(locale, 'detail.withdrawn'));
   await expect(clinic.locator('[data-detail] [data-code]')).toHaveCount(0);
   await expect(clinic.locator('[data-detail] button')).toHaveCount(0);
+}
+
+
+const HANDOFF_NUMBER = '+971501234567';
+
+interface StoredHandoff {
+  id: string;
+  crisisEventId: string;
+  consentId: string;
+  contactMadeAt: string | null;
+  ciphertext: string;
+  content: { language: string; trigger: string; callbackNumber: string | null; scores: { instrument: string; total: number }[] };
+}
+
+const storedHandoffs = async (): Promise<StoredHandoff[]> => (await (await fetch(`${INSPECT}/crisis-handoffs`)).json()) as StoredHandoff[];
+const storedCrisisEvents = async (id: string): Promise<Record<string, unknown>[]> =>
+  ((await (await fetch(`${INSPECT}/crisis-events`)).json()) as { id: string }[]).filter((event) => event.id === id) as Record<string, unknown>[];
+
+/**
+ * A GAD-7 of 9, then a PHQ-9 whose item 9 opens the crisis screen, then the hand-off sent from that screen: the offer opened, the
+ * preview read, the send held back until the tick, then sent. Leaves the phone on the crisis screen with the hand-off stored.
+ */
+async function handOffFromPhone(page: Page, locale: Locale): Promise<void> {
+  await visitOnline(page, locale);
+  await takeCheckIn(page, locale, 'gad7', [2, 1, 1, 1, 1, 2, 1]);
+  await expect(page.locator('[data-score]')).toHaveText('9');
+  await triggerCrisis(page, locale);
+  await page.locator('[data-handoff-offer]').click();
+  const preview = page.locator('[data-handoff-preview]');
+  await expect(preview).toContainText('GAD-7 9');
+  await expect(preview).toContainText(msg(locale, 'crisis.handoffReason.phq9_item9'));
+  await expect(preview).toContainText(msg(locale, 'crisis.handoffNoNumber'));
+  await page.locator('[data-handoff-number]').fill('+971 50 123 4567');
+  await expect(preview).toContainText(HANDOFF_NUMBER);
+  // Nothing is sent before the explicit tick, and the button does not work without it.
+  const send = page.locator('[data-handoff-send]');
+  await expect(send).toBeDisabled();
+  expect(await storedHandoffs()).toEqual([]);
+  await page.locator('[data-handoff-consent]').check();
+  await send.click();
+  await expect(page.locator('[data-handoff-sent]')).toHaveText(msg(locale, 'crisis.handoffSent'));
+  await expect(page.locator('[data-panel="crisis-handoff"] [data-mock-label]')).toHaveText(msg(locale, 'crisis.handoffMock'));
+  await expect(page).toHaveURL(crisisUrl(locale));
+  expect(await storedHandoffs()).toHaveLength(1);
 }
 
 const ids = acceptance.map((entry) => entry.id);
