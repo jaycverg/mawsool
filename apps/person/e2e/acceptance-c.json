@@ -21,7 +21,7 @@
   },
   {
     "id": "mock-label-audit",
-    "sentence": "Every mock or sample surface that exists carries its label: the mock TAMM page, the unverified instrument wording, the sample directory and indicative insurance, the Malaffi-ready export, and the dashboard's simulated data"
+    "sentence": "Every mock or sample surface that exists carries its label: the mock TAMM page, the unverified instrument wording, the sample directory and indicative insurance, the Malaffi-ready export, the sample labs of the context panel, the no-login clinic link's sample channel, and the dashboard's simulated data"
   },
   {
     "id": "staff-apps-have-icons-and-log-no-console-error",

@@ -6,6 +6,7 @@
 //   5. one real "Stop sharing" through the app: the log rows made from the note go, the others and the approved summary stay;
 //   6. "Delete everything" removes the invite a person claimed and keeps the ticket and its source;
 //   6b. a hand-off send and a stop for the same id racing over two connections leave no hand-off and no ledger row, whoever wins;
+//   6c. two presses of one no-login clinic link at once, over two connections, leave exactly one clinic move and one spent link;
 //   7. the demo's POST /demo/reset and one sweep (the +7 days step) leave the funnel and the Urdu row the dashboard reads
 //      equal to the ones PGlite gives for the same steps, with the Urdu row flagged 18 to 22 points below overall, and the
 //      step's stored clock offset (a bigint column) reads back as 7 days, also to an API started afterwards.
@@ -23,8 +24,10 @@ import { loadConfig } from '../config';
 import { connect, schema, type Db } from '../db/client';
 import { MIGRATIONS_FOLDER } from '../db/migrate';
 import { SWEEP_QUEUE, startJobs } from '../jobs';
+import { actOnClinicLink, type ClinicLinkDeps } from '../clinic-links/service';
 import { acceptScreen, formatInviteCode } from '../inbound/service';
 import { readDemoOffset } from '../demo/clock-store';
+import { FACILITY_A_ID } from '../seed/fixtures';
 import { runSeed } from '../seed/run';
 import { sweep } from '../sweep';
 import { createTestApp, signIn } from '../../test/helpers/app';
@@ -212,6 +215,30 @@ try {
       if (rows + ledger > 0) leftBehind += 1;
     }
     check(leftBehind === 0, `a hand-off send and a stop racing for the same id, ${ROUNDS} times over two connections, left no hand-off and no ledger row`);
+
+    // 6c. One no-login clinic link pressed twice at once, over two connections: the link is spent by one update that only matches
+    // an unspent link, so exactly one press moves the ticket and spends it, and the other is the same refusal with nothing written.
+    await db.update(schema.facilities).set({ portalAccess: false }).where(eq(schema.facilities.id, FACILITY_A_ID));
+    const LINK_ROUNDS = 30;
+    const linkDeps = (connection: Db): ClinicLinkDeps => ({ db: connection, clock: ctx.clock, securityClock: ctx.clock, notifier: ctx.notifier, clinicianAppUrl: config.clinicianAppUrl, log: { error: () => undefined } });
+    let linkProblems = 0;
+    for (let round = 0; round < LINK_ROUNDS; round += 1) {
+      const presser = await registerPerson(ctx);
+      const linked = await issue(ctx, presser, ticketRequest(gp));
+      const credential = ctx.notifier.lastClinicCredential();
+      const outcomes = await Promise.all([actOnClinicLink(linkDeps(pools[0]!.db), credential, 'acknowledged'), actOnClinicLink(linkDeps(pools[1]!.db), credential, 'acknowledged')]);
+      const moves = await db.select({ toState: schema.ticketEvents.toState, actor: schema.ticketEvents.actor }).from(schema.ticketEvents).where(eq(schema.ticketEvents.ticketId, linked.id)).orderBy(schema.ticketEvents.seq);
+      const links = await db.select({ usedAt: schema.clinicLinks.usedAt }).from(schema.clinicLinks).where(eq(schema.clinicLinks.ticketId, linked.id));
+      const ok =
+        outcomes.filter((outcome) => outcome.kind === 'done').length === 1 &&
+        outcomes.filter((outcome) => outcome.kind === 'invalid').length === 1 &&
+        moves.map((move) => `${move.toState}:${move.actor}`).join(',') === 'issued:person,acknowledged:clinic' &&
+        links.filter((link) => link.usedAt !== null).length === 1 &&
+        links.length === 2; // the spent one, and the fresh link logged for the move that is left
+      if (!ok) linkProblems += 1;
+    }
+    check(linkProblems === 0, `two presses of one clinic link at once, ${LINK_ROUNDS} times over two connections, left exactly one acknowledge by the clinic, one spent link and the other press refused as an invalid link`);
+    await db.update(schema.facilities).set({ portalAccess: true }).where(eq(schema.facilities.id, FACILITY_A_ID));
   } finally {
     await ctx.app.close();
   }

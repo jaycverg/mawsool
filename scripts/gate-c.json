@@ -332,11 +332,21 @@
   },
   {
     "id": "mock-label-audit",
-    "sentence": "Every mock or sample surface that exists is labelled, checked in the E2E; messaging and the crisis-line console are Phase 6 and are not built",
+    "sentence": "Every mock or sample surface that exists is labelled, checked in the E2E, the sample labs of the context panel and the no-login clinic link's sample channel included, in both languages; messaging and the crisis-line console are Phase 6 and are not built",
     "tests": [
       {
         "project": "packages/ui",
         "file": "test/messages.test.ts"
+      },
+      {
+        "project": "apps/clinician",
+        "file": "test/sample-labs.test.ts",
+        "name": "are named in both languages, and carry the mock label"
+      },
+      {
+        "project": "apps/clinician",
+        "file": "test/clinic-link.test.ts",
+        "name": "exist in both languages, the Arabic in Arabic, and name the channel as a sample"
       }
     ],
     "browser": "mock-label-audit"
