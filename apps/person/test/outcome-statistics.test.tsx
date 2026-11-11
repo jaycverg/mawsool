@@ -136,14 +136,13 @@ describe('finishing the repeat check keeps the phone\'s note of the choice hones
     expect(await noteOf(store)).toBe(false);
   });
 
-  it('puts the previous value back when the server refuses (409) a send that carried true, since nothing changed there', async () => {
-    const off = server({ status: 409 });
-    expect(await finishRepeatCheck(off.deps, TICKET_ID, SCORES, true)).toBe('not_ready');
-    expect(await noteOf(off.store)).toBe(false);
-    const on = server({ status: 409 });
-    await saveOutcomeStatistics(on.store.storage, true);
-    expect(await finishRepeatCheck(on.deps, TICKET_ID, SCORES, true)).toBe('not_ready');
-    expect(await noteOf(on.store)).toBe(true);
+  it('keeps the note true even when the server refuses (409), since another tab may have turned the choice on there', async () => {
+    for (const before of [false, true]) {
+      const { deps, store } = server({ status: 409 });
+      await saveOutcomeStatistics(store.storage, before);
+      expect(await finishRepeatCheck(deps, TICKET_ID, SCORES, true)).toBe('not_ready');
+      expect(await noteOf(store), `was ${before}`).toBe(true);
+    }
   });
 
   it('keeps the note true when a send that carries true is confirmed', async () => {
@@ -231,6 +230,28 @@ describe('the box beside the totals', () => {
     const withoutTotals = box(render(locale, false, true));
     expect(withoutTotals).toContain('disabled');
     expect(withoutTotals).not.toContain('checked');
+  });
+
+  it.each(['en', 'ar'] as const)('tells the person nothing was sent when the phone could not keep its note of the choice, in %s', (locale) => {
+    const html = renderToStaticMarkup(
+      <NextIntlClientProvider locale={locale} messages={MESSAGES[locale]}>
+        <Totals
+          check={{ phq9: screening('phq9'), gad7: screening('gad7') }}
+          ticket={ticket}
+          bandNames={{ mild: 'mild' }}
+          names={{ phq9: 'PHQ-9', gad7: 'GAD-7' }}
+          share
+          setShare={() => undefined}
+          statistics
+          setStatistics={() => undefined}
+          send="note_failed"
+          onFinish={() => undefined}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(html).toContain(MESSAGES[locale].remeasure.statisticsNoteFailed);
+    expect(html).toContain('data-note-failed');
+    expect(render(locale, true, true)).not.toContain('data-note-failed');
   });
 
   it('is not offered when the share with the clinic has ended, since there is nothing to count', () => {

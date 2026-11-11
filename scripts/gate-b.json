@@ -2520,7 +2520,7 @@
   },
   {
     "id": "outcome-statistics-note-on-the-phone-never-hides-a-choice-the-server-may-hold",
-    "sentence": "The phone writes its note that the statistics choice may be on BEFORE a send that carries true, and sends nothing, telling the person, when the note cannot be written; the note stays true after a lost reply, an unreadable answer or a server failure, and goes back to its previous value only after a refusal (409); a send that carries false clears it only on a confirmed reply, and a note that cannot be cleared stays on so Settings can still turn it off; a send without the choice leaves it alone",
+    "sentence": "The phone writes its note that the statistics choice may be on BEFORE a send that carries true, and sends nothing, telling the person, when the note cannot be written; the note stays true after a lost reply, an unreadable answer or a server failure, and stays true after a refusal (409) too, since another tab's send may have turned it on; a send that carries false clears it only on a confirmed reply, and a note that cannot be cleared stays on so Settings can still turn it off; a send without the choice leaves it alone",
     "tests": [
       {
         "project": "apps/person",
@@ -2545,7 +2545,17 @@
       {
         "project": "apps/person",
         "file": "test/outcome-statistics.test.tsx",
-        "name": "puts the previous value back when the server refuses (409) a send that carried true"
+        "name": "tells the person nothing was sent when the phone could not keep its note of the choice, in en"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "tells the person nothing was sent when the phone could not keep its note of the choice, in ar"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "keeps the note true even when the server refuses (409)"
       },
       {
         "project": "apps/person",
