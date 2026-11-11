@@ -176,6 +176,10 @@
     "sentence": "The anonymous screen says in both languages what works, what it cannot do (no ticket, nothing shared, nothing kept on a server) and what stays on the phone; options, consent, ticket, claim, tamm, remeasure and next-day show that explanation in place of the screen, render nothing of it, and make no request to the API"
   },
   {
+    "id": "anonymous-banner-link-is-a-touch-target-and-adds-no-scroll-to-a-short-screen",
+    "sentence": "At 390 px wide, the anonymous banner's \"What this means\" link is at least 44 px by 44 px, and Home, a walled screen and the check-ins list that fit the viewport still do not scroll with the banner on, in both languages"
+  },
+  {
     "id": "anonymous-crisis-is-kept-on-the-phone-never-sent-and-removed-by-delete-everything",
     "sentence": "A crisis opened in an anonymous session shows every number, takes a call and a \"reached someone\" answer, offers no hand-off, survives a reload on the phone, is neither sent nor queued, and Delete everything in the session removes the crisis block and the check-ins with no request to the API"
   },

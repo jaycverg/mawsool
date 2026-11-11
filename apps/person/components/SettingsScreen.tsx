@@ -316,6 +316,7 @@ export function SettingsScreen() {
               {removal.done.crisisRecord === 'sent' && <p className="t-small text-muted">{t('deletedCrisisSent')}</p>}
               {removal.done.crisisRecord === 'deleted' && <p className="t-small text-muted">{t('deletedCrisisLost')}</p>}
               {removal.done.crisisWasOpen && <p className="t-small text-muted">{t('deletedCrisisOpen')}</p>}
+              {removal.done.anonymousLeft && <p className="t-small text-muted">{t('deletedAnonymousLater')}</p>}
             </div>
           )}
           {removal === 'blocked' && <p role="alert" className="text-[15px] font-semibold text-danger">{t('blocked')}</p>}

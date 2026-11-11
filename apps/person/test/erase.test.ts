@@ -102,7 +102,7 @@ describe('Delete everything', () => {
   it('wipes at once, without any network call, when this phone never gave the server anything', async () => {
     const s = setup();
     await s.prepare();
-    expect(await eraseEverything(s.deps)).toEqual({ status: 'erased', crisisRecord: 'none', crisisWasOpen: false });
+    expect(await eraseEverything(s.deps)).toEqual({ status: 'erased', crisisRecord: 'none', crisisWasOpen: false, anonymousLeft: false });
     expect(s.calls).toEqual(['CLEAR']);
     expect(s.store.data.size).toBe(0);
     expect(s.mark.get()).toBeNull();
@@ -133,14 +133,14 @@ describe('Delete everything', () => {
   it('sends a crisis record that was never sent before it wipes, and says so', async () => {
     const s = setup({ unsent: true, flush: 'sends', crisisOpen: true });
     await s.prepare();
-    expect(await eraseEverything(s.deps)).toEqual({ status: 'erased', crisisRecord: 'sent', crisisWasOpen: true });
+    expect(await eraseEverything(s.deps)).toEqual({ status: 'erased', crisisRecord: 'sent', crisisWasOpen: true, anonymousLeft: false });
     expect(s.calls).toEqual(['FLUSH', 'CLEAR']);
   });
 
   it('lets erasure win when the crisis record cannot be sent: it is deleted with the rest, and the outcome says so', async () => {
     const s = setup({ unsent: true, flush: 'fails', crisisOpen: true });
     await s.prepare();
-    expect(await eraseEverything(s.deps)).toEqual({ status: 'erased', crisisRecord: 'deleted', crisisWasOpen: true });
+    expect(await eraseEverything(s.deps)).toEqual({ status: 'erased', crisisRecord: 'deleted', crisisWasOpen: true, anonymousLeft: false });
     expect(s.store.data.size).toBe(0);
     expect(s.mark.get()).toBeNull();
   });

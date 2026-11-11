@@ -1,5 +1,5 @@
 import type { StorageAdapter, TabMarkAdapter } from '@mawsool/ui';
-import { wipeAnonymousData, type AnonymousStore } from './anonymous';
+import { keepAnonymousSessions, wipeAnonymousData, type AnonymousStore } from './anonymous';
 import { KEYS } from './keys';
 
 /**
@@ -31,16 +31,31 @@ export async function exportDeviceData(storage: StorageAdapter, now: () => Date)
   );
 }
 
+/** What wiping the phone left behind. */
+export interface DeviceWipe {
+  /** Some anonymous check-in databases could not be deleted just now. Their ids are back on the list, and the next start of the app deletes them. */
+  anonymousLeft: boolean;
+}
+
 /**
- * Wipes everything on this phone: the encrypted store and its key, the anonymous session's encrypted store and its key, and the tab's crisis mark with them, so deleting
+ * Wipes everything on this phone: the encrypted store and its key, the anonymous sessions' encrypted stores and their keys, and the tab's crisis mark with them, so deleting
  * everything leaves nothing behind that could still hold a block. Nothing on the server is touched here; `eraseEverything`
  * (erase.ts) does that first.
+ *
+ * An anonymous database that cannot be deleted (the browser refuses, or something holds it open) never stops the rest, because the
+ * server's copy is already gone by now and a retry that fails the same way would strand the person's data here:
+ *
+ *  1. the list of anonymous session ids is read (a browser that cannot list its databases is searched through that list alone);
+ *  2. every database that can be deleted is;
+ *  3. the device store is cleared regardless;
+ *  4. the ids of the databases still there are written back to the list, so the next start of the app deletes them.
  */
-export async function deleteDeviceData(storage: StorageAdapter, tabMark?: TabMarkAdapter<unknown>, anonymous?: AnonymousStore | null): Promise<void> {
-  // What an anonymous session kept on this device goes first, whichever mode the deleting is done in: its encrypted check-ins and
-  // their key. It goes before the device store is cleared because the list of sessions to delete lives in that store; if it cannot all
-  // be deleted nothing is cleared, and the person is told it failed.
-  if (!(await wipeAnonymousData(anonymous))) throw new Error('the anonymous check-ins could not be deleted');
+export async function deleteDeviceData(storage: StorageAdapter, tabMark?: TabMarkAdapter<unknown>, anonymous?: AnonymousStore | null): Promise<DeviceWipe> {
+  const { left } = await wipeAnonymousData(anonymous);
   await storage.clear();
   tabMark?.set(null);
+  // Best effort: the ids are the only way a browser that cannot list its databases finds these again. Failing to write them is not
+  // a failure to erase, and the note to the person is the same either way.
+  await keepAnonymousSessions(left, anonymous);
+  return { anonymousLeft: left.length > 0 };
 }

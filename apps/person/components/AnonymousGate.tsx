@@ -31,31 +31,36 @@ export function AnonymousGate({ children }: { children: ReactNode }) {
   const walled = isAnonymousWalledPath(pathname);
   if (walled && mode === 'checking') return <main aria-busy="true" className="min-h-dvh" data-anonymous-gate="checking" />;
   const showBanner = mode === 'anonymous' && stripLocale(pathname) !== '/crisis';
+  // The banner and the screen share one viewport-high column, and the screen's own root (`min-h-dvh`, or a `main` sized to the viewport) gives up the banner's height, so
+  // the banner adds no scroll to a short page. The wrappers render in every mode (as `contents`, which lays out nothing), so the
+  // screen below is never remounted when the mode becomes known.
   return (
-    <>
+    <div className={showBanner ? 'flex min-h-dvh flex-col' : 'contents'}>
       {showBanner && (
-        <p role="note" className="flex flex-wrap items-center justify-center gap-x-2 bg-mock px-4 py-2 text-center text-[13px] font-semibold text-mock-ink" data-anonymous-banner>
-          {t('banner')}
-          <a className="underline" href={href(lang, 'anonymous')}>
+        <div role="note" className="flex items-center justify-between gap-x-3 bg-mock px-4 text-[13px] font-semibold text-mock-ink" data-anonymous-banner>
+          <p className="py-2">{t('banner')}</p>
+          <a className="tap inline-flex shrink-0 items-center underline" href={href(lang, 'anonymous')}>
             {t('bannerLink')}
           </a>
-        </p>
+        </div>
       )}
-      {walled && mode === 'anonymous' ? (
-        <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-4 px-4 py-6" data-anonymous-wall>
-          <h1 className="t-h1">{t('wallTitle')}</h1>
-          <p className="t-body">{t('wallBody')}</p>
-          <AnonymousFacts cannotOnly />
-          <a className="btn-primary" href={href(lang, 'anonymous')}>
-            {t('wallMeaning')}
-          </a>
-          <a className="tap flex items-center justify-center text-[15px] font-semibold text-accent" href={href(lang, '')}>
-            {t('wallHome')}
-          </a>
-        </main>
-      ) : (
-        children
-      )}
-    </>
+      <div className={showBanner ? 'flex flex-1 flex-col [&>.min-h-dvh]:min-h-0 [&>.min-h-dvh]:flex-1 [&>main]:min-h-0 [&>main]:w-full [&>main]:flex-1' : 'contents'}>
+        {walled && mode === 'anonymous' ? (
+          <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-4 px-4 py-6" data-anonymous-wall>
+            <h1 className="t-h1">{t('wallTitle')}</h1>
+            <p className="t-body">{t('wallBody')}</p>
+            <AnonymousFacts cannotOnly />
+            <a className="btn-primary" href={href(lang, 'anonymous')}>
+              {t('wallMeaning')}
+            </a>
+            <a className="tap flex items-center justify-center text-[15px] font-semibold text-accent" href={href(lang, '')}>
+              {t('wallHome')}
+            </a>
+          </main>
+        ) : (
+          children
+        )}
+      </div>
+    </div>
   );
 }

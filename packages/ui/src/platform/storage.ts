@@ -110,16 +110,20 @@ export function createIndexedDbStorage(options: IndexedDbStorageOptions): Storag
   };
 }
 
+/** What `deleteIndexedDb` reports: the browser deleted the database, or something still holds a connection to it and the deletion is only queued. */
+export type IndexedDbDeletion = 'deleted' | 'blocked';
+
 /**
- * Deletes the whole database `dbName`, every record in it. Resolves once the browser has deleted it; rejects if it could not.
- * Connections that are open to it, in this page or another, are asked to close first. Resolves too, without waiting for the
- * last connection to close, if something holds a connection and ignores the request: the deletion then finishes when it does.
+ * Deletes the whole database `dbName`, every record in it. Connections that are open to it, in this page or another, are asked to
+ * close first. Resolves `'deleted'` once the browser has deleted it; rejects if it could not. Resolves `'blocked'`, without waiting for
+ * the last connection to close, if something holds a connection and ignores the request: the browser finishes the deletion when it
+ * does, but the database still exists now, so a caller that keeps a record of it must keep that record.
  */
-export function deleteIndexedDb(factory: IDBFactory, dbName: string): Promise<void> {
+export function deleteIndexedDb(factory: IDBFactory, dbName: string): Promise<IndexedDbDeletion> {
   return new Promise((resolve, reject) => {
     const deleting = factory.deleteDatabase(dbName);
-    deleting.onsuccess = () => resolve();
+    deleting.onsuccess = () => resolve('deleted');
     deleting.onerror = () => reject(deleting.error ?? new Error('IndexedDB could not be deleted'));
-    deleting.onblocked = () => resolve();
+    deleting.onblocked = () => resolve('blocked');
   });
 }

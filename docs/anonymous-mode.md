@@ -14,7 +14,7 @@ no registration, directory fetch, clock read, crisis event or hand-off, so an an
 ## What it keeps, and where
 
 - The tab's note `{ session }` in `sessionStorage` under `mawsool.anonymous`: a random id, nothing else.
-- The list of anonymous session ids this device has made a database for, in the device's own encrypted store (`KEYS.anonymousSessions`; ciphertext, local, never sent). An id is added before the session's database is first written and removed once that database is confirmed deleted. It lets a database be found and deleted where the browser cannot list its databases, and "Delete everything" clears it.
+- The list of anonymous session ids this device has made a database for, in the device's own encrypted store (`KEYS.anonymousSessions`; ciphertext, local, never sent). An id is added before the session's database is first written and removed once that database is confirmed deleted (a deletion that is only queued behind a connection that ignores the request does not count). It lets a database be found and deleted where the browser cannot list its databases. When the last id goes the key goes too, so a device with no session left holds no list.
 - The crisis block stays in the ordinary device store (safety beats wipe). It is marked `anonymous`, and so is the tab's crisis
   mark, so that a repair that runs after the session ended still never queues the event. It never waits on the anonymous
   database, so a store that refuses or hangs cannot stand between the person and the crisis screen.
@@ -28,7 +28,10 @@ lives, and is never stored. The session note, the database name and the crisis m
 ## When the database is deleted
 
 - Leaving the session (the person confirms; refused while a crisis is open).
-- "Delete everything", in either mode: every session's database, live or not, and no request when anonymous.
+- "Delete everything", in either mode: every session's database, live or not, and no request when anonymous. It never strands the
+  phone's other data behind a database that will not delete: it reads the list of session ids (searching through the list alone
+  when the browser's own listing fails), deletes every database it can, clears the device store regardless, writes the ids that
+  were not deleted back to the list and reports "erased" with a note that those check-ins are removed at the next start of the app.
 - The next start of the app in any tab, for every session whose Web Lock has been free for 2 s: a closed tab cannot wipe its
   own store, and a reload releases the lock only between two pages, which the 2 s grace waits out. A session that is live in
   another tab is never deleted by this.

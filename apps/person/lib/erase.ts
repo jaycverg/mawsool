@@ -2,7 +2,7 @@ import type { StorageAdapter, TabMarkAdapter } from '@mawsool/ui';
 import type { AnonymousStore } from './anonymous';
 import { loadHandoffs } from './crisis-handoff';
 import { pendingEvents, type FlushResult } from './crisis-outbox';
-import { deleteDeviceData } from './device-data';
+import { deleteDeviceData, type DeviceWipe } from './device-data';
 import { callServer, hasServerFootprint, type ServerDeps } from './server';
 import { within } from './within';
 
@@ -16,6 +16,8 @@ export type EraseOutcome =
       crisisRecord: 'none' | 'sent' | 'deleted';
       /** A crisis screen was open when everything was wiped. The block goes with the data; Help now remains. */
       crisisWasOpen: boolean;
+      /** An anonymous check-in database could not be deleted just now; it is deleted at the next start of the app. */
+      anonymousLeft: boolean;
     }
   /** The server holds data that only this phone's secret can ask to remove, and it could not be reached. Nothing was deleted. */
   | { status: 'blocked' }
@@ -45,7 +47,9 @@ export interface EraseDeps {
  *     server is asked to revoke every consent, delete the summaries and notes and clear the buckets, with the ids of the notes
  *     this phone made so that one still on its way is refused. If it cannot be reached, the run stops here
  *     with nothing deleted. A phone that never did so wipes without any network.
- *  3. The encrypted store, its key, the anonymous session's encrypted store and its key, and the tab's crisis mark are removed.
+ *  3. The encrypted store, its key, the anonymous sessions' encrypted stores and their keys, and the tab's crisis mark are removed.
+ *     An anonymous store that cannot be deleted right now does not stop the rest: the erase still reports as done, and says that
+ *     those check-ins are deleted at the next start of the app.
  */
 export async function eraseEverything(deps: EraseDeps): Promise<EraseOutcome> {
   let footprint: boolean;
@@ -75,10 +79,11 @@ export async function eraseEverything(deps: EraseDeps): Promise<EraseOutcome> {
     if (!revoked.ok) return { status: 'blocked' };
   }
 
+  let wiped: DeviceWipe;
   try {
-    await deleteDeviceData(deps.storage, deps.tabMark, deps.anonymousStore);
+    wiped = await deleteDeviceData(deps.storage, deps.tabMark, deps.anonymousStore);
   } catch {
     return { status: 'failed' };
   }
-  return { status: 'erased', crisisRecord, crisisWasOpen };
+  return { status: 'erased', crisisRecord, crisisWasOpen, anonymousLeft: wiped.anonymousLeft };
 }
