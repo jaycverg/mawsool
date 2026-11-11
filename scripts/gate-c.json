@@ -614,16 +614,20 @@
   },
   {
     "id": "mw-704-the-seeded-demo-shows-numbers-on-the-symptom-change-tile",
-    "sentence": "The deterministic seed gives 36 of its 47 re-measured tickets consent rows and a stored bundle of both totals of both instruments, and opts their people in to the anonymous statistics, so that straight after a reset, on the dashboard's default view, the symptom-change tile shows numbers (ten or more counted, ten or more excluded, the mean change and the share who improved for both instruments); the seed stays deterministic, the rest of the seed is unchanged, and the stored bundles open for their own ticket only",
+    "sentence": "The deterministic seed gives 35 of its seen tickets a repeat check (re-measured and closed on the care clock, six weeks or more after they were seen and before the reference time), consent rows and a stored bundle of both totals of both instruments, and opts their people in to the anonymous statistics, so that on the dashboard's default view straight after a reset and at every position of the demo clock up to 28 days and 23 hours later the symptom-change tile shows numbers (re-measured count, and for both instruments 35 counted, the mean change and the share who improved; the share who deteriorated is Suppressed by design); the seed stays deterministic, every other seed table is drawn as before, and the stored bundles open for their own ticket only",
     "project": "apps/api",
     "tests": [
       {
         "file": "test/seed.test.ts",
-        "name": "gives 36 of the 47 re-measured tickets a ticket consent, a scores consent and a bundle"
+        "name": "gives 35 re-measured tickets a ticket consent, a scores consent and a bundle"
       },
       {
         "file": "test/seed.test.ts",
         "name": "opts in the people of those tickets and nobody else"
+      },
+      {
+        "file": "test/seed.test.ts",
+        "name": "places each repeat check after the six weeks"
       },
       {
         "file": "test/seed.test.ts",
@@ -656,6 +660,10 @@
       {
         "file": "test/metrics.test.ts",
         "name": "shows numbers on the symptom-change tile in the default view straight after a reset"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "keeps the demo’s dashboard readable in the default view"
       }
     ],
     "browser": "symptom-change-tile-shows-numbers-on-the-default-view-and-ignores-the-period-filter"

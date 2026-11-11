@@ -1,6 +1,7 @@
 import { isCompleteScreening, remeasureAvailableAt } from '@mawsool/rules';
 import { RemeasureResultSchema, type PersonTicketView, type RemeasureRequest, type Screening } from '@mawsool/types';
 import type { StorageAdapter } from '@mawsool/ui';
+import { loadOutcomeStatistics, saveOutcomeStatistics } from './outcome-statistics';
 import { loadScreenings } from './screening-store';
 import { callServer, type ServerDeps } from './server';
 
@@ -82,4 +83,38 @@ export async function sendRemeasure(server: ServerDeps, ticketId: string, scores
   const sent = await callServer<unknown>(server, 'POST', `/me/tickets/${ticketId}/remeasure`, { scores, ...(statisticsOptIn === undefined ? {} : { statisticsOptIn }) });
   if (sent.ok) return RemeasureResultSchema.safeParse(sent.body).success ? 'done' : 'failed';
   return sent.reason === 'rejected' && sent.status === 409 ? 'not_ready' : 'failed';
+}
+
+/**
+ * - everything `RemeasureSent` says, and
+ * - `note_failed`: the phone could not write its note that the statistics choice may be on at the server, so nothing was sent
+ *   (a send that could turn the choice on without a note of it would leave Settings with no way to turn it off).
+ */
+export type RepeatCheckSent = RemeasureSent | 'note_failed';
+
+/**
+ * Finishes the repeat check, keeping the phone's note of the statistics choice honest about what the server may hold, the way the
+ * phone notes `serverMayHoldPhone` before it sends a number. The note means "may be on at the server".
+ *
+ *  - A send that carries `true` writes the note `true` BEFORE it is made, and a note that cannot be written stops the send
+ *    (`note_failed`). The note then stays `true` whatever follows: a lost reply or an answer that cannot be read may still have
+ *    turned it on. Only a refusal (409), which changed nothing, puts the previous value back.
+ *  - A send that carries `false` clears the note only on a confirmed `done`; a lost reply leaves it as it was, and so does a note
+ *    that cannot be cleared (the choice then still shows in Settings, where it can be turned off again).
+ *  - A send with no choice (`undefined`, the totals were not sent) leaves the note alone.
+ */
+export async function finishRepeatCheck(server: ServerDeps, ticketId: string, scores: RemeasureRequest['scores'], statisticsOptIn: boolean | undefined): Promise<RepeatCheckSent> {
+  if (statisticsOptIn === undefined) return sendRemeasure(server, ticketId, scores);
+  const previous = await loadOutcomeStatistics(server.storage).catch(() => false);
+  if (statisticsOptIn) {
+    try {
+      await saveOutcomeStatistics(server.storage, true);
+    } catch {
+      return 'note_failed';
+    }
+  }
+  const outcome = await sendRemeasure(server, ticketId, scores, statisticsOptIn);
+  if (outcome === 'done' && !statisticsOptIn) await saveOutcomeStatistics(server.storage, false).catch(() => undefined);
+  if (outcome === 'not_ready' && statisticsOptIn && !previous) await saveOutcomeStatistics(server.storage, previous).catch(() => undefined);
+  return outcome;
 }

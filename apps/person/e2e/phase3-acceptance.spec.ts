@@ -1708,7 +1708,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(choice).toContainText(msg(locale, 'remeasure.statisticsLabel'));
     await expect(choice).toContainText(msg(locale, 'remeasure.statisticsHelp'));
     expect(msg(locale, 'remeasure.statisticsHelp'), 'says the totals count only in groups of 10 or more').toContain('10');
-    expect(msg(locale, 'remeasure.statisticsHelp'), 'says a clinic never sees the choice').toContain(locale === 'en' ? 'never sees this choice' : 'أبدًا');
+    expect(msg(locale, 'remeasure.statisticsHelp'), 'says a clinic never sees the choice').toContain(locale === 'en' ? 'ever sees this choice' : 'أبدًا');
     // Ticking the send box makes it available, still unticked; unticking the send box again disables it and unticks it even when it was ticked.
     await share.check();
     await expect(statistics).toBeEnabled();

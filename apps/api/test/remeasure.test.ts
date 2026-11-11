@@ -507,6 +507,15 @@ describe('the repeat check at six weeks', () => {
       }
     });
 
+    it('is stored even when no totals are sent, since only the screen pairs the two and the figures count a ticket only when both totals are on the server', async () => {
+      const mine = await registerPerson(ctx);
+      const ticket = await seen(['ticket', 'scores'], mine);
+      at(ticket.seenAt, SIX_WEEKS);
+      expect((await remeasure(ticket.id, { scores: [], statisticsOptIn: true }, mine)).statusCode).toBe(200);
+      expect(await choiceOf(mine)).toBe(true);
+      expect((await storedContent(testDb.db, ticket.id))!.scores).toHaveLength(1);
+    });
+
     it('refuses a value that is not a yes or a no, and changes nothing', async () => {
       const mine = await registerPerson(ctx);
       const ticket = await seen(['ticket', 'scores'], mine);

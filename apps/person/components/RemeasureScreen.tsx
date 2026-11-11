@@ -7,12 +7,12 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { API_URL } from '../lib/api';
-import { loadOutcomeStatistics, saveOutcomeStatistics } from '../lib/outcome-statistics';
+import { loadOutcomeStatistics } from '../lib/outcome-statistics';
 import { deviceFetch } from '../lib/net';
 import { INSTRUMENT_TAG } from '../lib/bands';
 import { deviceNow } from '../lib/clock';
 import { formatDate } from '../lib/format';
-import { idFrom, loadRepeatCheck, remeasureDue, remeasureOpensAt, sendRemeasure, totalsOf, type RepeatCheck } from '../lib/remeasure';
+import { finishRepeatCheck, idFrom, loadRepeatCheck, remeasureDue, remeasureOpensAt, totalsOf, type RepeatCheck } from '../lib/remeasure';
 import { href } from '../lib/routes';
 import { callServer } from '../lib/server';
 import { useDevice } from '../lib/use-device';
@@ -24,7 +24,7 @@ type Load =
   | { status: 'missing' }
   | { status: 'ready'; ticket: PersonTicketView; check: RepeatCheck | null };
 
-export type Send = 'idle' | 'sending' | 'failed' | 'not_ready';
+export type Send = 'idle' | 'sending' | 'failed' | 'not_ready' | 'note_failed';
 
 /**
  * The end of the repeat check. With both questionnaires done it shows the two totals and two choices, each off until ticked:
@@ -85,12 +85,9 @@ export function RemeasureScreen() {
     if (device === null || device === 'unavailable') return;
     setSend('sending');
     const server = { storage: device.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, random: window.crypto };
-    const outcome = await sendRemeasure(server, ticket.id, share ? totalsOf(check) : [], share ? statistics : undefined);
-    if (outcome === 'done') {
-      if (share) await saveOutcomeStatistics(device.storage, statistics).catch(() => undefined);
-      return window.location.assign(href(lang, 'ticket', { id: ticket.id }));
-    }
-    setSend(outcome === 'not_ready' ? 'not_ready' : 'failed');
+    const outcome = await finishRepeatCheck(server, ticket.id, share ? totalsOf(check) : [], share ? statistics : undefined);
+    if (outcome === 'done') return window.location.assign(href(lang, 'ticket', { id: ticket.id }));
+    setSend(outcome);
   }
 
   return (
@@ -211,6 +208,7 @@ export function Totals({ check, ticket, bandNames, names, share, setShare, stati
       <p className="t-small text-muted">{t('stays')}</p>
       {send === 'failed' && <p role="alert" className="t-body text-danger">{t('failed')}</p>}
       {send === 'not_ready' && <p role="alert" className="t-body text-danger">{t('conflict')}</p>}
+      {send === 'note_failed' && <p role="alert" className="t-body text-danger" data-note-failed>{t('statisticsNoteFailed')}</p>}
       <button type="button" className="btn-primary" disabled={send === 'sending'} onClick={onFinish} data-control="finish-remeasure">
         {send === 'sending' ? t('sending') : t('finish')}
       </button>
