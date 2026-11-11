@@ -14,7 +14,7 @@ import type { AppConfig } from './config';
 import { createCipher } from './crypto';
 import type { Db } from './db/client';
 import { issueClinicLink } from './clinic-links/service';
-import { LogMagicLinkNotifier, type Notifier } from './notifier';
+import { createDriver, createNotifier, type Notifier } from './notifier';
 import { registerClinicLinkRoutes } from './routes/clinic-links';
 import { registerAuth } from './plugins/auth';
 import { registerInboundAuth } from './plugins/inbound-auth';
@@ -44,7 +44,7 @@ declare module 'fastify' {
 
 export interface AppDeps {
   db: Db;
-  config: Pick<AppConfig, 'corsOrigins' | 'clinicianAppUrl' | 'opsAppUrl' | 'encryptionKey' | 'summaryLlmEnabled'> & Partial<Pick<AppConfig, 'personAppUrl' | 'inboundKeys' | 'demoMode'>>;
+  config: Pick<AppConfig, 'corsOrigins' | 'clinicianAppUrl' | 'opsAppUrl' | 'encryptionKey' | 'summaryLlmEnabled'> & Partial<Pick<AppConfig, 'personAppUrl' | 'inboundKeys' | 'demoMode' | 'notifierDriver'>>;
   /** The summary provider. Null (or the flag off) means no text ever leaves the API. */
   summaryProvider?: SummaryProvider | null;
   /**
@@ -97,7 +97,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return reply.code(status).send({ error: status >= 500 ? 'internal_error' : 'bad_request', message: status >= 500 ? 'Something went wrong' : error.message });
   });
 
-  const notifier = deps.notifier ?? new LogMagicLinkNotifier(app.log);
+  // Every outbound message goes through the notifier, whose driver is a mock (`NOTIFIER_DRIVER`): nothing is sent.
+  const notifier = deps.notifier ?? createNotifier(createDriver(deps.config.notifierDriver ?? 'log', { log: app.log, encryptionKey: deps.config.encryptionKey }));
   registerHealthRoutes(app);
   registerPersonRoutes(app, { db: deps.db, clock });
   registerAuthRoutes(app, {
@@ -115,7 +116,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // A ticket for a clinic without the portal gets its one-time link, logged, once the ticket is made. It can never fail the request.
   const consentDeps = { db: deps.db, cipher, clock, securityClock, onTicketIssued: async (ticketId: string) => void (await issueClinicLink(clinicLinks, ticketId)) };
   registerTicketFlowRoutes(app, consentDeps);
-  registerReminderRoutes(app, consentDeps);
+  registerReminderRoutes(app, { ...consentDeps, notifier });
   registerCrisisHandoffRoutes(app, consentDeps);
   registerClinicLinkRoutes(app, clinicLinks);
   registerPersonDataRoutes(app, { ...consentDeps, summary: { enabled: deps.config.summaryLlmEnabled, provider: deps.summaryProvider ?? null } });

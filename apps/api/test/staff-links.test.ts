@@ -1,7 +1,6 @@
 import { Writable } from 'node:stream';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app';
-import { LogMagicLinkNotifier } from '../src/notifier';
 import { runSeed } from '../src/seed/run';
 import { STAFF_LINK_LOCALE, staffAppFor, staffSignInLink } from '../src/staff-links';
 import { createTestApp, type TestApp } from './helpers/app';
@@ -9,19 +8,6 @@ import { createTestDb, type TestDb } from './helpers/db';
 import { TEST_CONFIG } from './helpers/config';
 
 const APPS = { clinician: 'http://clinic.test', ops: 'http://ops.test' };
-
-describe('LogMagicLinkNotifier', () => {
-  it('logs the link, the address and the expiry, and sends nothing', async () => {
-    const info = vi.fn();
-    const expiresAt = new Date('2026-11-01T08:15:00Z');
-    await new LogMagicLinkNotifier({ info }).send({ to: 'a@demo.mawsool.test', link: 'http://x.test/en/sign-in/?token=t', expiresAt });
-    expect(info).toHaveBeenCalledTimes(1);
-    expect(info).toHaveBeenCalledWith(
-      { to: 'a@demo.mawsool.test', link: 'http://x.test/en/sign-in/?token=t', expiresAt: '2026-11-01T08:15:00.000Z' },
-      'staff sign-in link (logged, not sent)',
-    );
-  });
-});
 
 describe('staff sign-in link target', () => {
   it('opens the clinician app for a clinician and the ops app for ops and admin', () => {

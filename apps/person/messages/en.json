@@ -338,6 +338,8 @@
     "remindersNumberLabel": "Mobile number (optional)",
     "remindersSaveNumber": "Save number",
     "remindersRemoveNumber": "Remove number",
+    "remindersSampleButton": "Show a sample text",
+    "remindersSampleDone": "A sample text was prepared. Nothing was sent: this version sends no real text messages.",
     "remindersDenied": "Notifications are not allowed in this browser, so the reminder will show on the home screen when you open the app.",
     "remindersInvalid": "Enter the number in international form, for example +971501234567.",
     "remindersFailed": "That could not be done. Connect to the internet and try again.",

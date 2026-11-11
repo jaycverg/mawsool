@@ -3,26 +3,25 @@ import type { SummaryProvider } from '@mawsool/summary';
 import { buildApp } from '../../src/app';
 import { ManualClock } from '../../src/clock';
 import type { Db } from '../../src/db/client';
-import type { ClinicLinkMessage, MagicLinkMessage, Notifier } from '../../src/notifier';
+import type { ClinicLinkMessage, Notifier, OutboundMessage, ReminderTextMessage, StaffSignInMessage } from '../../src/notifier';
 import { TEST_CONFIG } from './config';
 
 export const TEST_START = new Date('2026-11-01T08:00:00+04:00');
 
 /** Captures sign-in links instead of logging them, so tests can use the token. */
 export class CapturingNotifier implements Notifier {
-  readonly sent: MagicLinkMessage[] = [];
+  readonly sent: StaffSignInMessage[] = [];
+  /** The sample text reminders that were "sent" (nothing is), oldest first. */
+  readonly texts: ReminderTextMessage[] = [];
   /** The no-login clinic links that were "sent" (logged), oldest first. */
   readonly clinicLinks: ClinicLinkMessage[] = [];
   failWith: Error | null = null;
 
-  async send(message: MagicLinkMessage): Promise<void> {
+  async send(message: OutboundMessage): Promise<void> {
     if (this.failWith) throw this.failWith;
-    this.sent.push(message);
-  }
-
-  async sendClinicLink(message: ClinicLinkMessage): Promise<void> {
-    if (this.failWith) throw this.failWith;
-    this.clinicLinks.push(message);
+    if (message.template === 'staff_sign_in') this.sent.push(message);
+    else if (message.template === 'clinic_link') this.clinicLinks.push(message);
+    else this.texts.push(message);
   }
 
   /** The ticket id and token of the most recent clinic link, read from its fragment as the page reads it. */

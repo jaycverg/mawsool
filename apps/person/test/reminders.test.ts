@@ -11,6 +11,7 @@ import {
   reminderDue,
   reminderDueAt,
   removeReminderNumber,
+  requestReminderSample,
   runDueReminder,
   saveReminderNumber,
   setReminderInterval,
@@ -224,6 +225,14 @@ describe('the optional number for text reminders', () => {
     expect((await loadReminders(store.storage))?.phone).toBe(NUMBER);
     expect(await store.storage.keys()).toContain('server:footprint');
     expect(JSON.stringify(await store.storage.get('screenings'))).not.toContain('971');
+  });
+
+  it('asks the server for a sample text with no body, changes nothing on the phone, and says whether one was prepared', async () => {
+    const { store, calls, deps } = setup();
+    expect(await requestReminderSample(deps)).toBe('prepared');
+    expect(calls).toEqual([{ method: 'POST', path: '/me/reminder-phone/sample', body: undefined }]);
+    expect(await loadReminders(store.storage)).toEqual(SETTINGS);
+    for (const reply of ['offline', 'rejected'] as const) expect(await requestReminderSample(setup(reply).deps), reply).toBe('failed');
   });
 
   it('keeps nothing on the phone when the server does not take the number', async () => {
