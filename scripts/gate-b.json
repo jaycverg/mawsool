@@ -2047,6 +2047,268 @@
     "browser": "anonymous-banner-link-is-a-touch-target-and-adds-no-scroll-to-a-short-screen"
   },
   {
+    "id": "anonymous-result-note-link-is-a-touch-target",
+    "sentence": "The anonymous result note's \"What this means\" link is a 44 px target at 390 px in both languages and adds no sideways scroll",
+    "browser": "anonymous-result-note-link-is-a-touch-target"
+  },
+  {
+    "id": "every-guarded-or-walled-route-names-a-screen-that-exists",
+    "sentence": "Every route the crisis guard sends to the crisis screen and every route an anonymous session cannot open has an exported page, so none of them 404; the two that never had a screen (a reroute goes through the options screen, the next-day check is its own screen) are no longer listed",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/routes.test.ts",
+        "name": "has an exported page for each entry of both lists"
+      },
+      {
+        "file": "test/routes.test.ts",
+        "name": "would fail for a route with no page"
+      },
+      {
+        "file": "test/routes.test.ts",
+        "name": "no longer lists the two routes that never had a screen"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "is decided for every screen of the app"
+      }
+    ]
+  },
+  {
+    "id": "outcome-statistics-choice-is-its-own-off-by-default-and-sent-with-the-totals",
+    "sentence": "Counting the totals sent to a clinic in anonymous statistics is a separate choice of the person, off by default (a new person, the repeat check's box and Settings all start with it off), offered next to the box that sends the totals and only usable with it, stored with the move in the same transaction as the repeat check or not at all (a refused, lost or too early request leaves it as it was), and left as it was by a request that does not carry it",
+    "tests": [
+      {
+        "project": "apps/api",
+        "file": "test/consent.test.ts",
+        "name": "is off for a new person, turns on and off through its own route, and is not the equity choice"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/consent.test.ts",
+        "name": "refuses a body that is not exactly a yes or a no, and changes nothing"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/remeasure.test.ts",
+        "name": "is stored with the move, on and then off, and a person who never sends it stays off"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/remeasure.test.ts",
+        "name": "is left exactly as it was by a request that does not carry it"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/remeasure.test.ts",
+        "name": "refuses a value that is not a yes or a no, and changes nothing"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/remeasure.test.ts",
+        "name": "too early: 409"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/remeasure.test.ts",
+        "name": "from a state other than seen: 409"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/remeasure.test.ts",
+        "name": "a total taken before the check opened: 400"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/remeasure.test.ts",
+        "name": "nothing shared for the ticket any more: 409"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/remeasure.test.ts",
+        "name": "no room in the stored totals: 409"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/remeasure.test.ts",
+        "name": "a rival takes the second sequence number after the choice was written"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/persons.test.ts",
+        "name": "stores only the hash of the secret, the locale and the registration time"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/access.test.ts"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "reads as off until it is saved, as saved after, and as off for a damaged value"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "adds the choice only when it is given"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "is unticked and disabled by default in en, and says it in its own words"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "is unticked and disabled by default in ar, and says it in its own words"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "is available but still unticked once the totals are to be sent, in en"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "is available but still unticked once the totals are to be sent, in ar"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "shows ticked only with the totals to be sent, and unticked and disabled again when they are not, in en"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "shows ticked only with the totals to be sent, and unticked and disabled again when they are not, in ar"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "is not offered when the share with the clinic has ended"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "says the totals count only in groups of 10 or more and that a clinic never sees the choice, in en"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "says the totals count only in groups of 10 or more and that a clinic never sees the choice, in ar"
+      }
+    ],
+    "browser": "repeat-check-counts-in-anonymous-statistics-only-when-ticked-and-only-with-the-totals"
+  },
+  {
+    "id": "outcome-statistics-choice-is-turned-off-in-settings-and-erased-by-delete-everything",
+    "sentence": "Settings shows the choice only while it is on, in both languages, and one button turns it off at the server first (it stays on, and says so, when the server cannot be reached); turning it off takes the person's tickets out of the next read of the symptom-change figures, and Delete everything clears it on the server and on the phone, every column of the person's row having a reviewed fate in the erase-reach check",
+    "tests": [
+      {
+        "project": "apps/api",
+        "file": "test/consent.test.ts",
+        "name": "is cleared by delete everything, and only for the person who asked"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/erase-reach.test.ts",
+        "name": "lists each column of the table, and none that is gone"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/erase-reach.test.ts",
+        "name": "names, for each cleared column, a test file that mentions it"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "takes a ticket out of the next response when the person turns the choice off"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "asks the server first, with exactly the choice and nothing else, and then notes it on the phone"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "leaves the choice on, on the phone, when the server cannot be reached"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "is done when the server stopped counting even though the phone could not note it"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "is removed by the wipe like every other key"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "shows nothing while the choice is off, which is the default, in en"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "shows nothing while the choice is off, which is the default, in ar"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "says it is on, in its own words, with one button that turns it off, in en"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "says it is on, in its own words, with one button that turns it off, in ar"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "has the same keys in both languages and Arabic text in Arabic script"
+      }
+    ],
+    "browser": "settings-turns-off-anonymous-statistics-and-shows-nothing-while-it-is-off"
+  },
+  {
+    "id": "outcome-statistics-choice-never-reaches-the-clinic",
+    "sentence": "A clinic never sees the statistics choice: the queue, the ticket, the bundle and the FHIR export it reads are byte for byte the same before and after the person turns it on and name nothing of it, no clinic-facing schema has a field for it, the clinician app's screens and messages never mention it, and the phone's referral, consent and summary modules never carry it",
+    "tests": [
+      {
+        "project": "apps/api",
+        "file": "test/consent.test.ts",
+        "name": "never reaches what a clinic reads"
+      },
+      {
+        "project": "packages/types",
+        "file": "test/types.test.ts",
+        "name": "names no field of anything a clinic reads"
+      },
+      {
+        "project": "packages/types",
+        "file": "test/types.test.ts",
+        "name": "is a field of the person record and of the two requests that carry it"
+      },
+      {
+        "project": "apps/clinician",
+        "file": "test/no-statistics-choice.test.ts",
+        "name": "know nothing of the person's choice to count their totals in anonymous statistics"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "is named by no module that builds or sends a referral, a consent, a bundle or a summary"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "is stored under its key by one module and put in a request body by one other"
+      }
+    ]
+  },
+  {
     "id": "mw-802-every-outbound-message-goes-through-a-notifier-with-mock-drivers",
     "sentence": "Every outbound message (the staff sign-in link, the clinic link and the sample text reminder) goes through one Notifier with a console driver and a log driver, both labelled mocks that send nothing; the driver is chosen by NOTIFIER_DRIVER, parsed strictly, and any other value stops the API",
     "project": "apps/api",

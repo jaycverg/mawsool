@@ -4,6 +4,7 @@ import {
   ErrorResponseSchema,
   GrantConsentRequestSchema,
   ConsentRecordSchema,
+  OutcomeStatisticsRequestSchema,
   RevokeConsentResultSchema,
   SummaryDraftRequestSchema,
   SummaryDraftSchema,
@@ -26,7 +27,7 @@ export interface PersonDataDeps extends ConsentDeps {
 }
 
 /**
- * The consent ledger, the summary draft, the equity opt-in and "delete everything": the routes where a person grants,
+ * The consent ledger, the summary draft, the equity and statistics opt-ins and "delete everything": the routes where a person grants,
  * withdraws or erases what the server holds about them. Every one acts on the caller's own rows only.
  */
 export function registerPersonDataRoutes(app: FastifyInstance, deps: PersonDataDeps): void {
@@ -85,6 +86,17 @@ export function registerPersonDataRoutes(app: FastifyInstance, deps: PersonDataD
         )
         .where(eq(schema.persons.id, personId(request)));
       return { optIn };
+    },
+  );
+
+  // The separate, default-off choice to count the totals shared with the clinic in the anonymous symptom-change figures. It is
+  // the caller's own row only, and read by the metrics at the moment they are made, so turning it off takes effect on the next read.
+  typed.put(
+    '/me/outcome-statistics',
+    { config: { access: 'person' }, schema: { body: OutcomeStatisticsRequestSchema, response: { 200: z.object({ optIn: z.boolean() }), 400: ErrorResponseSchema } } },
+    async (request) => {
+      await deps.db.update(schema.persons).set({ outcomeStatsOptIn: request.body.optIn }).where(eq(schema.persons.id, personId(request)));
+      return { optIn: request.body.optIn };
     },
   );
 

@@ -2,6 +2,7 @@ import { AdvanceClockRequestSchema, AdvanceClockResultSchema, ClockStateSchema, 
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Clock, OffsetClock } from '../clock';
+import type { Cipher } from '../crypto';
 import type { Db } from '../db/client';
 import { createClockMover } from '../demo/clock-store';
 import { resetDemo } from '../demo/reset';
@@ -28,6 +29,8 @@ export function registerClockRoute(app: FastifyInstance, deps: { demoClock: Offs
 
 export interface DemoRouteDeps {
   db: Db;
+  /** The bundle cipher the reset's seed stores the shared totals of its re-measured tickets with. */
+  cipher: Cipher;
   clock: OffsetClock;
   /** The wall clock the sweep purges security windows by. */
   securityClock: Clock;
@@ -59,6 +62,6 @@ export function registerDemoRoutes(app: FastifyInstance, deps: DemoRouteDeps): v
   typed.post(
     '/demo/reset',
     { config: { access: 'admin' }, schema: { response: { 200: DemoResetResultSchema } } },
-    async () => mover.exclusive(() => resetDemo({ db: deps.db, clock: deps.clock, personAppUrl: deps.personAppUrl })),
+    async () => mover.exclusive(() => resetDemo({ db: deps.db, cipher: deps.cipher, clock: deps.clock, personAppUrl: deps.personAppUrl })),
   );
 }

@@ -105,6 +105,10 @@ export const services = pgTable(
 /**
  * Pseudonymous. The server stores the hash of the device's secret and, only when the person opted in,
  * the four coarse equity buckets. No name, email, Emirates ID or phone column exists.
+ *
+ * `outcomeStatsOptIn` is its own choice, off until the person turns it on: the totals they sent the clinic count in the
+ * anonymous symptom-change figures only while it is on. It is read at the moment the figures are made, never copied onto a
+ * ticket or a bundle, and no clinic-facing read returns it.
  */
 export const persons = pgTable(
   'persons',
@@ -113,6 +117,7 @@ export const persons = pgTable(
     secretHash: text('secret_hash').notNull(),
     locale: localeEnum('locale').notNull(),
     equityOptIn: boolean('equity_opt_in').notNull().default(false),
+    outcomeStatsOptIn: boolean('outcome_stats_opt_in').notNull().default(false),
     ageBand: ageBandEnum('age_band'),
     gender: genderEnum('gender'),
     language: careLanguageEnum('language'),

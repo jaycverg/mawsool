@@ -156,6 +156,14 @@
     "sentence": "The person's control to end a seen ticket moves it from seen to closed with the person as actor, and nothing is offered to end a ticket that has not been seen"
   },
   {
+    "id": "repeat-check-counts-in-anonymous-statistics-only-when-ticked-and-only-with-the-totals",
+    "sentence": "The repeat check's totals screen offers a separate box to count the totals in anonymous statistics, unticked by default, disabled and unticked while the box to send the totals is unticked, worded in both languages to say the totals count only in anonymous group figures of 10 or more and a clinic never sees the choice; the request carries the choice only with the totals, and the phone remembers it"
+  },
+  {
+    "id": "settings-turns-off-anonymous-statistics-and-shows-nothing-while-it-is-off",
+    "sentence": "Settings shows nothing about anonymous statistics while the choice is off; once on, it says so in both languages and one button turns it off at the server first, staying on and saying so when the server cannot be reached, and gone for good after it succeeds"
+  },
+  {
     "id": "repeat-check-starts-a-fresh-check-in-and-never-finishes-an-old-one",
     "sentence": "The repeat check starts a fresh PHQ-9 at question 1 even when an unfinished one from before the clinic saw the person is on the phone, and both start links, and the link to the GAD-7, carry the exact moment the check opened"
   },
@@ -178,6 +186,10 @@
   {
     "id": "anonymous-banner-link-is-a-touch-target-and-adds-no-scroll-to-a-short-screen",
     "sentence": "At 390 px wide, the anonymous banner's \"What this means\" link is at least 44 px by 44 px, and Home, a walled screen and the check-ins list that fit the viewport still do not scroll with the banner on, in both languages"
+  },
+  {
+    "id": "anonymous-result-note-link-is-a-touch-target",
+    "sentence": "At 390 px wide, the \"What this means\" link in the anonymous result note is at least 44 px by 44 px and adds no sideways scroll, in both languages"
   },
   {
     "id": "anonymous-crisis-is-kept-on-the-phone-never-sent-and-removed-by-delete-everything",

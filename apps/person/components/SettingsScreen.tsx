@@ -25,6 +25,7 @@ import {
   type ReminderChange,
   type ReminderSettings,
 } from '../lib/reminders';
+import { loadOutcomeStatistics, turnOffOutcomeStatistics } from '../lib/outcome-statistics';
 import { callServer, markServerFootprint, type ServerDeps } from '../lib/server';
 import { href } from '../lib/routes';
 import { loadEquity, saveEquity } from '../lib/share';
@@ -32,6 +33,7 @@ import { useDevice, type Device } from '../lib/use-device';
 import { BottomNav } from './BottomNav';
 import { CrisisHandoffPanel } from './CrisisHandoffPanel';
 import { HomeHeader } from './HomeHeader';
+import { OutcomeStatisticsPanel, type StatisticsState } from './OutcomeStatisticsPanel';
 
 type ReminderNote = 'none' | 'working' | 'failed' | 'blocked' | 'invalid' | 'denied' | 'sample';
 
@@ -60,6 +62,8 @@ export function SettingsScreen() {
   const anonymous = usable && device.anonymous;
   const [equityOn, setEquityOn] = useState<boolean | null>(null);
   const [equityState, setEquityState] = useState<'idle' | 'working' | 'removed' | 'failed'>('idle');
+  const [statisticsOn, setStatisticsOn] = useState<boolean | null>(null);
+  const [statisticsState, setStatisticsState] = useState<StatisticsState>('idle');
   const [reminders, setReminders] = useState<ReminderSettings | null>(null);
   const [reminderNote, setReminderNote] = useState<ReminderNote>('none');
   const [phoneInput, setPhoneInput] = useState('');
@@ -67,6 +71,7 @@ export function SettingsScreen() {
   useEffect(() => {
     if (!usable) return;
     void loadEquity(device.storage).then((stored) => setEquityOn(stored.optIn), () => setEquityOn(null));
+    void loadOutcomeStatistics(device.storage).then(setStatisticsOn, () => setStatisticsOn(null));
     void loadReminders(device.storage).then(setReminders, () => setReminders(null));
   }, [device, usable]);
 
@@ -118,6 +123,20 @@ export function SettingsScreen() {
       setEquityState('removed');
     } catch {
       setEquityState('failed');
+    }
+  }
+
+  /** Stops the person's totals counting in anonymous statistics: the server first (so the next read of the figures leaves them out), then the phone's note. */
+  async function turnOffStatistics() {
+    if (!usable) return;
+    setStatisticsState('working');
+    try {
+      const outcome = await turnOffOutcomeStatistics(serverFor(device));
+      if (outcome === 'failed') return setStatisticsState('failed');
+      setStatisticsOn(false);
+      setStatisticsState('removed');
+    } catch {
+      setStatisticsState('failed');
     }
   }
 
@@ -292,6 +311,8 @@ export function SettingsScreen() {
             {equityState === 'failed' && <p role="alert" className="text-[15px] font-semibold text-danger">{t('equityFailed')}</p>}
           </section>
         )}
+
+        <OutcomeStatisticsPanel on={statisticsOn === true} state={statisticsState} onTurnOff={() => void turnOffStatistics()} />
 
         {usable && !anonymous && <CrisisHandoffPanel device={device} lang={lang} mode="settings" />}
 

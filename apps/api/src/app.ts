@@ -124,7 +124,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerMetricsRoutes(app, { db: deps.db, clock, encryptionKey: deps.config.encryptionKey, cipher });
   registerAdverseEventRoutes(app, { db: deps.db, clock, securityClock });
   // The write controls exist only in a demo; with `DEMO_MODE` unset these paths are 404.
-  if (demoClock) registerDemoRoutes(app, { db: deps.db, clock: demoClock, securityClock, personAppUrl: deps.config.personAppUrl ?? 'http://localhost:3000' });
+  if (demoClock) registerDemoRoutes(app, { db: deps.db, cipher, clock: demoClock, securityClock, personAppUrl: deps.config.personAppUrl ?? 'http://localhost:3000' });
   // The OpenAPI document is generated from the routes' Zod schemas, so it cannot drift from what the API accepts.
   app.get('/docs', { config: { access: 'public' } }, async () => app.swagger());
   deps.extraRoutes?.(app);

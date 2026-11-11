@@ -111,6 +111,14 @@
         "name": "suppresses the median when fewer than ten contacts stand behind it"
       },
       {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "shows nothing when fewer than ten tickets were re-measured"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "works out the mean change and the two shares on a fixture"
+      },
+      {
         "file": "test/access.test.ts"
       }
     ],
@@ -427,7 +435,7 @@
   },
   {
     "id": "mw-704-symptom-change-uses-only-shared-totals-with-the-reliable-change-thresholds",
-    "sentence": "Among re-measured tickets the dashboard shows the mean change in PHQ-9 and GAD-7 (the repeat total minus the referral total) and the shares with reliable improvement and deterioration, with thresholds from the rules config (PHQ-9 6, GAD-7 4, the threshold itself counting as reliable); only totals the person shared are used, and a re-measured ticket without consent or without both totals is excluded and counted as excluded",
+    "sentence": "Among re-measured tickets the dashboard shows the mean change in PHQ-9 and GAD-7 (the repeat total minus the referral total) and the shares with reliable improvement and deterioration, with thresholds from the rules config (PHQ-9 6, GAD-7 4, the threshold itself counting as reliable); only totals the person shared are used and only when the person also opted in to anonymous statistics (a separate choice, off by default, read when the figures are made), and a re-measured ticket without consent, without both totals, or whose person did not opt in is excluded and counted as excluded in the same one figure, with no figure of its own for the people who did not opt in",
     "project": "apps/api",
     "tests": [
       {
@@ -468,6 +476,26 @@
       },
       {
         "file": "test/metrics-outcomes.test.ts",
+        "name": "leaves a ticket out when its person has not opted in, with every consent live and both totals on the server"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "counts it when the person has opted in"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "does not open the bundle of a person who has not opted in"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "counts a person's excluded ticket as excluded, once, in the figure the other exclusions use"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "takes a ticket out of the next response when the person turns the choice off"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
         "name": "is served to the ops role on its own route"
       },
       {
@@ -482,7 +510,7 @@
   },
   {
     "id": "mw-704-symptom-change-is-suppressed-and-follows-the-funnel",
-    "sentence": "Every symptom-change figure goes through suppression: nothing under ten re-measured, included or excluded tickets is shown, a share needs its part, its whole and what is left over at ten, the parts that add up to others are hidden together, the two instruments' included counts are hidden together when they differ by 1 to 9 so they cannot subtract into a small group (the re-measured count itself stays shown unless the funnel hides it), and every figure is hidden whenever the funnel hides its re-measured stage",
+    "sentence": "Every symptom-change figure goes through suppression: nothing under ten re-measured, included or excluded tickets is shown, a share needs its part, its whole and what is left over at ten, the parts that add up to others are hidden together, the two instruments' included counts are hidden together when they differ by 1 to 9 so they cannot subtract into a small group (the re-measured count itself stays shown unless the funnel hides it), and every figure is hidden whenever the funnel hides its re-measured stage for the same last 90 days",
     "project": "apps/api",
     "tests": [
       {
@@ -519,7 +547,7 @@
       },
       {
         "file": "test/metrics-outcomes.test.ts",
-        "name": "answers for each period of the funnel"
+        "name": "is tied to the funnel's re-measured stage for the same 90 days"
       },
       {
         "file": "test/metrics-outcomes.test.ts",
@@ -538,6 +566,99 @@
         "name": "keeps the re-measured count shown when the tie hides an instrument whose excluded count is nothing"
       }
     ]
+  },
+  {
+    "id": "mw-704-symptom-change-is-served-for-one-period-only",
+    "sentence": "GET /metrics/outcomes is served for the last 90 days alone, as equity is: any other period, the other ones the period schema allows included, is a 400 with no figures, so the same figure in two periods cannot be subtracted into a small group's results; the figures are tied to the funnel's re-measured stage for that same 90-day window, the dashboard's period filter does not reach the tile, which says so in both languages in its note and its info panel, and the definitions test still matches",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "refuses every other period with a 400 and no figures"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "answers the last 90 days whether the period is named or left out"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "never publishes a count of an older window"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "starts the window where the funnel's last 90 days start"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "is tied to the funnel's re-measured stage for the same 90 days"
+      },
+      {
+        "file": "test/metric-definitions.test.ts",
+        "name": "gives the symptom-change section the equity section's one period"
+      },
+      {
+        "file": "test/metric-definitions.test.ts",
+        "name": "returns each named field"
+      },
+      {
+        "file": "test/metric-definitions.test.ts",
+        "name": "is the file generated from the definitions"
+      },
+      {
+        "project": "packages/types",
+        "file": "test/types.test.ts",
+        "name": "is served for one period: the symptom-change query accepts the last 90 days and nothing else"
+      }
+    ],
+    "browser": "symptom-change-tile-shows-numbers-on-the-default-view-and-ignores-the-period-filter"
+  },
+  {
+    "id": "mw-704-the-seeded-demo-shows-numbers-on-the-symptom-change-tile",
+    "sentence": "The deterministic seed gives 36 of its 47 re-measured tickets consent rows and a stored bundle of both totals of both instruments, and opts their people in to the anonymous statistics, so that straight after a reset, on the dashboard's default view, the symptom-change tile shows numbers (ten or more counted, ten or more excluded, the mean change and the share who improved for both instruments); the seed stays deterministic, the rest of the seed is unchanged, and the stored bundles open for their own ticket only",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/seed.test.ts",
+        "name": "gives 36 of the 47 re-measured tickets a ticket consent, a scores consent and a bundle"
+      },
+      {
+        "file": "test/seed.test.ts",
+        "name": "opts in the people of those tickets and nobody else"
+      },
+      {
+        "file": "test/seed.test.ts",
+        "name": "holds a referral and a repeat total of each instrument, taken before and after the repeat check opened"
+      },
+      {
+        "file": "test/seed.test.ts",
+        "name": "splits the changes the way the quotas say"
+      },
+      {
+        "file": "test/seed.test.ts",
+        "name": "stores each seeded bundle as ciphertext that opens for its own ticket only"
+      },
+      {
+        "file": "test/seed.test.ts",
+        "name": "would notice a changed total when two databases are compared"
+      },
+      {
+        "file": "test/seed.test.ts",
+        "name": "produces identical rows from two generator runs"
+      },
+      {
+        "file": "test/seed.test.ts",
+        "name": "holds the same data in two separate databases seeded at different times"
+      },
+      {
+        "file": "test/seed.test.ts",
+        "name": "plants the Urdu loop-closed gap"
+      },
+      {
+        "file": "test/metrics.test.ts",
+        "name": "shows numbers on the symptom-change tile in the default view straight after a reset"
+      }
+    ],
+    "browser": "symptom-change-tile-shows-numbers-on-the-default-view-and-ignores-the-period-filter"
   },
   {
     "id": "mw-706-adverse-events-are-coded-recorded-on-two-clocks-and-hold-no-person",

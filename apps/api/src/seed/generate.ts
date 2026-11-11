@@ -3,6 +3,7 @@ import {
   AGE_BANDS,
   SHORT_CODE_ALPHABET,
   type Actor,
+  type BundleContent,
   type CareLanguage,
   type CrisisNumber,
   type TicketSource,
@@ -22,6 +23,7 @@ import {
   SERVICE_NAMES_AR,
   STAFF,
 } from './fixtures';
+import { buildOutcomeShares } from './outcome-shares';
 import { createRng, type Rng } from './prng';
 
 /** The insert shape of a table, with its id required: every seeded row carries a deterministic id. */
@@ -36,6 +38,23 @@ export interface SeedData {
   ticketEvents: Insert<typeof schema.ticketEvents>[];
   crisisEvents: Insert<typeof schema.crisisEvents>[];
   inboundInvites: Insert<typeof schema.inboundInvites>[];
+  /** The consent rows of the seeded tickets that share their repeat totals: the required `ticket` element and `scores`. */
+  consents: Insert<typeof schema.consents>[];
+  /**
+   * The shared bundles of those tickets, with their content in the clear. The bundle is stored as ciphertext (a random IV
+   * each time), so the seed loader encrypts it with the API's key; keeping the plain content here is what keeps the generator
+   * pure and the same rows comparable run to run.
+   */
+  sharedBundles: SeedBundle[];
+}
+
+/** A seeded bundle before encryption. */
+export interface SeedBundle {
+  id: string;
+  ticketId: string;
+  recipient: string;
+  content: BundleContent;
+  createdAt: Date;
 }
 
 /** Sizes the spec and plan fix. */
@@ -298,7 +317,8 @@ function buildInvites(rng: Rng, anchorMs: number, tickets: SeedData['tickets'], 
  *
  * Contents: 2 facilities and 24 sample services (all but the 6 self-help ones tied to a facility), demo staff,
  * 500 tickets over 90 days with chains of rerouted tickets, 40 crisis events, and equity buckets for the
- * persons who opted in. Tickets come from every source. The loop-closed rate (a ticket reached `seen` or later)
+ * persons who opted in, and 36 re-measured tickets whose person shared both repeat totals and opted in to the anonymous
+ * statistics (consent rows and a bundle each), so the symptom-change tile has numbers. Tickets come from every source. The loop-closed rate (a ticket reached `seen` or later)
  * is planted at 46.7% for Urdu-language tickets against 70.0% for the rest.
  */
 export function generateSeed(anchor: Date = SEED_ANCHOR): SeedData {
@@ -420,6 +440,8 @@ export function generateSeed(anchor: Date = SEED_ANCHOR): SeedData {
         secretHash: sha256Hex(`seed-person-${personId}`),
         locale: slot.language === 'ar' ? 'ar' : rng.weighted<'ar' | 'en'>([['ar', 0.2], ['en', 0.8]]),
         equityOptIn: optedIn,
+        // Off for everyone here; the tickets that share their repeat totals turn it on below.
+        outcomeStatsOptIn: false,
         ageBand: optedIn ? rng.weighted([...AGE_BANDS.map((band, i) => [band, [0.03, 0.25, 0.3, 0.2, 0.12, 0.1][i]!] as const)]) : null,
         gender: optedIn ? rng.weighted([['female', 0.5], ['male', 0.45], ['another', 0.05]] as const) : null,
         language: optedIn ? slot.language : null,
@@ -501,6 +523,24 @@ export function generateSeed(anchor: Date = SEED_ANCHOR): SeedData {
   // Invites, drawn after everything above so the rows above stay exactly as they were.
   const inboundInvites = buildInvites(rng, anchorMs, tickets, persons);
 
+  // The re-measured tickets that share both repeat totals, drawn from a stream of their own so nothing above moves.
+  const eventsOf = Map.groupBy(ticketEvents, (event) => event.ticketId);
+  const remeasuredTickets = tickets.flatMap((ticket) => {
+    const events = eventsOf.get(ticket.id) ?? [];
+    const seen = events.find((event) => event.toState === 'seen');
+    const remeasured = events.find((event) => event.toState === 'remeasured');
+    return seen && remeasured
+      ? [{ ticketId: ticket.id, personId: ticket.personId, serviceId: ticket.serviceId, createdAt: ticket.createdAt!, seenAt: seen.at.getTime(), remeasuredAt: remeasured.at.getTime() }]
+      : [];
+  });
+  const shares = buildOutcomeShares(SEED_NAME, remeasuredTickets);
+  const statisticsPersons = new Set(shares.map((share) => share.personId));
+  for (const person of persons) if (statisticsPersons.has(person.id)) person.outcomeStatsOptIn = true;
+  const consents: SeedData['consents'] = shares.flatMap((share) =>
+    (['ticket', 'scores'] as const).map((element) => ({ id: share.consentIds[element], personId: share.personId, ticketId: share.ticketId, recipient: share.recipient, element, grantedAt: share.createdAt })),
+  );
+  const sharedBundles: SeedData['sharedBundles'] = shares.map((share) => ({ id: share.bundleId, ticketId: share.ticketId, recipient: share.recipient, content: share.content, createdAt: share.createdAt }));
+
   const byTime = <T extends { createdAt?: Date | null; shownAt?: Date }>(rows: T[]): T[] =>
     [...rows].sort((a, b) => (a.createdAt ?? a.shownAt!).getTime() - (b.createdAt ?? b.shownAt!).getTime());
 
@@ -513,5 +553,7 @@ export function generateSeed(anchor: Date = SEED_ANCHOR): SeedData {
     ticketEvents: [...ticketEvents].sort((a, b) => a.ticketId.localeCompare(b.ticketId) || a.seq - b.seq),
     crisisEvents: byTime(crisisEvents),
     inboundInvites: inboundInvites.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id)),
+    consents: consents.sort((a, b) => a.id.localeCompare(b.id)),
+    sharedBundles: sharedBundles.sort((a, b) => a.id.localeCompare(b.id)),
   };
 }

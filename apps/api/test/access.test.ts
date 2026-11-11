@@ -59,6 +59,7 @@ const REVIEWED: Record<string, { access: RouteAccess; kind: Kind }> = {
   'DELETE /consents/:id': { access: 'person', kind: 'person-own' },
   'DELETE /me/data': { access: 'person', kind: 'person-own' },
   'PUT /me/equity': { access: 'person', kind: 'person-own' },
+  'PUT /me/outcome-statistics': { access: 'person', kind: 'person-own' },
   'PUT /me/reminder-phone': { access: 'person', kind: 'person-own' },
   'DELETE /me/reminder-phone': { access: 'person', kind: 'person-own' },
   'POST /me/reminder-phone/sample': { access: 'person', kind: 'person-own' },
@@ -90,7 +91,7 @@ describe('no employer or insurer access (MW-505)', () => {
 
   beforeAll(async () => {
     testDb = await createTestDb();
-    await runSeed(testDb.db);
+    await runSeed(testDb.db, testDb.cipher);
     ctx = await createTestApp(testDb.db);
     owner = await registerPerson(ctx);
     stranger = await registerPerson(ctx);
@@ -171,6 +172,7 @@ describe('no employer or insurer access (MW-505)', () => {
       'POST /me/tickets/:id/reroute': { ...ticketRequest('00000000-0000-4000-8000-000000000001'), reason: 'cost' },
       'POST /consents': { ticketId, element: 'scores', content: {} },
       'PUT /me/equity': { optIn: false },
+      'PUT /me/outcome-statistics': { optIn: false },
       'PUT /me/reminder-phone': { phone: '+971501234567', intervalWeeks: 4 },
       'POST /summary/draft': { requestId: crypto.randomUUID(), locale: 'en', useAi: false, consented: [], content: {} },
       'POST /tickets/:id/events': { to: 'acknowledged' },
@@ -330,7 +332,7 @@ describe('the demo routes (clock and reset)', () => {
 
   beforeAll(async () => {
     testDb = await createTestDb();
-    await runSeed(testDb.db);
+    await runSeed(testDb.db, testDb.cipher);
   });
 
   afterAll(async () => {

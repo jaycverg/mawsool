@@ -36,8 +36,12 @@
     "sentence": "Every tile and section of the ops dashboard has an info button that opens by Enter, Space and touch, is announced as a collapsed or expanded button, closes on Escape and returns the focus, and shows its definition, numerator, denominator, period and suppression note in the page's language, right to left in Arabic, in a 44 px target and with no sideways scroll at 390 px"
   },
   {
+    "id": "symptom-change-tile-shows-numbers-on-the-default-view-and-ignores-the-period-filter",
+    "sentence": "Straight after a reset, on the dashboard's default view, the symptom-change tile shows numbers and no Suppressed cell: the re-measured count, the mean change and the share who improved for both instruments, ten or more counted and ten or more excluded; choosing another period leaves the tile as it was, the page asks the API for the last 90 days each time, and the tile and its info panel say so"
+  },
+  {
     "id": "dashboard-shows-symptom-change-from-shared-totals-and-the-adverse-events-log",
-    "sentence": "The dashboard shows the mean change and the shares with reliable improvement and deterioration among re-measured tickets from the totals people shared (the threshold itself counts as reliable, tickets without both totals are counted as excluded), and its adverse events log records an event from the screen, offers only the legal status moves with their times, lists by status and severity, and holds no free text"
+    "sentence": "The dashboard shows the mean change and the shares with reliable improvement and deterioration among re-measured tickets from the totals people shared and chose to count in anonymous statistics (the threshold itself counts as reliable; tickets without both totals, or whose person did not opt in, are counted as excluded and move no figure), and its adverse events log records an event from the screen, offers only the legal status moves with their times, lists by status and severity, and holds no free text"
   },
   {
     "id": "dashboard-holds-the-board-and-plan-tokens",

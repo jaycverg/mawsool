@@ -43,6 +43,7 @@ describe('person identity', () => {
       secretHash: sha256Hex(secret),
       locale: 'en',
       equityOptIn: false,
+      outcomeStatsOptIn: false,
       ageBand: null,
       gender: null,
       language: null,
@@ -54,7 +55,7 @@ describe('person identity', () => {
 
   it('has no column that could hold a name, email, Emirates ID or phone number', () => {
     const columns = Object.keys(getTableColumns(schema.persons)).sort();
-    expect(columns).toEqual(['ageBand', 'createdAt', 'equityOptIn', 'gender', 'id', 'language', 'locale', 'region', 'secretHash']);
+    expect(columns).toEqual(['ageBand', 'createdAt', 'equityOptIn', 'gender', 'id', 'language', 'locale', 'outcomeStatsOptIn', 'region', 'secretHash']);
   });
 
   it('ignores a phone number or name sent along, and never stores it', async () => {

@@ -1,8 +1,10 @@
 import { RELIABLE_CHANGE, remeasureAvailableAt } from '@mawsool/rules';
-import type { OutcomesResponse, ScoreEntry } from '@mawsool/types';
+import { EQUITY_PERIOD, METRIC_PERIODS, type FunnelResponse, type OutcomesResponse, type ScoreEntry } from '@mawsool/types';
+import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { schema } from '../src/db/client';
-import { loadTicketFacts } from '../src/metrics/facts';
+import { loadTicketFacts, onePeriodStart, periodStart } from '../src/metrics/facts';
+import { sha256Hex } from '../src/security';
 import { journeysOf, remeasuredHiddenInFunnel } from '../src/metrics/funnel';
 import { hiddenCells, pinnedCells } from '../src/metrics/protect';
 import { buildOutcomes, countOutcomes, hiddenOutcomeCells, loadOutcomeFacts, outcomeTable, totalsPair, type OutcomeFact, type TotalsPair } from '../src/metrics/outcomes';
@@ -31,16 +33,19 @@ afterEach(async () => {
   await testDb.close();
 });
 
-const outcomes = async (period = 'all'): Promise<OutcomesResponse> => {
-  const res = await ctx.app.inject({ method: 'GET', url: `/metrics/outcomes?period=${period}`, headers });
+/** The figures as the route answers them: for the one period it serves, whether or not that period is named. */
+const outcomes = async (query = ''): Promise<OutcomesResponse> => {
+  const res = await ctx.app.inject({ method: 'GET', url: `/metrics/outcomes${query}`, headers });
   if (res.statusCode !== 200) throw new Error(`${res.statusCode} ${res.body}`);
   return res.json() as OutcomesResponse;
 };
 const instrument = (response: OutcomesResponse, name: 'phq9' | 'gad7') => response.instruments.find((entry) => entry.instrument === name)!;
 const SUPPRESSED = { suppressed: true };
 
-/** Issued 100 days before the test clock; seen two days later; so the repeat check opened 44 days after that, well before now. */
-const ISSUED = new Date(TEST_START.getTime() - 100 * DAY);
+/** Issued 70 days before the test clock, inside the last 90 days; seen two days later; so the repeat check opened 44 days after that, well before now. */
+const ISSUED = new Date(TEST_START.getTime() - 70 * DAY);
+/** Where the one period the figures are served for begins at the test clock. */
+const SINCE = onePeriodStart(TEST_START);
 const SEEN_AT = new Date(ISSUED.getTime() + 2 * DAY);
 const OPENS = remeasureAvailableAt(SEEN_AT);
 
@@ -58,13 +63,16 @@ interface Shared {
   parent?: string;
   issuedAt?: Date;
   person?: string;
+  /** Whether the person opted in to the anonymous statistics (on unless said), for a person the helper creates. */
+  statsOptIn?: boolean;
   state?: ('acknowledged' | 'seen' | 'remeasured' | 'closed')[];
 }
 
 /** A ticket that went issued, acknowledged, seen, remeasured, closed, with what it shared (or not). */
 async function addRemeasured(shared: Shared = {}): Promise<string> {
   const issuedAt = shared.issuedAt ?? ISSUED;
-  const ticket = await world.addTicket({ issuedAt, path: shared.state ?? ['acknowledged', 'seen', 'remeasured', 'closed'], hours: [1, 48, 24 * 50, 24 * 50 + 1], person: shared.person, parent: shared.parent });
+  const person = shared.person ?? (await world.addPerson({ statsOptIn: shared.statsOptIn ?? true }));
+  const ticket = await world.addTicket({ issuedAt, path: shared.state ?? ['acknowledged', 'seen', 'remeasured', 'closed'], hours: [1, 48, 24 * 50, 24 * 50 + 1], person, parent: shared.parent });
   const consents = shared.consents ?? [{ element: 'ticket' }, { element: 'scores' }];
   for (const consent of consents) {
     await testDb.db.insert(schema.consents).values({
@@ -285,16 +293,17 @@ describe('what is suppressed', () => {
   it('hides every figure whenever the funnel hides its re-measured stage for the period, even when the counts here would be shown', () => {
     const fact = (change: number): OutcomeFact => ({ rootCreatedAt: ISSUED, totals: { phq9: { referral: 14, remeasure: 14 + change }, gad7: { referral: 14, remeasure: 14 + change } } });
     const facts = [...Array(12).fill(-8), ...Array(10).fill(6), ...Array(10).fill(1)].map(fact);
-    const shown = buildOutcomes('all', facts, null, false);
+    const shown = buildOutcomes(facts, SINCE, false);
     expect(shown.remeasured).toBe(32);
-    const hidden = buildOutcomes('all', facts, null, true);
+    const hidden = buildOutcomes(facts, SINCE, true);
     expect(hidden.remeasured).toEqual(SUPPRESSED);
     for (const entry of hidden.instruments) expect(entry).toEqual({ instrument: entry.instrument, included: SUPPRESSED, excluded: SUPPRESSED, meanChange: SUPPRESSED, reliableImprovement: SUPPRESSED, reliableDeterioration: SUPPRESSED });
   });
 
   it('follows the funnel: the funnel hides its re-measured stage under ten journeys and shows it from ten, and the outcome figures with it', async () => {
     await addMany(9, { phq9: -8, gad7: -8 });
-    const inputs = async () => ({ journeys: journeysOf(await loadTicketFacts(testDb.db)), openInvites: [], crisis: [], since: null });
+    // The funnel asked for the same 90 days, all sources and tiers: the stage these figures stand on.
+    const inputs = async () => ({ journeys: journeysOf(await loadTicketFacts(testDb.db)), openInvites: [], crisis: [], since: SINCE });
     expect(remeasuredHiddenInFunnel(await inputs())).toBe(true);
     expect((await outcomes()).remeasured).toEqual(SUPPRESSED);
     await addMany(1, { phq9: -8, gad7: -8 });
@@ -302,11 +311,110 @@ describe('what is suppressed', () => {
     expect((await outcomes()).remeasured).toBe(10);
   });
 
-  it('answers for each period of the funnel: the last 30 days leave out a journey rooted earlier', async () => {
+  it('is tied to the funnel\'s re-measured stage for the same 90 days: the same count as GET /metrics/funnel?period=90d, and hidden with it', async () => {
     await addMany(12, { phq9: -8, gad7: -8 });
-    expect((await outcomes('all')).remeasured).toBe(12);
-    expect((await outcomes('90d')).remeasured).toEqual(SUPPRESSED); // all twelve were issued 100 days ago
-    expect((await outcomes('30d')).remeasured).toEqual(SUPPRESSED);
+    // A journey rooted before the window is in neither the funnel's 90 days nor these figures.
+    await addMany(3, { phq9: -8, gad7: -8 });
+    for (let i = 0; i < 3; i += 1) await addRemeasured({ scores: [referral('phq9', 14), repeat('phq9', 7)], issuedAt: new Date(TEST_START.getTime() - 200 * DAY) });
+    const funnel = (await ctx.app.inject({ method: 'GET', url: '/metrics/funnel?period=90d', headers })).json() as FunnelResponse;
+    const stage = funnel.stages.find((entry) => entry.stage === 'remeasured')!;
+    expect(stage.count).toBe(15);
+    expect((await outcomes()).remeasured).toBe(stage.count);
+  });
+});
+
+describe('the one period the figures are served for', () => {
+  it('refuses every other period with a 400 and no figures, the other periods the schema allows and values it does not', async () => {
+    await addMany(12, { phq9: -8, gad7: -8 });
+    const asked = (query: string) => ctx.app.inject({ method: 'GET', url: `/metrics/outcomes${query}`, headers });
+    const others = [...METRIC_PERIODS.filter((period) => period !== EQUITY_PERIOD), '7d', '365d', 'ALL', ''];
+    expect(others).toEqual(expect.arrayContaining(['all', '30d']));
+    for (const period of others) {
+      const res = await asked(`?period=${period}`);
+      expect(res.statusCode, `period=${period}`).toBe(400);
+      expect(Object.keys(res.json()).sort(), `period=${period} carries no figures`).toEqual(['error', 'message']);
+    }
+  });
+
+  it('answers the last 90 days whether the period is named or left out, with the same figures', async () => {
+    await addMany(12, { phq9: -8, gad7: -8 });
+    const named = await outcomes('?period=90d');
+    const defaulted = await outcomes();
+    expect(defaulted).toEqual(named);
+    expect(defaulted.period).toBe('90d');
+    expect(defaulted.remeasured).toBe(12);
+  });
+
+  it('never publishes a count of an older window, so all time less the last 90 days cannot give a small group\'s results', async () => {
+    // 12 re-measured in the last 90 days, and 6 rooted 200 days ago, each with a clear improvement: the older six would be the
+    // difference between an all-time answer and this one.
+    await addMany(12, { phq9: -8, gad7: -8 });
+    for (let i = 0; i < 6; i += 1) await addRemeasured({ scores: [referral('phq9', 14), repeat('phq9', 6), referral('gad7', 12), repeat('gad7', 6)], issuedAt: new Date(TEST_START.getTime() - 200 * DAY) });
+    const response = await outcomes();
+    expect(response.remeasured).toBe(12);
+    const numbers = (value: unknown): number[] => (typeof value === 'number' ? [value] : value && typeof value === 'object' ? Object.values(value).flatMap(numbers) : []);
+    expect(numbers(response), 'no all-time count in the answer').not.toContain(18);
+    expect((await factsOf()).length - (response.remeasured as number)).toBe(6);
+  });
+
+  it('starts the window where the funnel\'s last 90 days start', () => {
+    for (const now of [TEST_START, new Date('2026-03-01T22:30:00Z'), new Date('2026-06-15T03:00:00Z')]) {
+      expect(onePeriodStart(now)).toEqual(periodStart(EQUITY_PERIOD, now));
+    }
+  });
+});
+
+describe('the separate choice to count in anonymous statistics', () => {
+  const shared = [referral('phq9', 14), repeat('phq9', 7), referral('gad7', 12), repeat('gad7', 8)];
+  const none = { phq9: null, gad7: null };
+  /** A device secret in the shape the API accepts (43 base64url characters). */
+  const SECRET = 'a'.repeat(43);
+
+  it('leaves a ticket out when its person has not opted in, with every consent live and both totals on the server', async () => {
+    const id = await addRemeasured({ scores: shared, statsOptIn: false });
+    expect(await totalsOf(id)).toEqual(none);
+  });
+
+  it('counts it when the person has opted in', async () => {
+    const id = await addRemeasured({ scores: shared, statsOptIn: true });
+    expect(await totalsOf(id)).toEqual({ phq9: { referral: 14, remeasure: 7 }, gad7: { referral: 12, remeasure: 8 } });
+  });
+
+  it('does not open the bundle of a person who has not opted in', async () => {
+    await addRemeasured({ scores: shared, statsOptIn: false });
+    const opened: string[] = [];
+    const watching = { encrypt: cipher.encrypt, decrypt: (token: string, context: string) => (opened.push(context), cipher.decrypt(token, context)) };
+    const facts = await loadOutcomeFacts(testDb.db, watching, await loadTicketFacts(testDb.db));
+    expect(facts).toHaveLength(1);
+    expect(opened).toEqual([]);
+  });
+
+  it('counts a person\'s excluded ticket as excluded, once, in the figure the other exclusions use', async () => {
+    await addMany(14, { phq9: -7, gad7: -5 });
+    for (let i = 0; i < 12; i += 1) await addRemeasured({ scores: shared, statsOptIn: false });
+    const response = await outcomes();
+    expect(response.remeasured).toBe(26);
+    expect(instrument(response, 'phq9')).toMatchObject({ included: 14, excluded: 12 });
+    expect(instrument(response, 'gad7')).toMatchObject({ included: 14, excluded: 12 });
+    expect(Object.keys(response).sort(), 'no separate figure for the people who did not opt in').toEqual(['instruments', 'period', 'reliableChangePoints', 'remeasured']);
+  });
+
+  it('takes a ticket out of the next response when the person turns the choice off, through the route, and puts it back when they turn it on', async () => {
+    const counted: string[] = [];
+    for (let i = 0; i < 12; i += 1) counted.push(await addRemeasured({ scores: shared }));
+    for (let i = 0; i < 12; i += 1) await addRemeasured({ scores: shared, consents: [{ element: 'ticket' }] }); // excluded: no scores consent
+    const [one] = await testDb.db.select({ personId: schema.tickets.personId }).from(schema.tickets).where(eq(schema.tickets.id, counted[0]!));
+    await testDb.db.update(schema.persons).set({ secretHash: sha256Hex(SECRET) }).where(eq(schema.persons.id, one!.personId));
+    const person = { authorization: `Bearer ${one!.personId}.${SECRET}` };
+    const put = (optIn: boolean) => ctx.app.inject({ method: 'PUT', url: '/me/outcome-statistics', headers: person, payload: { optIn } });
+    expect(instrument(await outcomes(), 'phq9')).toMatchObject({ included: 12, excluded: 12 });
+    const off = await put(false);
+    expect(off.statusCode).toBe(200);
+    expect(off.json()).toEqual({ optIn: false });
+    expect(instrument(await outcomes(), 'phq9')).toMatchObject({ included: 11, excluded: 13 });
+    expect(instrument(await outcomes(), 'gad7')).toMatchObject({ included: 11, excluded: 13 });
+    expect((await put(true)).json()).toEqual({ optIn: true });
+    expect(instrument(await outcomes(), 'phq9')).toMatchObject({ included: 12, excluded: 12 });
   });
 });
 
@@ -325,14 +433,14 @@ describe('the two instruments\' counts cannot be subtracted into a small group',
 
   it('hides both instruments\' included and excluded counts, means and shares when they differ by 3 (25 and 22), though each is large and so is its excluded count', () => {
     // 22 with both, 3 with a PHQ-9 only, 35 with neither: PHQ-9 included 25 and excluded 35, GAD-7 included 22 and excluded 38.
-    const response = buildOutcomes('all', facts(22, 3, 35), null, false);
+    const response = buildOutcomes(facts(22, 3, 35), SINCE, false);
     expect(response.remeasured).toBe(60);
     for (const entry of response.instruments) expect(entry, entry.instrument).toEqual(hiddenEverywhere(entry));
   });
 
   it('hides them at a difference of 1 and of 9, the edges of the small group', () => {
     for (const apart of [1, 9]) {
-      const response = buildOutcomes('all', facts(30, apart, 40), null, false);
+      const response = buildOutcomes(facts(30, apart, 40), SINCE, false);
       for (const entry of response.instruments) expect(entry.included, `${apart} apart, ${entry.instrument}`).toEqual(SUPPRESSED);
     }
   });
@@ -349,18 +457,18 @@ describe('the two instruments\' counts cannot be subtracted into a small group',
     // With it shown, no non-empty hidden cell can be worked out exactly from the published ones.
     const nonEmpty = pinnedCells(table, hidden).filter((key) => table.cells.get(key)!.some((count) => count > 0));
     expect(nonEmpty).toEqual([]);
-    const response = buildOutcomes('all', all, null, false);
+    const response = buildOutcomes(all, SINCE, false);
     expect(response.remeasured).toBe(30);
     for (const entry of response.instruments) expect(entry, entry.instrument).toEqual(hiddenEverywhere(entry));
     // The funnel hiding that stage still hides it.
-    expect(buildOutcomes('all', all, null, true).remeasured).toEqual(SUPPRESSED);
+    expect(buildOutcomes(all, SINCE, true).remeasured).toEqual(SUPPRESSED);
   });
 
   it('leaves them independent, and shown, at a difference of 10 (25 and 15) and of none', () => {
-    const ten = buildOutcomes('all', facts(15, 10, 35), null, false);
+    const ten = buildOutcomes(facts(15, 10, 35), SINCE, false);
     expect(ten.instruments.map((entry) => entry.included)).toEqual([25, 15]);
     expect(ten.instruments.map((entry) => entry.excluded)).toEqual([35, 45]);
-    const none = buildOutcomes('all', facts(30, 0, 30), null, false);
+    const none = buildOutcomes(facts(30, 0, 30), SINCE, false);
     expect(none.instruments.map((entry) => entry.included)).toEqual([30, 30]);
   });
 });

@@ -359,6 +359,23 @@ const ANONYMOUS_CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect(api.hits).toEqual([]);
   },
 
+  async 'anonymous-result-note-link-is-a-touch-target'({ page, context, locale }) {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const api = await watchApi(context);
+    await startAnonymous(page, locale, api);
+    await takeCheckIn(page, locale, 'phq9', PHQ9_ELEVEN);
+    const note = page.locator('[data-anonymous-result-note]');
+    await expect(note).toContainText(msg(locale, 'anonymous.resultNote'));
+    const link = note.locator('a');
+    await expect(link).toHaveText(msg(locale, 'anonymous.bannerLink'));
+    await expect(link).toHaveAttribute('href', `/${locale}/anonymous/`);
+    const box = (await link.boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'no sideways scroll at 390 px').toBe(true);
+    expect(api.hits).toEqual([]);
+  },
+
   async 'anonymous-crisis-is-kept-on-the-phone-never-sent-and-removed-by-delete-everything'({ page, context, locale }) {
     const api = await watchApi(context);
     await startAnonymous(page, locale, api);
@@ -1666,6 +1683,120 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await page.goto(summary);
     await expect(page.locator('[data-share-unavailable]')).toBeVisible();
     await expect(share).toHaveCount(0);
+  },
+
+  async 'repeat-check-counts-in-anonymous-statistics-only-when-ticked-and-only-with-the-totals'({ page, context, locale }) {
+    await visitOnline(page, locale);
+    const id = await stubSeenTicket(page, locale);
+    const bodies: Record<string, unknown>[] = [];
+    await page.route(`${API}/me/tickets/${id}/remeasure`, async (route) => {
+      bodies.push(route.request().postDataJSON());
+      await route.fulfill({ json: { state: 'closed', scoresShared: ((bodies.at(-1)!.scores as unknown[]) ?? []).length > 0, events: [] } });
+    });
+    await context.clock.setFixedTime(new Date(SEEN_AT_MS + SIX_WEEKS_MS));
+    await page.goto(`/${locale}/ticket/?id=${id}`);
+    await takeRepeatCheck(page, locale, id);
+    const summary = page.url();
+    const finish = () => page.getByRole('button', { name: msg(locale, 'remeasure.finish'), exact: true }).click();
+    const share = page.locator('[data-control="share-totals"]');
+    const statistics = page.locator('[data-control="count-in-statistics"]');
+    const choice = page.locator('label', { has: statistics });
+
+    // Default off, in its own box with its own words, and unavailable while the totals are not being sent.
+    await expect(statistics).not.toBeChecked();
+    await expect(statistics).toBeDisabled();
+    await expect(choice).toContainText(msg(locale, 'remeasure.statisticsLabel'));
+    await expect(choice).toContainText(msg(locale, 'remeasure.statisticsHelp'));
+    expect(msg(locale, 'remeasure.statisticsHelp'), 'says the totals count only in groups of 10 or more').toContain('10');
+    expect(msg(locale, 'remeasure.statisticsHelp'), 'says a clinic never sees the choice').toContain(locale === 'en' ? 'never sees this choice' : 'أبدًا');
+    // Ticking the send box makes it available, still unticked; unticking the send box again disables it and unticks it even when it was ticked.
+    await share.check();
+    await expect(statistics).toBeEnabled();
+    await expect(statistics).not.toBeChecked();
+    await statistics.check();
+    await expect(statistics).toBeChecked();
+    await share.uncheck();
+    await expect(statistics).toBeDisabled();
+    await expect(statistics).not.toBeChecked();
+
+    // Totals not sent: the move alone, and no word about the choice.
+    await finish();
+    await expect(page).toHaveURL(ticketUrl(locale));
+    expect(bodies).toEqual([{ scores: [] }]);
+
+    // Totals sent, the choice left off: the request says so, so a choice made earlier cannot linger.
+    await page.goto(summary);
+    await share.check();
+    await finish();
+    await expect(page).toHaveURL(ticketUrl(locale));
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toMatchObject({ statisticsOptIn: false });
+    expect((bodies[1]!.scores as unknown[]).length).toBe(2);
+
+    // Both ticked: the choice travels with the totals in the same request.
+    await page.goto(summary);
+    await share.check();
+    await statistics.check();
+    await finish();
+    await expect(page).toHaveURL(ticketUrl(locale));
+    expect(bodies).toHaveLength(3);
+    expect(bodies[2]).toMatchObject({ statisticsOptIn: true });
+    expect(JSON.stringify(bodies[2])).not.toContain('answers');
+    expect(await rawStoreKeys(page)).toContain('outcome-statistics');
+
+    // The phone remembers it: the box is ticked next time the totals are sent, and still unticked and disabled while they are not.
+    await page.goto(summary);
+    await expect(statistics).toBeDisabled();
+    await expect(statistics).not.toBeChecked();
+    await share.check();
+    await expect(statistics).toBeChecked();
+  },
+
+  async 'settings-turns-off-anonymous-statistics-and-shows-nothing-while-it-is-off'({ page, context, locale, consoleGuard }) {
+    await visitOnline(page, locale);
+    await page.goto(`/${locale}/settings/`);
+    await expect(page.locator('[data-panel="reminders"]')).toBeVisible();
+    // Off by default: Settings has no panel for it.
+    await expect(page.locator('[data-panel="statistics"]')).toHaveCount(0);
+
+    // Turn it on where the totals are sent.
+    const id = await stubSeenTicket(page, locale);
+    await page.route(`${API}/me/tickets/${id}/remeasure`, (route) => route.fulfill({ json: { state: 'closed', scoresShared: true, events: [] } }));
+    await context.clock.setFixedTime(new Date(SEEN_AT_MS + SIX_WEEKS_MS));
+    await page.goto(`/${locale}/ticket/?id=${id}`);
+    await takeRepeatCheck(page, locale, id);
+    await page.locator('[data-control="share-totals"]').check();
+    await page.locator('[data-control="count-in-statistics"]').check();
+    await page.getByRole('button', { name: msg(locale, 'remeasure.finish'), exact: true }).click();
+    await expect(page).toHaveURL(ticketUrl(locale));
+
+    // Settings now says so, in words, with one control that turns it off.
+    const turnedOff: { method: string; body: unknown }[] = [];
+    let refuse = true;
+    consoleGuard.allow({ url: `${API}/me/outcome-statistics`, expect: 503, reason: 'the test makes the server refuse the first turn-off to show the choice stays on when the server could not be told' });
+    await page.route(`${API}/me/outcome-statistics`, async (route) => {
+      turnedOff.push({ method: route.request().method(), body: route.request().postDataJSON() });
+      if (refuse) return route.fulfill({ status: 503, json: { error: 'unavailable', message: 'down' } });
+      return route.fulfill({ json: { optIn: false } });
+    });
+    await page.goto(`/${locale}/settings/`);
+    const panel = page.locator('[data-panel="statistics"]');
+    await expect(panel).toContainText(msg(locale, 'settings.statisticsTitle'));
+    await expect(panel).toContainText(msg(locale, 'settings.statisticsOnBody'));
+    const off = panel.getByRole('button', { name: msg(locale, 'settings.statisticsOptOut'), exact: true });
+    await off.click();
+    await expect(panel.getByRole('alert')).toHaveText(msg(locale, 'settings.statisticsFailed'));
+    await expect(off).toBeVisible();
+    refuse = false;
+    await off.click();
+    await expect(panel.getByRole('status')).toHaveText(msg(locale, 'settings.statisticsRemoved'));
+    await expect(off).toHaveCount(0);
+    expect(turnedOff).toEqual([{ method: 'PUT', body: { optIn: false } }, { method: 'PUT', body: { optIn: false } }]);
+
+    // Gone for good on the phone: the next visit has no panel.
+    await page.goto(`/${locale}/settings/`);
+    await expect(page.locator('[data-panel="reminders"]')).toBeVisible();
+    await expect(page.locator('[data-panel="statistics"]')).toHaveCount(0);
   },
 
   async 'repeat-check-starts-a-fresh-check-in-and-never-finishes-an-old-one'({ page, context, locale }) {

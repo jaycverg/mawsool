@@ -366,7 +366,8 @@ function Safety({ data, t, format }: { data: DashboardData; t: Translate; format
 /**
  * Symptom change among tickets whose person was re-measured at six weeks: the mean change in PHQ-9 and GAD-7 (the repeat total
  * minus the referral total, so a fall is fewer symptoms), and the share of them with a reliable improvement or deterioration.
- * Only totals the person shared are used. Every figure is as the API returned it: a number, or "Suppressed".
+ * Only totals the person shared and chose to count are used. Always the last 90 days, whatever the period filter says, as the
+ * equity section is. Every figure is as the API returned it: a number, or "Suppressed".
  */
 function Outcomes({ data, t, lang, format }: { data: DashboardData; t: Translate; lang: 'ar' | 'en'; format: (value: number) => string }) {
   const { outcomes } = data;
@@ -411,6 +412,7 @@ function Outcomes({ data, t, lang, format }: { data: DashboardData; t: Translate
           </div>
         );
       })}
+      <p className="t-small font-semibold text-muted" data-outcomes-period>{t('outcomes.period')}</p>
       <p className="t-small text-muted">{t('outcomes.basis', { phq9: format(outcomes.reliableChangePoints.phq9), gad7: format(outcomes.reliableChangePoints.gad7) })}</p>
     </section>
   );

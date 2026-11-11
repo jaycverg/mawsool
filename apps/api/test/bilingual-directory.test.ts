@@ -22,7 +22,7 @@ describe('the directory in Arabic and English', () => {
 
   beforeAll(async () => {
     testDb = await createTestDb();
-    await runSeed(testDb.db);
+    await runSeed(testDb.db, testDb.cipher);
     ctx = await createTestApp(testDb.db);
     gpA = await serviceAt(testDb.db, 'A', 'gp');
     arabic = await registerPerson(ctx, 'ar');

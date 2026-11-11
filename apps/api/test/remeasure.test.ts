@@ -27,7 +27,7 @@ describe('the repeat check at six weeks', () => {
 
   beforeAll(async () => {
     testDb = await createTestDb();
-    await runSeed(testDb.db);
+    await runSeed(testDb.db, testDb.cipher);
     ctx = await createTestApp(testDb.db);
     person = await registerPerson(ctx);
     other = await registerPerson(ctx);
@@ -476,6 +476,105 @@ describe('the repeat check at six weeks', () => {
       expect(await ledger(first.id)).toHaveLength(3);
       expect((await remeasure(first.id, { scores: [] })).statusCode).toBe(200);
       expect(await stateOf(first.id)).toBe('closed');
+    });
+  });
+
+  describe('the separate choice to count the totals in anonymous statistics, sent with the repeat check', () => {
+    const choiceOf = async (who: TestPerson) => (await testDb.db.select({ on: schema.persons.outcomeStatsOptIn }).from(schema.persons).where(eq(schema.persons.id, who.id)))[0]!.on;
+    const setChoice = (who: TestPerson, optIn: boolean) => testDb.db.update(schema.persons).set({ outcomeStatsOptIn: optIn }).where(eq(schema.persons.id, who.id));
+
+    it('is stored with the move, on and then off, and a person who never sends it stays off', async () => {
+      const mine = await registerPerson(ctx);
+      expect(await choiceOf(mine)).toBe(false);
+      const first = await seen(['ticket', 'scores'], mine);
+      at(first.seenAt, SIX_WEEKS);
+      expect((await remeasure(first.id, { scores: [PHQ, GAD], statisticsOptIn: true }, mine)).statusCode).toBe(200);
+      expect(await choiceOf(mine)).toBe(true);
+      const second = await seen(['ticket', 'scores'], mine);
+      at(second.seenAt, SIX_WEEKS);
+      expect((await remeasure(second.id, { scores: [PHQ, GAD], statisticsOptIn: false }, mine)).statusCode).toBe(200);
+      expect(await choiceOf(mine)).toBe(false);
+    });
+
+    it('is left exactly as it was by a request that does not carry it, whether it was on or off', async () => {
+      for (const before of [true, false]) {
+        const mine = await registerPerson(ctx);
+        await setChoice(mine, before);
+        const ticket = await seen(['ticket', 'scores'], mine);
+        at(ticket.seenAt, SIX_WEEKS);
+        expect((await remeasure(ticket.id, { scores: [PHQ, GAD] }, mine)).statusCode).toBe(200);
+        expect(await choiceOf(mine), `was ${before}`).toBe(before);
+      }
+    });
+
+    it('refuses a value that is not a yes or a no, and changes nothing', async () => {
+      const mine = await registerPerson(ctx);
+      const ticket = await seen(['ticket', 'scores'], mine);
+      at(ticket.seenAt, SIX_WEEKS);
+      const before = await eventStates(testDb.db, ticket.id);
+      for (const statisticsOptIn of ['yes', 1, null]) expect((await remeasure(ticket.id, { scores: [PHQ, GAD], statisticsOptIn }, mine)).statusCode, String(statisticsOptIn)).toBe(400);
+      expect(await eventStates(testDb.db, ticket.id)).toEqual(before);
+      expect(await choiceOf(mine)).toBe(false);
+    });
+
+    describe('is not stored when the request is refused or loses, so a refused repeat check changes nothing about the person', () => {
+      const send = (id: string, who: TestPerson, body: object = {}) => remeasure(id, { scores: [PHQ, GAD], statisticsOptIn: true, ...body }, who);
+
+      it('too early: 409', async () => {
+        const mine = await registerPerson(ctx);
+        const ticket = await seen(['ticket', 'scores'], mine);
+        at(ticket.seenAt, SIX_WEEKS - 1);
+        expect((await send(ticket.id, mine)).statusCode).toBe(409);
+        expect(await choiceOf(mine)).toBe(false);
+      });
+
+      it('from a state other than seen: 409', async () => {
+        const mine = await registerPerson(ctx);
+        const ticket = await issue(ctx, mine, ticketRequest(gpA));
+        expect((await send(ticket.id, mine)).statusCode).toBe(409);
+        expect(await choiceOf(mine)).toBe(false);
+      });
+
+      it('a total taken before the check opened: 400', async () => {
+        const mine = await registerPerson(ctx);
+        const ticket = await seen(['ticket', 'scores'], mine);
+        at(ticket.seenAt, SIX_WEEKS);
+        expect((await send(ticket.id, mine, { scores: [{ ...PHQ, takenAt: ticket.seenAt.toISOString() }] })).statusCode).toBe(400);
+        expect(await choiceOf(mine)).toBe(false);
+      });
+
+      it('nothing shared for the ticket any more: 409', async () => {
+        const mine = await registerPerson(ctx);
+        const ticket = await seen(['ticket', 'scores'], mine);
+        await testDb.db.delete(schema.sharedBundles).where(eq(schema.sharedBundles.ticketId, ticket.id));
+        at(ticket.seenAt, SIX_WEEKS);
+        expect((await send(ticket.id, mine)).statusCode).toBe(409);
+        expect(await choiceOf(mine)).toBe(false);
+      });
+
+      it('no room in the stored totals: 409', async () => {
+        const mine = await registerPerson(ctx);
+        const ticket = await seen(['ticket', 'scores'], mine);
+        const four = ['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04'].map((day) => ({ instrument: 'phq9', total: 3, band: 'mild', takenAt: `${day}T08:00:00+04:00` }));
+        await testDb.db.update(schema.sharedBundles).set({ contentCiphertext: cipher.encrypt(JSON.stringify({ scores: four }), `bundle:${ticket.id}`) }).where(eq(schema.sharedBundles.ticketId, ticket.id));
+        at(ticket.seenAt, SIX_WEEKS);
+        expect((await send(ticket.id, mine)).statusCode).toBe(409);
+        expect(await choiceOf(mine)).toBe(false);
+      });
+
+      it('a rival takes the second sequence number after the choice was written: the whole move, the choice included, is rolled back', async () => {
+        const mine = await registerPerson(ctx);
+        const ticket = await seen(['ticket', 'scores'], mine);
+        at(ticket.seenAt, SIX_WEEKS);
+        const outcome = await remeasureTicket(
+          { db: testDb.db, cipher, clock: ctx.clock, securityClock: ctx.clock },
+          { id: ticket.id, personId: mine.id },
+          { scores: [PHQ, GAD], statisticsOptIn: true },
+          { afterRead: async () => void (await testDb.db.insert(schema.ticketEvents).values({ ticketId: ticket.id, seq: 4, fromState: 'seen', toState: 'seen', actor: 'clinic', channel: 'rival', reason: 'other', at: ctx.clock.now() })) },
+        );
+        expect(outcome.kind).toBe('lost_race');
+        expect(await choiceOf(mine)).toBe(false);
+      });
     });
   });
 

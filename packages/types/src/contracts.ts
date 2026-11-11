@@ -276,9 +276,11 @@ export const RemeasureScoreSchema = ScoreEntrySchema.extend({ instrument: z.enum
 /**
  * POST /me/tickets/:id/remeasure: the person finished a repeat PHQ-9 and GAD-7. `scores` is empty unless they ticked "send
  * these totals to the clinic" on that screen, and then holds at most one total per instrument. Without it nothing leaves the phone.
+ * `statisticsOptIn` is the separate choice on the same screen, to let those totals count in anonymous group figures: when it is
+ * sent it replaces the person's stored choice in the same transaction as the move, and when it is left out the choice is left as it is.
  */
 export const RemeasureRequestSchema = z
-  .object({ scores: z.array(RemeasureScoreSchema).max(2).default([]) })
+  .object({ scores: z.array(RemeasureScoreSchema).max(2).default([]), statisticsOptIn: z.boolean().optional() })
   .strict()
   .refine((request) => new Set(request.scores.map((score) => score.instrument)).size === request.scores.length, { message: 'One total per instrument' });
 export type RemeasureRequest = z.infer<typeof RemeasureRequestSchema>;
@@ -418,6 +420,13 @@ export type SummaryDraft = z.infer<typeof SummaryDraftSchema>;
 /** PUT /persons/me/equity. Opting out clears the buckets on the server. */
 export const EquityRequestSchema = z.object({ optIn: z.boolean(), buckets: DemographicsSchema.optional() }).strict();
 export type EquityRequest = z.infer<typeof EquityRequestSchema>;
+
+/**
+ * PUT /me/outcome-statistics: turn the separate choice to count the totals shared with the clinic in anonymous group figures
+ * on or off. Off is the default; turning it off stops the person's tickets counting from the next read of the figures.
+ */
+export const OutcomeStatisticsRequestSchema = z.object({ optIn: z.boolean() }).strict();
+export type OutcomeStatisticsRequest = z.infer<typeof OutcomeStatisticsRequestSchema>;
 
 export const OpenApiDocumentSchema = z.object({ openapi: z.string(), paths: z.record(z.string(), z.unknown()) }).passthrough();
 

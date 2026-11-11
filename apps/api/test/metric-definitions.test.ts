@@ -124,6 +124,21 @@ describe('every dashboard tile and section has a definition', () => {
     }
   });
 
+  it('gives the symptom-change section the equity section\'s one period, the last 90 days, says so in both languages, and has the dashboard ask for it that way', () => {
+    const periodOf = (id: string) => METRIC_DEFINITIONS.find((definition) => definition.id === id)!.period;
+    expect(periodOf('outcomes')).toBe('equity90');
+    expect(periodOf('equity')).toBe('equity90');
+    expect(read('apps/ops/lib/metrics.ts')).toContain("call('/metrics/outcomes', false, EQUITY_PERIOD)");
+    expect(read('apps/ops/components/Dashboard.tsx')).toContain("data-outcomes-period>{t('outcomes.period')}");
+    for (const lang of [EN, AR]) {
+      expect(messageAt(lang, 'defs.period.equity90')).toContain('90');
+      expect(messageAt(lang, 'dash.outcomes.period')).toContain('90');
+      expect(messageAt(lang, 'dash.outcomes.remeasured')).toContain('90');
+    }
+    expect(messageAt(EN, 'dash.outcomes.period')).toContain('last 90 days');
+    expect(messageAt(EN, 'defs.outcomes.denominator')).toContain('anonymous statistics');
+  });
+
   it('has the same keys in English and Arabic under defs, adverse and dash.outcomes', () => {
     for (const section of ['defs', 'adverse', 'dash.outcomes']) {
       const at = (lang: Record<string, unknown>) => section.split('.').reduce<unknown>((node, key) => (node as Record<string, unknown>)[key], lang);
@@ -159,7 +174,7 @@ describe('every numerator and denominator is something the server computes', () 
 
     beforeAll(async () => {
       testDb = await createTestDb();
-      await runSeed(testDb.db, SEED_ANCHOR);
+      await runSeed(testDb.db, testDb.cipher, SEED_ANCHOR);
       ctx = await createTestApp(testDb.db);
       ctx.clock.set(SEED_ANCHOR);
       headers = { authorization: `Bearer ${await signIn(ctx, 'ops@demo.mawsool.test')}` };
@@ -173,7 +188,7 @@ describe('every numerator and denominator is something the server computes', () 
     it('returns each named field, as a figure or as the suppressed answer standing in for it, and never leaves it out', async () => {
       const bodies = new Map<MetricRoute, unknown>();
       for (const route of METRIC_ROUTES) {
-        const res = await ctx.app.inject({ method: 'GET', url: route === '/adverse-events' ? route : `${route}?period=${route === '/metrics/equity' ? '90d' : 'all'}`, headers });
+        const res = await ctx.app.inject({ method: 'GET', url: route === '/adverse-events' ? route : `${route}?period=${route === '/metrics/equity' || route === '/metrics/outcomes' ? '90d' : 'all'}`, headers });
         expect(res.statusCode, route).toBe(200);
         bodies.set(route, res.json());
       }

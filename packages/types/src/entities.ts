@@ -46,6 +46,8 @@ export const PersonSchema = z.object({
   id: Id,
   locale: LocaleSchema,
   equityOptIn: z.boolean(),
+  /** Whether totals the person sent the clinic also count in the anonymous symptom-change figures. Off until they turn it on; no clinic read returns it. */
+  outcomeStatsOptIn: z.boolean(),
   demographics: DemographicsSchema.nullable(),
   createdAt: Instant,
 });

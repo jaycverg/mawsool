@@ -204,7 +204,7 @@ Each tile and section of the ops dashboard has an info panel with the text below
 
 ## Symptom change after re-measure (`outcomes`)
 
-- Surface: section. Period kind: `selected`. Suppression kind: `outcomes`.
+- Surface: section. Period kind: `equity90`. Suppression kind: `outcomes`.
 - Numerator computed from: `GET /metrics/outcomes` → `instruments.reliableImprovement.count`; `GET /metrics/outcomes` → `instruments.reliableDeterioration.count`; `GET /metrics/outcomes` → `instruments.meanChange`.
 - Denominator computed from: `GET /metrics/outcomes` → `instruments.reliableImprovement.of`.
 
@@ -212,16 +212,16 @@ Each tile and section of the ops dashboard has an info panel with the text below
 
 - Definition: How symptoms changed for people re-measured at six weeks: the mean change in PHQ-9 and GAD-7, and the share with a reliable improvement or a reliable deterioration.
 - Numerator: For the mean, the sum of the changes (the repeat total minus the referral total) divided by the tickets included. For each share, the included tickets whose total fell, or rose, by at least the reliable-change points.
-- Denominator: Re-measured tickets whose person shared both totals of the instrument. A re-measured ticket without both totals is excluded and counted as excluded.
-- Period: The period chosen at the top of the dashboard.
+- Denominator: Re-measured tickets whose person shared both totals of the instrument and chose to count them in anonymous statistics. A re-measured ticket without both totals, or whose person did not make that choice, is excluded and counted as excluded.
+- Period: Always the last 90 days, whatever period is chosen at the top.
 - Suppression: A count under 10 is hidden, and so is the mean. Counts that add up to others are hidden together. When the funnel hides its re-measured stage, everything here is hidden too.
 
 **Arabic**
 
 - Definition: كيف تغيّرت الأعراض لدى من أُعيد قياسهم بعد ستة أسابيع: متوسط التغيّر في PHQ-9 وGAD-7، ونسبة من حصل لهم تحسّن موثوق أو تدهور موثوق.
 - Numerator: للمتوسط: مجموع التغيّرات (مجموع القياس المعاد مطروحًا منه مجموع الإحالة) مقسومًا على التذاكر المشمولة. ولكل نسبة: التذاكر المشمولة التي انخفض مجموعها أو ارتفع بمقدار نقاط التغيّر الموثوق أو أكثر.
-- Denominator: التذاكر المُعاد قياسها التي شارك صاحبها مجموعي الأداة كليهما. والتذكرة المُعاد قياسها التي ينقصها أحدهما تُستبعد وتُحصى مستبعدة.
-- Period: الفترة المختارة أعلى اللوحة.
+- Denominator: التذاكر المُعاد قياسها التي شارك صاحبها مجموعي الأداة كليهما واختار احتسابهما في الإحصاءات المجهولة. والتذكرة المُعاد قياسها التي ينقصها أحد المجموعين، أو لم يختر صاحبها ذلك، تُستبعد وتُحصى مستبعدة.
+- Period: دائمًا آخر 90 يومًا مهما كانت الفترة المختارة أعلى اللوحة.
 - Suppression: يُخفى أي عدد أقل من 10 ويُخفى المتوسط معه. والأعداد التي يجمع بعضها بعضًا تُخفى معًا. وإذا أخفى قمع الإحالة مرحلة إعادة القياس أُخفي كل شيء هنا أيضًا.
 
 ## Adverse events log (`adverse-events`)

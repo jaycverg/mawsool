@@ -26,7 +26,7 @@ describe('the no-login clinic channel', () => {
 
   beforeAll(async () => {
     testDb = await createTestDb();
-    await runSeed(testDb.db);
+    await runSeed(testDb.db, testDb.cipher);
     ctx = await createTestApp(testDb.db);
     person = await registerPerson(ctx);
     admin = { authorization: `Bearer ${await signIn(ctx, 'admin@demo.mawsool.test')}` };
@@ -362,7 +362,7 @@ describe('the no-login clinic channel on the demo clock', () => {
 
   beforeAll(async () => {
     testDb = await createTestDb();
-    await runSeed(testDb.db);
+    await runSeed(testDb.db, testDb.cipher);
     ctx = await createTestApp(testDb.db, { demoMode: true });
   });
 

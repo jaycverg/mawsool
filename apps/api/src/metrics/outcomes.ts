@@ -1,5 +1,5 @@
 import { RELIABLE_CHANGE, reliableChange, remeasureAvailableAt, type TrackedInstrument } from '@mawsool/rules';
-import { BundleContentSchema, OUTCOME_INSTRUMENTS, type MetricPeriod, type OutcomesResponse, type ScoreEntry } from '@mawsool/types';
+import { BundleContentSchema, EQUITY_PERIOD, OUTCOME_INSTRUMENTS, type OutcomesResponse, type ScoreEntry } from '@mawsool/types';
 import { and, desc, inArray, isNull } from 'drizzle-orm';
 import { SUPPRESSION_THRESHOLD } from '@mawsool/rules';
 import type { Cipher } from '../crypto';
@@ -38,18 +38,21 @@ export function totalsPair(scores: readonly ScoreEntry[], instrument: TrackedIns
 }
 
 /**
- * The facts for every re-measured ticket. A ticket's totals are read only while its `ticket` and `scores` consents are both
- * live and its bundle is not deleted: a ticket whose person stopped sharing scores, or withdrew, counts as re-measured with
- * no totals, never with the totals it once had. Nothing here is a staff read of a bundle, so no `bundle_reads` row is written,
- * and nothing per ticket leaves this function except the two numbers per instrument.
+ * The facts for every re-measured ticket. A ticket's totals are read only while its person has the anonymous-statistics choice
+ * on, as it stands now, and its `ticket` and `scores` consents are both live and its bundle is not deleted: a ticket whose
+ * person turned the choice off, stopped sharing scores, or withdrew, counts as re-measured with no totals, never with the
+ * totals it once had, and its bundle is not even opened. Nothing here is a staff read of a bundle, so no `bundle_reads` row is
+ * written, and nothing per ticket leaves this function except the two numbers per instrument.
  *
  * A bundle that cannot be read (damaged or moved) leaves its ticket without totals rather than failing the dashboard.
  */
 export async function loadOutcomeFacts(db: Db, cipher: Cipher, tickets: readonly TicketFact[]): Promise<OutcomeFact[]> {
   const remeasured = tickets.filter((ticket) => ticket.remeasured);
   if (remeasured.length === 0) return [];
-  const ids = remeasured.map((ticket) => ticket.id);
+  const ids = remeasured.filter((ticket) => ticket.outcomeStatsOptIn).map((ticket) => ticket.id);
   const byId = new Map(tickets.map((ticket) => [ticket.id, ticket]));
+  const none: Record<TrackedInstrument, TotalsPair> = { phq9: null, gad7: null };
+  if (ids.length === 0) return remeasured.map((ticket) => ({ rootCreatedAt: rootOf(byId, ticket).createdAt, totals: none }));
 
   const live = new Map<string, Set<string>>();
   for (const row of await db
@@ -77,12 +80,11 @@ export async function loadOutcomeFacts(db: Db, cipher: Cipher, tickets: readonly
   }
 
   return remeasured.map((ticket): OutcomeFact => {
-    const none: Record<TrackedInstrument, TotalsPair> = { phq9: null, gad7: null };
     const rootCreatedAt = rootOf(byId, ticket).createdAt;
     const elements = live.get(ticket.id);
     const ciphertext = bundles.get(ticket.id);
     const seen = seenAt.get(ticket.id);
-    if (!elements?.has('ticket') || !elements.has('scores') || !ciphertext || !seen) return { rootCreatedAt, totals: none };
+    if (!ticket.outcomeStatsOptIn || !elements?.has('ticket') || !elements.has('scores') || !ciphertext || !seen) return { rootCreatedAt, totals: none };
     let scores: ScoreEntry[];
     try {
       scores = BundleContentSchema.parse(JSON.parse(cipher.decrypt(ciphertext, bundleContext(ticket.id)))).scores ?? [];
@@ -172,16 +174,20 @@ export function hiddenOutcomeCells(table: ProtectedTable, funnelHidesRemeasured:
 }
 
 /**
- * Symptom and functioning change among re-measured tickets.
+ * Symptom and functioning change among re-measured tickets, for ONE period: the last 90 days (`EQUITY_PERIOD`), counted from
+ * `since` (`onePeriodStart`). The route refuses every other period, so no two responses are ever for different windows of the
+ * same people, and a figure cannot be subtracted from the same figure of a longer or shorter period.
  *
- * The figures stand on the same people as the funnel's last stage, so when the funnel hides that stage for the period
- * (`funnelHidesRemeasured`) every figure here is hidden too: nothing published here can then be used with the funnel to work
- * out a number the funnel hid. Otherwise each count is a cell of `outcomeTable`, a share needs its part, its whole and what is
- * left over to reach ten (`rateOrSuppressed`) as well as both cells being shown, and the mean needs the included count shown.
+ * The figures stand on the same people as the funnel's last stage for those 90 days (the funnel with no source or tier filter),
+ * so when the funnel hides that stage for that window (`funnelHidesRemeasured`, computed over the same `since`) every figure
+ * here is hidden too: nothing published here can then be used with the funnel to work out a number the funnel hid. Otherwise
+ * each count is a cell of `outcomeTable`, a share needs its part, its whole and what is left over to reach ten
+ * (`rateOrSuppressed`) as well as both cells being shown, and the mean needs the included count shown.
  *
- * Not covered, by decision: the same figure in two periods subtracts (as in the funnel and timeliness).
+ * Not covered, by decision: the window slides with the care clock, so two responses taken on different days (or either side of a
+ * demo clock step) can still subtract, as with equity.
  */
-export function buildOutcomes(period: MetricPeriod, facts: readonly OutcomeFact[], since: Date | null, funnelHidesRemeasured: boolean): OutcomesResponse {
+export function buildOutcomes(facts: readonly OutcomeFact[], since: Date, funnelHidesRemeasured: boolean): OutcomesResponse {
   const counts = countOutcomes(facts, since);
   const table = outcomeTable(counts);
   const hidden = hiddenOutcomeCells(table, funnelHidesRemeasured);
@@ -192,7 +198,7 @@ export function buildOutcomes(period: MetricPeriod, facts: readonly OutcomeFact[
     return rateOrSuppressed(slot[part], slot.included);
   };
   return {
-    period,
+    period: EQUITY_PERIOD,
     reliableChangePoints: { ...RELIABLE_CHANGE },
     remeasured: cell('remeasured'),
     instruments: OUTCOME_INSTRUMENTS.map((instrument) => {

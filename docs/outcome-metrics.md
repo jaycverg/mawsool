@@ -1,17 +1,33 @@
 # Symptom change among re-measured tickets
 
-`GET /metrics/outcomes?period=all|90d|30d` (access `ops`), code in `apps/api/src/metrics/outcomes.ts`, tests in `apps/api/test/metrics-outcomes.test.ts`, tile on the ops dashboard under "Symptom change after re-measure". The definitions the info panel shows are in `docs/metric-definitions.md`.
+`GET /metrics/outcomes` (access `ops`), served for the last 90 days only, code in `apps/api/src/metrics/outcomes.ts`, tests in `apps/api/test/metrics-outcomes.test.ts`, tile on the ops dashboard under "Symptom change after re-measure". The definitions the info panel shows are in `docs/metric-definitions.md`.
+
+## One period, like equity
+
+The route is served for the last 90 days (`EQUITY_PERIOD`) and no other. A request with any other `period` (`all`, `30d`, or a value the period schema does not allow) is a 400 with no figures; leaving `period` out answers the last 90 days. The same figure in two periods subtracts into a small group's results (all time less the last 90 days is the tickets from before the window, which can be a handful of named people), so there is no second period to subtract. The dashboard's period filter does not reach the tile, which says so in both languages in its note and its info panel, as the equity section and the Loop closed tile do.
+
+The window slides with the care clock, so two responses taken on different days (or either side of a demo clock step) can still subtract. That is accepted, as it is for equity.
 
 ## What it counts
 
 A ticket is **re-measured** when its events show it reached `remeasured` (the repeat check at six weeks). For each of PHQ-9 and GAD-7:
 
-- **Included**: the ticket's `ticket` and `scores` consents are both live, its bundle is not deleted, and the bundle's shared totals hold a referral total and a repeat total of that instrument. The repeat total is the newest one taken at or after the moment the check opened (six weeks after the event that made the ticket `seen`, `remeasureAvailableAt`); the referral total is the newest one taken before it. The API refuses a repeat total taken before that moment, so the split is exact.
-- **Excluded**: any other re-measured ticket (no `scores` consent, consent stopped, share ended, bundle emptied, only one of the two totals, or a bundle that cannot be read). It is counted as excluded, per instrument.
+- **Included**: the ticket's person has the **anonymous statistics choice** on (below), the ticket's `ticket` and `scores` consents are both live, its bundle is not deleted, and the bundle's shared totals hold a referral total and a repeat total of that instrument. The repeat total is the newest one taken at or after the moment the check opened (six weeks after the event that made the ticket `seen`, `remeasureAvailableAt`); the referral total is the newest one taken before it. The API refuses a repeat total taken before that moment, so the split is exact.
+- **Excluded**: any other re-measured ticket (the person did not opt in, no `scores` consent, consent stopped, share ended, bundle emptied, only one of the two totals, or a bundle that cannot be read). It is counted as excluded, per instrument, in one figure: there is no separate figure for the people who did not opt in. The bundle of a person who did not opt in is not opened.
 - **Change** = repeat total minus referral total, so a fall means fewer symptoms. The mean is over the included tickets.
 - **Reliable improvement** is a fall of at least the threshold, **reliable deterioration** a rise of at least it (`reliableChange` in `packages/rules`); the threshold value itself counts.
 
-The period is the funnel's: a ticket belongs to the period of the root of its journey (the ticket it was rerouted from, if any).
+The window is the funnel's: a ticket belongs to the period of the root of its journey (the ticket it was rerouted from, if any).
+
+## The anonymous statistics choice
+
+Sharing totals with a clinic does not by itself let them count on the dashboard. A separate choice of the person does: `persons.outcome_stats_opt_in`, a boolean, **off by default**, modelled on the equity opt-in and kept per person (it applies to all of the person's tickets).
+
+- **Where it is offered**: on the repeat check's totals screen, in its own box beneath "Send these two totals to my clinic", unticked; it is disabled and shows unticked while the send box is unticked, because a total counts only if its copy is on the server. Its value travels with the re-measure request (`statisticsOptIn`) and is stored in the same transaction as the move to `remeasured`, so a refused or lost request changes nothing; a request without it leaves the choice as it was. In Settings the choice appears once it is on, with one button to turn it off (`PUT /me/outcome-statistics`).
+- **What it says**: in Arabic and English, that the totals count only in anonymous group figures of 10 or more people, and that a clinic never sees this choice.
+- **When it is read**: when the figures are made, not copied onto a ticket or a bundle. Turning it off takes the person's tickets out of the next response.
+- **Who never sees it**: no clinic-facing read carries it. The queue, the ticket, the bundle and the FHIR export are the same before and after the person turns it on (`consent.test.ts`), no clinic-facing schema has a field for it (`packages/types/test/types.test.ts`), and the clinician app names it nowhere (`apps/clinician/test/no-statistics-choice.test.ts`).
+- **Erase**: "Delete everything" sets it back to off on the server and removes the phone's note of it. `apps/api/test/erase-reach.test.ts` reviews every column of `persons`, this one included.
 
 ## The thresholds and their source
 
@@ -19,11 +35,11 @@ The period is the funnel's: a ticket belongs to the period of the root of its jo
 
 Source (read in this run, not recalled): *The Improving Access to Psychological Therapies Manual: Appendices and helpful resources* (NCCMH, version 2), Table 1 "Clinical cut-offs and reliable change index": PHQ-9 caseness >= 10, reliable change >= 6; GAD-7 caseness >= 8, reliable change >= 4. Published at https://www.rcpsych.ac.uk/docs/default-source/improving-care/nccmh/iapt/nccmh-iapt-manual-appendices-helpful-resources-v2.pdf (the programme is now called NHS Talking Therapies).
 
-The manual defines reliable improvement across both measures together (a reduction on either with no reliable increase on the other) and over everyone who completed a course of treatment. This dashboard reports each instrument on its own, over the re-measured tickets whose person shared both totals of it, which is a simpler and not an identical measure.
+The manual defines reliable improvement across both measures together (a reduction on either with no reliable increase on the other) and over everyone who completed a course of treatment. This dashboard reports each instrument on its own, over the re-measured tickets whose person shared both totals of it and opted in, which is a simpler and not an identical measure.
 
 ## What it reads, and what it never returns
 
-The aggregate decrypts the shared bundle's `scores` on the server, only for tickets whose consents are live, and returns only counts, shares and a mean. No per-ticket figure, id or total leaves it. It is not a staff read of a bundle, so it writes no `bundle_reads` row. Stopping the scores, withdrawing, or "Delete everything" removes a ticket from the included figures at once, because the consents and the bundle are read live.
+The aggregate decrypts the shared bundle's `scores` on the server, only for tickets whose consents are live and whose person has opted in, and returns only counts, shares and a mean. No per-ticket figure, id or total leaves it. It is not a staff read of a bundle, so it writes no `bundle_reads` row. Stopping the scores, withdrawing, turning the choice off, or "Delete everything" removes a ticket from the included figures at once, because the consents, the bundle and the choice are read live.
 
 ## How small numbers are kept out
 
@@ -31,10 +47,12 @@ The cells (re-measured, and per instrument included, excluded, improved, deterio
 
 The two instruments' included counts are tied, as equity ties its "no bucket given" groups. They count different, overlapping sets of the same re-measured tickets, so two published included counts that differ by 1 to 9 subtract into a small group (25 and 22 leaves three people with a PHQ-9 pair only). When the difference is from 1 to 9, both included cells are hidden, and with them (by the relations) both excluded cells, the means and the shares. A difference of ten or more, or none, publishes nothing small and leaves them independent. The re-measured count itself is never hidden by the tie or by the relations (the funnel publishes the same count, and hiding it would only follow from an instrument whose excluded count is nothing): it is hidden only when the funnel hides it, and with it shown no non-empty hidden cell becomes exactly derivable (`pinnedCells`, checked in the tests).
 
-The figures stand on the same people as the funnel's last stage, so the whole response is hidden whenever the funnel hides that stage for the period (`remeasuredHiddenInFunnel`): nothing here can then be combined with the funnel to recover a number it hid.
+**What it is tied to in the funnel.** The figures stand on the same people as the funnel's last stage, and now that their window is fixed, the tie is to that stage for the same 90 days (the funnel with no source or tier filter, `GET /metrics/funnel?period=90d`): the whole response is hidden whenever the funnel hides it (`remeasuredHiddenInFunnel`, computed over the same window start, `onePeriodStart`), so nothing here can be combined with the funnel to recover a number it hid. The re-measured count here is the same number as the funnel's 90-day stage, so the funnel's other periods subtract from it no further than they already do from each other.
 
-Not covered, by decision: the same figure in two periods subtracts, as in the funnel and timeliness; and the funnel counts journeys while this counts tickets, which differ only where one journey holds two re-measured tickets (not reachable today).
+Not covered, by decision: the funnel counts journeys while this counts tickets, which differ only where one journey holds two re-measured tickets (not reachable today); and the sliding window, above.
 
 ## In the demo
 
-The seeded tickets have no consent rows, so every seeded re-measured ticket is excluded: on the seeded data the dashboard shows the re-measured count and "Suppressed" for the rest. The browser gate makes thirty-two people who share and re-measure, so the figures can be seen.
+The deterministic seed gives 36 of its 47 re-measured tickets consent rows (`ticket` and `scores`), a stored bundle holding the referral and repeat totals of both instruments, and an opted-in person (`apps/api/src/seed/outcome-shares.ts`, drawn from a stream of its own so nothing else in the seed moves). The other 11 are excluded. Straight after a reset, on the dashboard's default view, the tile shows the re-measured count (47), 36 counted and 11 excluded for each instrument, the mean change and the share who improved; the share who deteriorated reads "Suppressed" because only four people are behind it. The totals are sample data. The 47 are 69 to 89 days old at the reset, so they leave the 90-day window as the clock moves on; the browser gate makes its own people for that case.
+
+Source: the seed's counts are asserted in `apps/api/test/seed.test.ts` and `apps/api/test/metrics.test.ts`; the tile on the default view in `apps/person/e2e/gate-c.spec.ts`.

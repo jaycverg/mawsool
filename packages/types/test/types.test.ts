@@ -1,9 +1,21 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import {
+  BundleContentSchema,
+  ClinicLinkTicketSchema,
   CONSENT_ELEMENTS,
   CRISIS_HANDOFF_ELEMENT,
   CreateCrisisHandoffRequestSchema,
   LEDGER_ELEMENTS,
+  METRIC_PERIODS,
+  OutcomeStatisticsRequestSchema,
+  OutcomesQuerySchema,
+  PersonSchema,
+  RemeasureRequestSchema,
+  StaffBundleViewSchema,
+  StaffQueueSchema,
+  StaffTicketDetailSchema,
+  StaffTicketViewSchema,
   CrisisEventSchema,
   DemographicsSchema,
   PhoneNumberSchema,
@@ -113,5 +125,30 @@ describe('the crisis hand-off contracts', () => {
     expect(CreateCrisisHandoffRequestSchema.safeParse({ ...body, consented: undefined }).success).toBe(false);
     expect(CreateCrisisHandoffRequestSchema.safeParse({ ...body, answers: [3] }).success).toBe(false);
     expect(CreateCrisisHandoffRequestSchema.safeParse({ ...body, callbackNumber: '0501234567' }).success).toBe(false);
+  });
+});
+
+describe('the anonymous statistics choice stays on the person', () => {
+  const clinicFacing = { StaffTicketViewSchema, StaffTicketDetailSchema, StaffQueueSchema, StaffBundleViewSchema, BundleContentSchema, ClinicLinkTicketSchema };
+
+  it('names no field of anything a clinic reads, as a person, a ticket, a queue row or a bundle', () => {
+    for (const [name, schema] of Object.entries(clinicFacing)) {
+      const keys = JSON.stringify(z.toJSONSchema(schema, { unrepresentable: 'any' }));
+      expect(keys.length, `${name} converted to a schema`).toBeGreaterThan(50);
+      expect(keys, name).not.toMatch(/outcomeStat|statisticsOptIn|optIn|statistic/i);
+    }
+  });
+
+  it('is a field of the person record and of the two requests that carry it, so the check above is not vacuous', () => {
+    expect(Object.keys(PersonSchema.shape)).toContain('outcomeStatsOptIn');
+    expect(JSON.stringify(z.toJSONSchema(OutcomeStatisticsRequestSchema))).toContain('optIn');
+    expect(JSON.stringify(z.toJSONSchema(RemeasureRequestSchema, { unrepresentable: 'any' }))).toContain('statisticsOptIn');
+  });
+
+  it('is served for one period: the symptom-change query accepts the last 90 days and nothing else', () => {
+    expect(OutcomesQuerySchema.parse({}).period).toBe('90d');
+    expect(OutcomesQuerySchema.parse({ period: '90d' }).period).toBe('90d');
+    for (const period of METRIC_PERIODS.filter((candidate) => candidate !== '90d')) expect(OutcomesQuerySchema.safeParse({ period }).success, period).toBe(false);
+    expect(OutcomesQuerySchema.safeParse({ period: '7d' }).success).toBe(false);
   });
 });

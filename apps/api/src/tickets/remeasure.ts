@@ -58,6 +58,8 @@ export async function remeasureTicket(deps: ConsentDeps, ticket: { id: string; p
       const consent = request.scores.length > 0 ? await shareRemeasureScores(tx, cipher, { personId: ticket.personId, ticketId: ticket.id, scores: request.scores, now }) : null;
       if (consent === 'none') throw new Abandon('no_share');
       if (consent === 'full') throw new Abandon('share_full');
+      // The statistics choice travels with the request and lands with the move or not at all: a refused or lost request leaves it as it was.
+      if (request.statisticsOptIn !== undefined) await tx.update(schema.persons).set({ outcomeStatsOptIn: request.statisticsOptIn }).where(eq(schema.persons.id, ticket.personId));
       if (!(await appendEvent(tx, { ticketId: ticket.id, seq: last.seq + 1, from: last.state, to: 'remeasured', actor: 'person', channel: 'app', at: now }))) throw new Abandon('lost_race');
       if (!(await appendEvent(tx, { ticketId: ticket.id, seq: last.seq + 2, from: 'remeasured', to: 'closed', actor: 'system', channel: 'app', at: now }))) throw new Abandon('lost_race');
       const rows = await tx.select().from(schema.ticketEvents).where(eq(schema.ticketEvents.ticketId, ticket.id)).orderBy(desc(schema.ticketEvents.seq)).limit(2);

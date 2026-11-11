@@ -73,9 +73,13 @@ export async function loadRepeatCheck(storage: StorageAdapter, ids: { phq9: stri
  */
 export type RemeasureSent = 'done' | 'not_ready' | 'failed';
 
-/** Sends the finished repeat check. `scores` is empty unless the person ticked the box on the repeat check screen, and then nothing but those two totals is sent. */
-export async function sendRemeasure(server: ServerDeps, ticketId: string, scores: RemeasureRequest['scores']): Promise<RemeasureSent> {
-  const sent = await callServer<unknown>(server, 'POST', `/me/tickets/${ticketId}/remeasure`, { scores });
+/**
+ * Sends the finished repeat check. `scores` is empty unless the person ticked the box on the repeat check screen, and then nothing but those two totals is sent.
+ * `statisticsOptIn` is the separate choice to count those totals in anonymous group figures: it is sent only with totals (the
+ * caller passes `undefined` otherwise, and then the person's stored choice is left alone), and never as part of what the clinic receives.
+ */
+export async function sendRemeasure(server: ServerDeps, ticketId: string, scores: RemeasureRequest['scores'], statisticsOptIn?: boolean): Promise<RemeasureSent> {
+  const sent = await callServer<unknown>(server, 'POST', `/me/tickets/${ticketId}/remeasure`, { scores, ...(statisticsOptIn === undefined ? {} : { statisticsOptIn }) });
   if (sent.ok) return RemeasureResultSchema.safeParse(sent.body).success ? 'done' : 'failed';
   return sent.reason === 'rejected' && sent.status === 409 ? 'not_ready' : 'failed';
 }

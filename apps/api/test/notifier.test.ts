@@ -253,7 +253,7 @@ describe('NOTIFIER_DRIVER', () => {
   it('is read at startup: the app builds the driver the setting names, and a staff link reaches only that one', async () => {
     const testDb = await createTestDb();
     try {
-      await runSeed(testDb.db);
+      await runSeed(testDb.db, testDb.cipher);
       const out = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
       const printedLines = () => out.mock.calls.map(([chunk]) => String(chunk)).filter((line) => line.includes('[mock notifier]'));
       const consoleLog: string[] = [];
@@ -365,7 +365,7 @@ describe('the staff sign-in link through the notifier', () => {
   it('reaches the notifier as its own template, in English, with the link', async () => {
     const testDb = await createTestDb();
     try {
-      await runSeed(testDb.db);
+      await runSeed(testDb.db, testDb.cipher);
       const ctx = await createTestApp(testDb.db);
       await signIn(ctx, 'ops@demo.mawsool.test');
       expect(ctx.notifier.sent.at(-1)).toMatchObject({ template: 'staff_sign_in', locale: 'en', to: 'ops@demo.mawsool.test' });

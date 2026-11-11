@@ -30,7 +30,7 @@ describe('clinician facility scoping', () => {
 
   beforeAll(async () => {
     testDb = await createTestDb();
-    await runSeed(testDb.db);
+    await runSeed(testDb.db, testDb.cipher);
     ctx = await createTestApp(testDb.db);
     ticketA = await firstTicketAt(FACILITY_A_ID);
     ticketB = await firstTicketAt(FACILITY_B_ID);

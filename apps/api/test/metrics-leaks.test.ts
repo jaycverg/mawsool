@@ -25,7 +25,7 @@ describe('what cannot be worked out from the funnel, the crisis figures and the 
 
   beforeAll(async () => {
     testDb = await createTestDb();
-    await runSeed(testDb.db, SEED_ANCHOR);
+    await runSeed(testDb.db, testDb.cipher, SEED_ANCHOR);
     ctx = await createTestApp(testDb.db);
     ctx.clock.set(SEED_ANCHOR);
     headers = { authorization: `Bearer ${await signIn(ctx, 'ops@demo.mawsool.test')}` };
