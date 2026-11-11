@@ -158,6 +158,20 @@ export function outcomeTable(counts: OutcomeCounts): ProtectedTable {
 const SUPPRESSED = { suppressed: true } as const;
 
 /**
+ * The cells to hide. Every one if the funnel hides its re-measured stage; otherwise what `hiddenCells` hides, except that
+ * `remeasured` is never hidden here: the funnel publishes the same count, so hiding it would protect nothing, and the relations
+ * (remeasured = included + excluded) could only reach it by hiding it for another cell's sake. Leaving it shown does not make a hidden
+ * cell derivable: a hidden cell is then one of at least two unknowns of its relation, or empty (`pinnedCells` over this set finds
+ * no non-empty hidden cell pinned, which `metrics-outcomes.test.ts` checks).
+ */
+export function hiddenOutcomeCells(table: ProtectedTable, funnelHidesRemeasured: boolean): Set<string> {
+  if (funnelHidesRemeasured) return new Set(table.cells.keys());
+  const hidden = hiddenCells(table);
+  hidden.delete('remeasured');
+  return hidden;
+}
+
+/**
  * Symptom and functioning change among re-measured tickets.
  *
  * The figures stand on the same people as the funnel's last stage, so when the funnel hides that stage for the period
@@ -170,7 +184,7 @@ const SUPPRESSED = { suppressed: true } as const;
 export function buildOutcomes(period: MetricPeriod, facts: readonly OutcomeFact[], since: Date | null, funnelHidesRemeasured: boolean): OutcomesResponse {
   const counts = countOutcomes(facts, since);
   const table = outcomeTable(counts);
-  const hidden = funnelHidesRemeasured ? new Set(table.cells.keys()) : hiddenCells(table);
+  const hidden = hiddenOutcomeCells(table, funnelHidesRemeasured);
   const cell = (key: string): number | typeof SUPPRESSED => cellOrSuppressed(hidden, key, table.cells.get(key)!, () => table.cells.get(key)![0]!);
   const share = (instrument: TrackedInstrument, part: 'improved' | 'deteriorated') => {
     const slot = counts.perInstrument[instrument];

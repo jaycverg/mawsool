@@ -32,9 +32,12 @@ lives, and is never stored. The session note, the database name and the crisis m
   phone's other data behind a database that will not delete: it reads the list of session ids (searching through the list alone
   when the browser's own listing fails), deletes every database it can, clears the device store regardless, writes the ids that
   were not deleted back to the list and reports "erased" with a note that those check-ins are removed at the next start of the app.
-  The ids are listed before anything is deleted, so a deletion that throws outright leaves every one of them on the list (none is
-  reported clean). If the ids cannot be written back, or could not be listed at all, the note says some may still be on the phone
-  and asks the person to run Delete everything again.
+  The ids are listed before anything is deleted (the browser's own listing, the device's list, and this tab's own id), so a deletion
+  that throws outright leaves every one of them on the list and none is reported clean. The listing counts as complete when the
+  browser's listing answered or the device's list could be read. The note asks the person to run Delete everything again, saying
+  some check-ins may still be on the phone, when the ids could not be written back to the list, or when the listing was not
+  complete (neither source answered, so other sessions may exist that were never found); otherwise the note says the check-ins
+  that could not be deleted are removed at the next start of the app.
 - The next start of the app in any tab, for every session whose Web Lock has been free for 2 s: a closed tab cannot wipe its
   own store, and a reload releases the lock only between two pages, which the 2 s grace waits out. A session that is live in
   another tab is never deleted by this.

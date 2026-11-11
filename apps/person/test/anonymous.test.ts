@@ -138,7 +138,7 @@ const stubStore = (over: Partial<AnonymousStore> = {}): AnonymousStore => ({
   reconcile: () => Promise.resolve(),
   wipe: () => Promise.resolve('deleted'),
   wipeAll: () => Promise.resolve({ left: [] }),
-  ids: () => Promise.resolve([]),
+  ids: () => Promise.resolve({ ids: [], complete: true }),
   keep: () => Promise.resolve(),
   ...over,
 });
@@ -435,12 +435,13 @@ describe('a live anonymous session is not deleted by another tab', () => {
   });
 });
 
+/** An IndexedDB without `databases()`, as in an older browser: it can open and delete a database by name and nothing more. */
+function blindEnv(locks: LocksLike | null = null): AnonymousEnv {
+  const base = new IDBFactory();
+  return { indexedDB: { open: base.open.bind(base), deleteDatabase: base.deleteDatabase.bind(base), cmp: base.cmp.bind(base) } as unknown as IDBFactory, crypto: globalThis.crypto, locks, abandonedGraceMs: 0 };
+}
+
 describe('in a browser that cannot list its databases', () => {
-  /** An IndexedDB without `databases()`, as in an older browser: it can open and delete a database by name and nothing more. */
-  function blindEnv(locks: LocksLike | null = null): AnonymousEnv {
-    const base = new IDBFactory();
-    return { indexedDB: { open: base.open.bind(base), deleteDatabase: base.deleteDatabase.bind(base), cmp: base.cmp.bind(base) } as unknown as IDBFactory, crypto: globalThis.crypto, locks, abandonedGraceMs: 0 };
-  }
   /** What the browser really holds, read through a handle that can list. */
   const namesIn = async (env: AnonymousEnv) => {
     const names: string[] = [];
@@ -598,12 +599,14 @@ describe('Delete everything never strands the phone\'s data behind an anonymous 
     expect(await registry.list()).toEqual([]);
   });
 
-  it('does not report a deletion that throws as clean: every id listed first counts as left, and only a listing that also failed is unknown', async () => {
+  it('does not report a deletion that throws as clean: every id listed first counts as left, and an incomplete listing is unknown', async () => {
     const boom = () => Promise.reject(new Error('x'));
-    await expect(wipeAnonymousData(stubStore({ ids: () => Promise.resolve([SESSION, OTHER]), wipeAll: boom }))).resolves.toEqual({ left: [SESSION, OTHER], unknown: false });
+    const listed = (complete: boolean) => () => Promise.resolve({ ids: [SESSION, OTHER], complete });
+    await expect(wipeAnonymousData(stubStore({ ids: listed(true), wipeAll: boom }))).resolves.toEqual({ left: [SESSION, OTHER], unknown: false });
     await expect(wipeAnonymousData(stubStore({ ids: boom, wipeAll: boom }))).resolves.toEqual({ left: [], unknown: true });
-    // A listing that failed beside a deletion that worked says what the deletion says.
-    await expect(wipeAnonymousData(stubStore({ ids: boom, wipeAll: () => Promise.resolve({ left: [OTHER] }) }))).resolves.toEqual({ left: [OTHER], unknown: false });
+    // A listing that failed beside a deletion that worked says what the deletion left, and that the listing was not complete.
+    await expect(wipeAnonymousData(stubStore({ ids: boom, wipeAll: () => Promise.resolve({ left: [OTHER] }) }))).resolves.toEqual({ left: [OTHER], unknown: true });
+    await expect(wipeAnonymousData(stubStore({ ids: listed(false), wipeAll: () => Promise.resolve({ left: [] }) }))).resolves.toEqual({ left: [], unknown: true });
   });
 
   it('clears every ordinary key and puts every id back on the list when the deletion itself throws, and says the check-ins go at the next start', async () => {
@@ -622,11 +625,27 @@ describe('Delete everything never strands the phone\'s data behind an anonymous 
     expect(devices.data.has(KEYS.tickets)).toBe(false); // the erase itself is done
   });
 
-  it('says it is unknown when neither the listing nor the deletion could be done', async () => {
-    const { devices } = await twoSessions();
-    const boom = () => Promise.reject(new Error('x'));
-    expect(await deleteDeviceData(devices.storage, undefined, stubStore({ ids: boom, wipeAll: boom }))).toEqual({ anonymousLeft: 'unknown' });
-    expect(devices.data.has(KEYS.tickets)).toBe(false);
+  it('says it is unknown when the browser cannot list its databases and the device\'s list cannot be read, so nothing could be found to delete', async () => {
+    // A real store: no `indexedDB.databases()`, and a device store whose reads fail. The list is the only record of the sessions.
+    const devices = memoryStorage({ [KEYS.tickets]: [{ id: 't' }], [KEYS.anonymousSessions]: [SESSION, OTHER] });
+    const env = blindEnv();
+    const store = createAnonymousStore(env, () => null, deviceSessionRegistry(() => devices.storage));
+    devices.failures.read = true;
+    expect(await store.ids()).toEqual({ ids: [], complete: false });
+    expect(await deleteDeviceData(devices.storage, undefined, store)).toEqual({ anonymousLeft: 'unknown' });
+    expect(devices.data.has(KEYS.tickets)).toBe(false); // the erase itself is done
+  });
+
+  it('counts a listing as complete when either the browser\'s listing or the device\'s list answered', async () => {
+    const devices = memoryStorage();
+    const env = freshEnv();
+    expect((await createAnonymousStore(env, () => null).ids()).complete).toBe(true); // the browser lists, there is no list to read
+    expect((await createAnonymousStore(blindEnv(), () => null, deviceSessionRegistry(() => devices.storage)).ids()).complete).toBe(true); // the list is read
+    expect((await createAnonymousStore(blindEnv(), () => null).ids()).complete).toBe(false); // neither exists
+    const base = env.indexedDB;
+    const refusing = { ...env, indexedDB: { open: base.open.bind(base), deleteDatabase: base.deleteDatabase.bind(base), cmp: base.cmp.bind(base), databases: () => Promise.reject(new Error('no listing')) } as unknown as IDBFactory };
+    devices.failures.read = true;
+    expect((await createAnonymousStore(refusing, () => null, deviceSessionRegistry(() => devices.storage)).ids()).complete).toBe(false);
   });
 
   it('reports the ids it could not delete from wipeAll and takes the deleted ones off the list', async () => {
@@ -673,6 +692,7 @@ describe('Delete everything never strands the phone\'s data behind an anonymous 
     let refusing = true;
     const registry: SessionRegistry = {
       list: () => Promise.resolve([]),
+      listStrict: () => Promise.resolve([]),
       add: () => (refusing ? Promise.reject(new Error('list refused')) : Promise.resolve()),
       remove: () => Promise.resolve(),
     };
