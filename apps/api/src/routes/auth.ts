@@ -10,10 +10,10 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Clock } from '../clock';
 import { schema, type Db } from '../db/client';
-import type { MagicLinkNotifier } from '../notifier';
+import type { Notifier } from '../notifier';
 import { sendError } from '../plugins/auth';
 import { randomToken, sha256Hex } from '../security';
-import { staffSignInLink, type StaffAppUrls } from '../staff-links';
+import { STAFF_LINK_LOCALE, staffSignInLink, type StaffAppUrls } from '../staff-links';
 
 /** A sign-in link works once, for 15 minutes. */
 export const MAGIC_LINK_TTL_MS = 15 * 60 * 1000;
@@ -24,7 +24,7 @@ export interface AuthRouteDeps {
   db: Db;
   /** The wall clock: a sign-in link and a session live in real time, never the demo clock. */
   clock: Clock;
-  notifier: MagicLinkNotifier;
+  notifier: Notifier;
   /** Where each role's sign-in link points. */
   staffApps: StaffAppUrls;
   log: { error(object: Record<string, unknown>, message: string): void };
@@ -66,7 +66,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): v
           expiresAt,
         });
         try {
-          await deps.notifier.send({ to: email, link: staffSignInLink(user.role, token, deps.staffApps), expiresAt });
+          await deps.notifier.send({ template: 'staff_sign_in', locale: STAFF_LINK_LOCALE, to: email, link: staffSignInLink(user.role, token, deps.staffApps), expiresAt });
         } catch (error) {
           deps.log.error({ err: error }, 'could not deliver the staff sign-in link');
         }

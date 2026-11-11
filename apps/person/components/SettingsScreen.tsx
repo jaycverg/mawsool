@@ -17,6 +17,7 @@ import {
   enableReminders,
   loadReminders,
   removeReminderNumber,
+  requestReminderSample,
   saveReminderNumber,
   setReminderInterval,
   turnOffReminders,
@@ -31,7 +32,7 @@ import { BottomNav } from './BottomNav';
 import { CrisisHandoffPanel } from './CrisisHandoffPanel';
 import { HomeHeader } from './HomeHeader';
 
-type ReminderNote = 'none' | 'working' | 'failed' | 'blocked' | 'invalid' | 'denied';
+type ReminderNote = 'none' | 'working' | 'failed' | 'blocked' | 'invalid' | 'denied' | 'sample';
 
 /** The note a reminder change leaves on screen: nothing when it was saved. */
 const noteOf = (change: ReminderChange): ReminderNote => (change === 'saved' ? 'none' : change);
@@ -96,6 +97,7 @@ export function SettingsScreen() {
   const chooseInterval = (weeks: ReminderInterval) => changeReminders(async (d) => noteOf(await setReminderInterval({ server: serverFor(d), now: deviceNow }, reminders!, weeks)));
   const saveNumber = () => changeReminders(async (d) => noteOf(await saveReminderNumber({ server: serverFor(d), now: deviceNow }, reminders!, phoneInput)));
   const removeNumber = () => changeReminders(async (d) => noteOf(await removeReminderNumber({ server: serverFor(d) }, reminders!)));
+  const showSample = () => changeReminders(async (d) => ((await requestReminderSample({ server: serverFor(d) })) === 'prepared' ? 'sample' : 'failed'));
 
   /** Takes the person out of the equity group totals: the server clears the four buckets, then the phone remembers it. */
   async function optOut() {
@@ -239,6 +241,9 @@ export function SettingsScreen() {
                 {reminders.phone !== null ? (
                   <>
                     <p className="text-[15px]" dir="ltr" data-reminder-number>{reminders.phone}</p>
+                    <button type="button" className="tap rounded-pill border-[1.5px] border-accent px-4 font-semibold text-accent" disabled={reminderNote === 'working'} onClick={() => void showSample()} data-reminder-sample>
+                      {t('remindersSampleButton')}
+                    </button>
                     <button type="button" className="tap rounded-pill border-[1.5px] border-danger px-4 font-semibold text-danger" disabled={reminderNote === 'working'} onClick={() => void removeNumber()}>
                       {t('remindersRemoveNumber')}
                     </button>
@@ -265,6 +270,7 @@ export function SettingsScreen() {
               </div>
             </>
           )}
+          {reminderNote === 'sample' && <p role="status" className="t-small text-muted" data-reminder-note="sample">{t('remindersSampleDone')}</p>}
           {reminderNote === 'denied' && <p role="status" className="t-small text-muted" data-reminder-note="denied">{t('remindersDenied')}</p>}
           {reminderNote === 'invalid' && <p role="alert" className="text-[15px] font-semibold text-danger" data-reminder-note="invalid">{t('remindersInvalid')}</p>}
           {reminderNote === 'failed' && <p role="alert" className="text-[15px] font-semibold text-danger" data-reminder-note="failed">{t('remindersFailed')}</p>}

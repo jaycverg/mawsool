@@ -1,6 +1,7 @@
 import { DEFAULT_SUMMARY_MODEL } from '@mawsool/summary';
 import type { InboundSource } from '@mawsool/types';
 import { z } from 'zod';
+import { NOTIFIER_DRIVERS, type NotifierDriverName } from './notifier';
 
 /** A 256-bit key as base64. Anything else is refused, so a truncated or mistyped key cannot start the API. */
 const EncryptionKey = z
@@ -26,9 +27,16 @@ const DemoFlag = z
   .preprocess((value) => (value === '' ? undefined : value), z.enum(['true', 'false', '1', '0'], { error: 'DEMO_MODE must be true or false (or be left unset)' }).default('false'))
   .transform((value) => value === 'true' || value === '1');
 
+/**
+ * `NOTIFIER_DRIVER` picks the mock that "delivers" every outbound message (`console` or `log`); neither sends anything. Unset or
+ * empty is `log`, the API's own log, where a presenter copies a sign-in link from. Any other value stops the API from starting.
+ */
+const NotifierDriver = z.preprocess((value) => (value === '' ? undefined : value), z.enum(NOTIFIER_DRIVERS, { error: 'NOTIFIER_DRIVER must be console or log (or be left unset)' }).default('log'));
+
 const EnvSchema = z
   .object({
     DEMO_MODE: DemoFlag,
+    NOTIFIER_DRIVER: NotifierDriver,
     API_PORT: z.coerce.number().int().min(1).max(65535).default(4000),
     API_HOST: z.string().default('127.0.0.1'),
     DATABASE_URL: z.string().default('postgres://mawsool:mawsool@localhost:54329/mawsool'),
@@ -68,6 +76,8 @@ export interface AppConfig {
   anthropicApiKey: string | undefined;
   /** Registers the demo routes (clock and reset). Off unless `DEMO_MODE` is `true` or `1`. */
   demoMode: boolean;
+  /** Which mock "delivers" outbound messages. */
+  notifierDriver: NotifierDriverName;
 }
 
 /** Reads and validates the environment. Throws with a readable message on a bad or missing value, the key included. */
@@ -91,5 +101,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     summaryModel: parsed.SUMMARY_MODEL,
     anthropicApiKey: parsed.ANTHROPIC_API_KEY,
     demoMode: parsed.DEMO_MODE,
+    notifierDriver: parsed.NOTIFIER_DRIVER,
   };
 }

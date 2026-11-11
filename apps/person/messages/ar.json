@@ -338,6 +338,8 @@
     "remindersNumberLabel": "رقم الجوال (اختياري)",
     "remindersSaveNumber": "حفظ الرقم",
     "remindersRemoveNumber": "إزالة الرقم",
+    "remindersSampleButton": "عرض نص تجريبي",
+    "remindersSampleDone": "أُعدّ نص تجريبي. لم يُرسَل شيء: هذه النسخة لا ترسل رسائل نصية حقيقية.",
     "remindersDenied": "الإشعارات غير مسموح بها في هذا المتصفح، لذلك سيظهر التذكير في الشاشة الرئيسية عند فتح التطبيق.",
     "remindersInvalid": "أدخل الرقم بالصيغة الدولية، مثل ‎+971501234567.",
     "remindersFailed": "تعذّر ذلك. اتصل بالإنترنت وحاول مجددًا.",

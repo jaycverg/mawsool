@@ -2,12 +2,39 @@ import type { ReminderPhoneRequest } from '@mawsool/types';
 import { eq } from 'drizzle-orm';
 import type { Clock } from '../clock';
 import type { Cipher } from '../crypto';
+import type { Notifier } from '../notifier';
 import { schema, type Db } from '../db/client';
 
 export interface ReminderDeps {
   db: Db;
   cipher: Cipher;
   clock: Clock;
+}
+
+export interface ReminderSampleDeps extends ReminderDeps {
+  notifier: Notifier;
+}
+
+/**
+ * Hands a sample text reminder for the person's own stored number to the notifier, which is a mock: nothing is sent. It is
+ * the person's own request, never a schedule, so it changes no reminder rule. The number is decrypted only to be given to the
+ * notifier and goes nowhere else; the text is in the person's language (English when it is not one of ours). `none` when the person
+ * holds no number, `failed` when the notifier could not deliver it.
+ */
+export async function sendReminderSample(deps: ReminderSampleDeps, personId: string): Promise<'sample' | 'none' | 'failed'> {
+  const [row] = await deps.db
+    .select({ phoneCiphertext: schema.reminderPhones.phoneCiphertext, locale: schema.persons.locale })
+    .from(schema.reminderPhones)
+    .innerJoin(schema.persons, eq(schema.persons.id, schema.reminderPhones.personId))
+    .where(eq(schema.reminderPhones.personId, personId))
+    .limit(1);
+  if (!row) return 'none';
+  try {
+    await deps.notifier.send({ template: 'reminder_text', locale: row.locale, to: deps.cipher.decrypt(row.phoneCiphertext, reminderPhoneContext(personId)) });
+    return 'sample';
+  } catch {
+    return 'failed';
+  }
 }
 
 /** What a stored number is bound to: the person it belongs to. A ciphertext copied onto another person's row does not decrypt. */

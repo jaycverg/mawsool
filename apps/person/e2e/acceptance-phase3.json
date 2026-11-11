@@ -137,7 +137,7 @@
   },
   {
     "id": "reminder-number-is-optional-stored-apart-and-deleted-with-the-reminders",
-    "sentence": "The number for text reminders is optional, refused unless international, held by the server only as ciphertext in its own row, labelled a sample, and deleted by removing it, by turning reminders off and by Delete everything"
+    "sentence": "The number for text reminders is optional, refused unless international, held by the server only as ciphertext in its own row, labelled a sample, answered with a prepared sample that sends nothing, and deleted by removing it, by turning reminders off and by Delete everything"
   },
   {
     "id": "repeat-check-opens-six-weeks-after-the-clinic-saw-the-person",

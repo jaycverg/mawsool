@@ -148,6 +148,15 @@ export async function saveReminderNumber(deps: { server: ServerDeps; now: Now },
   return 'saved';
 }
 
+/**
+ * Asks the server to prepare a sample text reminder for the number it holds. The server hands it to a mock notifier and sends
+ * nothing; the phone only learns that a sample was prepared. It changes no setting and keeps nothing on the phone.
+ */
+export async function requestReminderSample(deps: { server: ServerDeps }): Promise<'prepared' | 'failed'> {
+  const done = await callServer(deps.server, 'POST', '/me/reminder-phone/sample');
+  return done.ok ? 'prepared' : 'failed';
+}
+
 /** Whether the server may hold a number for this person: one the phone knows of, or one whose upload may have been stored without the phone hearing. */
 function serverMayHold(settings: ReminderSettings): boolean {
   return settings.phone !== null || settings.serverMayHoldPhone;

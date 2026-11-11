@@ -1563,6 +1563,12 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect(held[0]!.ciphertext).not.toContain(number.slice(4));
     expect(await rawStoreKeys(page)).toContain('reminders');
 
+    // A sample text goes to the API's mock notifier: it answers that nothing was sent, and the phone says so.
+    const sampleStatus = page.waitForResponse((response) => response.url() === `${API}/me/reminder-phone/sample` && response.request().method() === 'POST');
+    await page.locator('[data-reminder-sample]').click();
+    expect((await sampleStatus).status()).toBe(200);
+    await expect(page.locator('[data-reminder-note="sample"]')).toHaveText(msg(locale, 'settings.remindersSampleDone'));
+
     // Removing the number deletes the row and keeps reminders on.
     await page.getByRole('button', { name: msg(locale, 'settings.remindersRemoveNumber'), exact: true }).click();
     await expect(page.locator('#reminder-phone')).toBeVisible();

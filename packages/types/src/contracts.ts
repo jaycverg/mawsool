@@ -441,6 +441,10 @@ export type ReminderPhoneRequest = z.infer<typeof ReminderPhoneRequestSchema>;
 export const ReminderPhoneResultSchema = z.object({ stored: z.boolean(), intervalWeeks: ReminderIntervalSchema.nullable() });
 export type ReminderPhoneResult = z.infer<typeof ReminderPhoneResultSchema>;
 
+/** What the server answers when asked for a sample text reminder: that one was prepared and that nothing was sent (every driver is a mock). */
+export const ReminderSampleResultSchema = z.object({ sample: z.literal(true), nothingSent: z.literal(true) });
+export type ReminderSampleResult = z.infer<typeof ReminderSampleResultSchema>;
+
 /**
  * The short template a person may hand to the crisis line: the language they use, the totals of their latest finished
  * check-ins (never item answers), which trigger fired (the console reads "item 9 positive" from `phq9_item9`) and, only if

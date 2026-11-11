@@ -3,9 +3,9 @@ import { and, eq, inArray, isNotNull, isNull, lt, or, gt } from 'drizzle-orm';
 import type { Clock } from '../clock';
 import { shareEndedSql } from '../consents/service';
 import { schema, type Db } from '../db/client';
-import type { ClinicLinkNotifier } from '../notifier';
+import type { Notifier } from '../notifier';
 import { randomToken, sha256Hex } from '../security';
-import { clinicLink } from '../staff-links';
+import { STAFF_LINK_LOCALE, clinicLink } from '../staff-links';
 import { appendEvent, lastEvent, type Executor } from '../tickets/events';
 import { evaluate } from '../tickets/transitions';
 
@@ -24,7 +24,7 @@ export interface ClinicLinkDeps {
   clock: Clock;
   /** The wall clock: whether a link has expired, and when it was used. */
   securityClock: Clock;
-  notifier: ClinicLinkNotifier;
+  notifier: Notifier;
   clinicianAppUrl: string;
   log: { error(object: Record<string, unknown>, message: string): void };
 }
@@ -57,7 +57,7 @@ export async function issueClinicLink(deps: ClinicLinkDeps, ticketId: string): P
     const token = randomToken();
     const expiresAt = new Date(now.getTime() + CLINIC_LINK_TTL_MS);
     await deps.db.insert(schema.clinicLinks).values({ tokenHash: sha256Hex(token), ticketId, facilityId: row.facility.id, createdAt: now, expiresAt });
-    await deps.notifier.sendClinicLink({ facility: row.facility.name, ticketCode: row.ticket.shortCode, link: clinicLink(deps.clinicianAppUrl, ticketId, token), expiresAt });
+    await deps.notifier.send({ template: 'clinic_link', locale: STAFF_LINK_LOCALE, facility: row.facility.name, ticketCode: row.ticket.shortCode, link: clinicLink(deps.clinicianAppUrl, ticketId, token), expiresAt });
     return 'issued';
   } catch (error) {
     deps.log.error({ err: error }, 'could not issue the clinic link');
