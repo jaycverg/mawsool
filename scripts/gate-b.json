@@ -2189,7 +2189,7 @@
       },
       {
         "file": "test/notifier.test.ts",
-        "name": "makes a recipient reference that is the same for the same recipient"
+        "name": "makes a recipient reference that is the same for the same row"
       },
       {
         "file": "test/notifier.test.ts",
