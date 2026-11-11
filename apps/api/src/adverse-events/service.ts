@@ -3,6 +3,7 @@ import { ADVERSE_EVENT_SEVERITIES, ADVERSE_EVENT_STATUSES } from '@mawsool/types
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Clock } from '../clock';
 import { schema, type Db } from '../db/client';
+import type { Executor } from '../tickets/events';
 
 export interface AdverseEventDeps {
   db: Db;
@@ -43,16 +44,17 @@ export async function recordAdverseEvent(deps: AdverseEventDeps, actor: Actor, r
   const occurredAt = request.occurredAt ? new Date(request.occurredAt) : deps.clock.now();
   if (occurredAt.getTime() > deps.clock.now().getTime()) return { kind: 'in_the_future' };
   const recordedAt = deps.securityClock.now();
-  const id = await deps.db.transaction(async (tx) => {
+  // The answer is read inside the transaction, so it is what was stored and nothing can fail between the commit and the reply: a
+  // reply that never arrives is retried against a request that either wrote nothing or answered.
+  const event = await deps.db.transaction(async (tx) => {
     const [row] = await tx
       .insert(schema.adverseEvents)
       .values({ type: request.type, severity: request.severity, status: 'open', occurredAt, recordedAt, ticketRef: request.ticketRef ?? null })
       .returning({ id: schema.adverseEvents.id });
     await tx.insert(schema.adverseEventHistory).values({ eventId: row!.id, seq: 1, fromStatus: null, toStatus: 'open', at: recordedAt, staffUserId: actor.staffUserId });
-    return row!.id;
+    return (await loadEvents(tx, [row!.id]))[0]!;
   });
-  const [event] = await loadEvents(deps.db, [id]);
-  return { kind: 'recorded', event: event! };
+  return { kind: 'recorded', event };
 }
 
 export type MoveResult = { kind: 'moved'; event: AdverseEvent } | { kind: 'not_found' } | { kind: 'illegal' } | { kind: 'lost_race' };
@@ -75,25 +77,25 @@ export async function moveAdverseEvent(deps: AdverseEventDeps, actor: Actor, id:
       .set({ status: to })
       .where(and(eq(schema.adverseEvents.id, id), eq(schema.adverseEvents.status, from)))
       .returning({ id: schema.adverseEvents.id });
-    if (updated.length === 0) return false;
+    if (updated.length === 0) return null;
     // The update above holds the event's row until this transaction ends, so the next number is read without a rival.
     const [last] = await tx.select({ seq: sql<number>`max(${schema.adverseEventHistory.seq})::int` }).from(schema.adverseEventHistory).where(eq(schema.adverseEventHistory.eventId, id));
     await tx.insert(schema.adverseEventHistory).values({ eventId: id, seq: (last?.seq ?? 0) + 1, fromStatus: from, toStatus: to, at, staffUserId: actor.staffUserId });
-    return true;
+    // Read inside the transaction, as in `recordAdverseEvent`: the answer is what was stored.
+    return (await loadEvents(tx, [id]))[0]!;
   });
   if (!moved) return { kind: 'lost_race' };
-  const [event] = await loadEvents(deps.db, [id]);
-  return { kind: 'moved', event: event! };
+  return { kind: 'moved', event: moved };
 }
 
 /** The events with these ids, with their history, newest occurrence first. */
-async function loadEvents(db: Db, ids: string[]): Promise<AdverseEvent[]> {
+async function loadEvents(db: Executor, ids: string[]): Promise<AdverseEvent[]> {
   if (ids.length === 0) return [];
   const rows = await db.select().from(schema.adverseEvents).where(inArray(schema.adverseEvents.id, ids)).orderBy(desc(schema.adverseEvents.occurredAt), schema.adverseEvents.id);
   return withHistory(db, rows);
 }
 
-async function withHistory(db: Db, rows: (typeof schema.adverseEvents.$inferSelect)[]): Promise<AdverseEvent[]> {
+async function withHistory(db: Executor, rows: (typeof schema.adverseEvents.$inferSelect)[]): Promise<AdverseEvent[]> {
   if (rows.length === 0) return [];
   const moves = await db
     .select({ eventId: schema.adverseEventHistory.eventId, from: schema.adverseEventHistory.fromStatus, to: schema.adverseEventHistory.toStatus, at: schema.adverseEventHistory.at, role: schema.staffUsers.role })

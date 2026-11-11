@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app';
 import type { OffsetClock } from '../src/clock';
 import { schema } from '../src/db/client';
-import { ADVERSE_EVENT_MOVES, isLegalMove, moveAdverseEvent } from '../src/adverse-events/service';
+import { ADVERSE_EVENT_MOVES, isLegalMove, moveAdverseEvent, recordAdverseEvent } from '../src/adverse-events/service';
 import { pseudonymOf } from '../src/metrics/timeliness';
 import { runSeed } from '../src/seed/run';
 import { createTestApp, signIn, type TestApp } from './helpers/app';
@@ -162,6 +162,40 @@ describe('moving an adverse event along its statuses', () => {
     const after = ((await list()).json() as AdverseEventsResponse).items.find((item) => item.id === event.id)!;
     expect(after.status).toBe('closed');
     expect(after.history.map((entry) => entry.to)).toEqual(['open', 'closed']);
+  });
+});
+
+describe('the answer to a record or a move is what was stored', () => {
+  /** A database whose own reads fail once `blocked` is set: only the transaction's connection still answers, so any read after the commit throws. */
+  function blockedAfter() {
+    const state = { blocked: false };
+    const db = new Proxy(testDb.db, {
+      get(target, property, receiver) {
+        if (property === 'select' && state.blocked) return () => { throw new Error('a read after the commit'); };
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    return { state, deps: { db, clock: ctx.app.careClock, securityClock: ctx.clock } };
+  }
+  const opsActor = async () => ({ staffUserId: (await testDb.db.select().from(schema.staffUsers)).find((user) => user.role === 'ops')!.id, role: 'ops' as const });
+
+  it('records and answers with no read after the commit, and the answer equals the stored event', async () => {
+    const { state, deps } = blockedAfter();
+    state.blocked = true;
+    const recorded = await recordAdverseEvent(deps, await opsActor(), { type: 'data_incident', severity: 'high', ticketRef: REF });
+    expect(recorded.kind).toBe('recorded');
+    const stored = ((await list()).json() as AdverseEventsResponse).items.find((item) => recorded.kind === 'recorded' && item.id === recorded.event.id);
+    expect(recorded.kind === 'recorded' ? recorded.event : null).toEqual(stored);
+  });
+
+  it('moves and answers with no read after the commit, and the answer equals the stored event with the move in its history', async () => {
+    const { state, deps } = blockedAfter();
+    const event = await recordOk();
+    const moved = await moveAdverseEvent(deps, await opsActor(), event.id, 'investigating', { afterRead: async () => void (state.blocked = true) });
+    expect(moved.kind).toBe('moved');
+    const stored = ((await list()).json() as AdverseEventsResponse).items.find((item) => item.id === event.id);
+    expect(moved.kind === 'moved' ? moved.event : null).toEqual(stored);
+    expect(stored!.history.map((entry) => entry.to)).toEqual(['open', 'investigating']);
   });
 });
 

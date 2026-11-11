@@ -309,6 +309,42 @@ describe('what is suppressed', () => {
   });
 });
 
+describe('the two instruments\' counts cannot be subtracted into a small group', () => {
+  /** `both` tickets with both totals, `onlyPhq9` with a PHQ-9 pair only, and `neither` re-measured with none shared. */
+  const facts = (both: number, onlyPhq9: number, neither: number): OutcomeFact[] => {
+    const pair = (change: number) => ({ referral: 14, remeasure: 14 + change });
+    const made = (phq9: number | null, gad7: number | null): OutcomeFact => ({ rootCreatedAt: ISSUED, totals: { phq9: phq9 === null ? null : pair(phq9), gad7: gad7 === null ? null : pair(gad7) } });
+    return [
+      ...Array.from({ length: both }, (_unused, i) => made(i % 3 === 0 ? -8 : i % 3 === 1 ? 6 : 1, i % 3 === 0 ? -5 : i % 3 === 1 ? 4 : 0)),
+      ...Array.from({ length: onlyPhq9 }, (_unused, i) => made(i % 3 === 0 ? -8 : i % 3 === 1 ? 6 : 1, null)),
+      ...Array.from({ length: neither }, () => made(null, null)),
+    ];
+  };
+  const hiddenEverywhere = (entry: OutcomesResponse['instruments'][number]) => ({ instrument: entry.instrument, included: SUPPRESSED, excluded: SUPPRESSED, meanChange: SUPPRESSED, reliableImprovement: SUPPRESSED, reliableDeterioration: SUPPRESSED });
+
+  it('hides both instruments\' included and excluded counts, means and shares when they differ by 3 (25 and 22), though each is large and so is its excluded count', () => {
+    // 22 with both, 3 with a PHQ-9 only, 35 with neither: PHQ-9 included 25 and excluded 35, GAD-7 included 22 and excluded 38.
+    const response = buildOutcomes('all', facts(22, 3, 35), null, false);
+    expect(response.remeasured).toBe(60);
+    for (const entry of response.instruments) expect(entry, entry.instrument).toEqual(hiddenEverywhere(entry));
+  });
+
+  it('hides them at a difference of 1 and of 9, the edges of the small group', () => {
+    for (const apart of [1, 9]) {
+      const response = buildOutcomes('all', facts(30, apart, 40), null, false);
+      for (const entry of response.instruments) expect(entry.included, `${apart} apart, ${entry.instrument}`).toEqual(SUPPRESSED);
+    }
+  });
+
+  it('leaves them independent, and shown, at a difference of 10 (25 and 15) and of none', () => {
+    const ten = buildOutcomes('all', facts(15, 10, 35), null, false);
+    expect(ten.instruments.map((entry) => entry.included)).toEqual([25, 15]);
+    expect(ten.instruments.map((entry) => entry.excluded)).toEqual([35, 45]);
+    const none = buildOutcomes('all', facts(30, 0, 30), null, false);
+    expect(none.instruments.map((entry) => entry.included)).toEqual([30, 30]);
+  });
+});
+
 describe('reading the totals is not a clinician\'s read of the bundle', () => {
   it('writes no bundle read and leaves every stored bundle as it was', async () => {
     await addMany(12, { phq9: -8, gad7: -8 });

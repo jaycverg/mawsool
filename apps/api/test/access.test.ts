@@ -1,7 +1,12 @@
 import { ROUTE_ACCESS, STAFF_ROLES, type RouteAccess } from '@mawsool/types';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { schema } from '../src/db/client';
+import { signInbound } from '../src/inbound/signing';
+import { FACILITY_A_ID } from '../src/seed/fixtures';
 import { runSeed } from '../src/seed/run';
 import { createTestApp, signIn, type TestApp } from './helpers/app';
+import { TEST_INBOUND_KEYS } from './helpers/config';
 import { createTestDb, type TestDb } from './helpers/db';
 import { CALLBACK, CONDITION, FREE_TEXT, handoffBody, issue, registerPerson, sendCrisisEvent, serviceAt, ticketRequest, type TestPerson } from './helpers/flow';
 
@@ -256,6 +261,43 @@ describe('no employer or insurer access (MW-505)', () => {
     }
     expect(attempts).toBeGreaterThan(50);
     expect(leaked).toEqual([]);
+  });
+
+  it('refuses a correctly signed inbound request and a valid clinic-link token on the adverse-events routes, the symptom-change route and the reminder-sample route', async () => {
+    // A real clinic link: facility A has no portal for the moment, so a ticket there is given one.
+    const adminHeaders = { authorization: `Bearer ${tokens['admin']}` };
+    expect((await ctx.app.inject({ method: 'PUT', url: `/facilities/${FACILITY_A_ID}/portal-access`, headers: adminHeaders, payload: { portalAccess: false } })).statusCode).toBe(200);
+    try {
+      await issue(ctx, owner, ticketRequest(await serviceAt(testDb.db, 'A', 'gp')));
+      const link = ctx.notifier.lastClinicCredential();
+      const eventsBefore = (await testDb.db.select().from(schema.adverseEvents)).length;
+      const routes: [string, string, Record<string, unknown> | undefined][] = [
+        ['POST', '/adverse-events', { type: 'wrong_routing', severity: 'low' }],
+        ['GET', '/adverse-events', undefined],
+        ['POST', `/adverse-events/${randomUUID()}/status`, { to: 'closed' }],
+        ['GET', '/metrics/outcomes', undefined],
+        ['POST', '/me/reminder-phone/sample', undefined],
+      ];
+      const registeredKeys = registered().map(key);
+      for (const [method, url] of routes) expect(registeredKeys, `${method} ${url}`).toContain(`${method} ${url.replace(/[0-9a-f-]{36}/, ':id')}`);
+      const signedFor = (payload: Record<string, unknown> | undefined) => {
+        const body = payload === undefined ? '' : JSON.stringify(payload);
+        return { body, headers: signInbound({ key: TEST_INBOUND_KEYS.tamm, source: 'tamm', timestamp: Math.floor(ctx.clock.now().getTime() / 1000), nonce: randomUUID().replaceAll('-', ''), body }) };
+      };
+      for (const [method, url, payload] of routes) {
+        const signed = signedFor(payload);
+        const inbound = await ctx.app.inject({ method: method as 'GET', url, headers: { ...signed.headers, ...(payload ? { 'content-type': 'application/json' } : {}) }, payload: payload ? signed.body : undefined });
+        expect([401, 403], `a signed inbound request to ${method} ${url}`).toContain(inbound.statusCode);
+        // The link's token is the only credential it has; it is presented as a bearer token and in the body, and opens nothing here.
+        const clinic = await ctx.app.inject({ method: method as 'GET', url, headers: { authorization: `Bearer ${link.token}` }, payload: payload ? { ...payload, ticketId: link.ticketId, token: link.token } : undefined });
+        expect([401, 403], `a valid clinic link on ${method} ${url}`).toContain(clinic.statusCode);
+        const bodyOnly = await ctx.app.inject({ method: method as 'GET', url, payload: payload ? { ...payload, ticketId: link.ticketId, token: link.token } : undefined });
+        expect([401, 403], `a clinic link in the body of ${method} ${url}`).toContain(bodyOnly.statusCode);
+      }
+      expect((await testDb.db.select().from(schema.adverseEvents)).length, 'nothing was recorded').toBe(eventsBefore);
+    } finally {
+      await ctx.app.inject({ method: 'PUT', url: `/facilities/${FACILITY_A_ID}/portal-access`, headers: adminHeaders, payload: { portalAccess: true } });
+    }
   });
 
   it('lets the right principals through, so the refusals above are not just everything failing', async () => {

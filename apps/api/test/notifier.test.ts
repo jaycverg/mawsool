@@ -1,8 +1,10 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { Writable } from 'node:stream';
+import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/app';
+import { schema } from '../src/db/client';
 import { loadConfig } from '../src/config';
 import {
   NOTIFIER_DRIVERS,
@@ -26,11 +28,13 @@ import { registerPerson } from './helpers/flow';
 const KEY = TEST_ENCRYPTION_KEY;
 const PHONE = '+971509990123';
 const EXPIRES = new Date('2026-11-01T08:15:00Z');
+/** The random id of a stored number's row, which is all a reminder record names its recipient by. */
+const ROW = '0b1c2d3e-4f50-4a60-8b70-9c8d7e6f5a4b';
 
 const messages: Record<(typeof TEMPLATE_KEYS)[number], OutboundMessage> = {
   staff_sign_in: { template: 'staff_sign_in', locale: 'en', to: 'ops@demo.mawsool.test', link: 'http://ops.test/en/sign-in/?token=abc', expiresAt: EXPIRES },
   clinic_link: { template: 'clinic_link', locale: 'en', facility: 'Sample Clinic', ticketCode: 'MW1234', link: 'http://clinic.test/en/clinic-link/#id.token', expiresAt: EXPIRES },
-  reminder_text: { template: 'reminder_text', locale: 'ar', to: PHONE },
+  reminder_text: { template: 'reminder_text', locale: 'ar', to: PHONE, recipientId: ROW },
 };
 
 /** Both drivers, with what each one wrote collected as text. */
@@ -60,7 +64,7 @@ describe('the drivers', () => {
     expect(d.logged).toHaveLength(1);
     expect(d.logged[0]).toEqual({
       message: 'text reminder sample (mock: nothing sent)',
-      fields: { driver: 'log', mock: true, template: 'reminder_text', locale: 'ar', channel: 'sms', recipientRef: recipientRef(PHONE, KEY) },
+      fields: { driver: 'log', mock: true, template: 'reminder_text', locale: 'ar', channel: 'sms', recipientRef: recipientRef(ROW, KEY) },
     });
   });
 
@@ -68,7 +72,7 @@ describe('the drivers', () => {
     const d = drivers();
     await createNotifier(d.console).send(messages.reminder_text);
     expect(d.printed).toHaveLength(1);
-    expect(d.printed[0]).toBe(`[mock notifier] text reminder sample (mock: nothing sent): driver=console mock=true template=reminder_text locale=ar channel=sms recipientRef=${recipientRef(PHONE, KEY)}\n`);
+    expect(d.printed[0]).toBe(`[mock notifier] text reminder sample (mock: nothing sent): driver=console mock=true template=reminder_text locale=ar channel=sms recipientRef=${recipientRef(ROW, KEY)}\n`);
     expect(d.logged).toEqual([]);
   });
 
@@ -99,7 +103,7 @@ describe('the drivers', () => {
   it('never writes a phone number or the text of a reminder, in either driver, in either language', async () => {
     for (const locale of ['ar', 'en', 'fr', null]) {
       const d = drivers();
-      const message: OutboundMessage = { template: 'reminder_text', locale, to: PHONE };
+      const message: OutboundMessage = { template: 'reminder_text', locale, to: PHONE, recipientId: ROW };
       const body = renderMessage(message).body;
       await createNotifier(d.log).send(message);
       await createNotifier(d.console).send(message);
@@ -114,13 +118,39 @@ describe('the drivers', () => {
     }
   });
 
-  it('makes a recipient reference that is the same for the same recipient, differs for another, depends on the key and does not contain the recipient', () => {
-    const a = recipientRef(PHONE, KEY);
+  it('makes a recipient reference that is the same for the same row, differs for another row, depends on the key and does not contain the row id', () => {
+    const a = recipientRef(ROW, KEY);
     expect(a).toMatch(/^rcp_[0-9a-f]{12}$/);
-    expect(recipientRef(PHONE, KEY)).toBe(a);
-    expect(recipientRef('+971509990124', KEY)).not.toBe(a);
-    expect(recipientRef(PHONE, Buffer.alloc(32, 8).toString('base64'))).not.toBe(a);
-    expect(a).not.toContain(PHONE.slice(4));
+    expect(recipientRef(ROW, KEY)).toBe(a);
+    expect(recipientRef('a0b1c2d3-4e5f-4a6b-8c7d-9e8f7a6b5c4d', KEY)).not.toBe(a);
+    expect(recipientRef(ROW, Buffer.alloc(32, 8).toString('base64'))).not.toBe(a);
+    expect(a).not.toContain(ROW.slice(0, 8));
+  });
+
+  it('never derives a reminder record\'s reference from the number: not a hash of it under the key, and the same whatever number the row holds', async () => {
+    const reference = async (to: string) => {
+      const d = drivers();
+      await createNotifier(d.log).send({ template: 'reminder_text', locale: 'en', to, recipientId: ROW });
+      return d.logged[0]!.fields['recipientRef'];
+    };
+    const first = await reference(PHONE);
+    // Another number in the same row: the same reference, so nothing in it depends on the number.
+    expect(await reference('+971509990124')).toBe(first);
+    // Not the keyed hash of any number: a holder of the key who enumerates numbers finds none that matches.
+    const candidates = Array.from({ length: 2000 }, (_unused, i) => `+97150999${String(i).padStart(4, '0')}`);
+    expect(candidates.map((number) => recipientRef(number, KEY))).not.toContain(first);
+    expect(first).not.toBe(recipientRef(PHONE, KEY));
+    // A row that was deleted and made again is a new reference: it maps to nothing that was written before.
+    const again = drivers();
+    await createNotifier(again.log).send({ template: 'reminder_text', locale: 'en', to: PHONE, recipientId: '5d4c3b2a-1f0e-4d9c-8b7a-6f5e4d3c2b1a' });
+    expect(again.logged[0]!.fields['recipientRef']).not.toBe(first);
+  });
+
+  it('writes no recipient reference for the staff sign-in link or the clinic link, whose address, facility and ticket code are written on purpose', async () => {
+    const d = drivers();
+    await createNotifier(d.log).send(messages.staff_sign_in);
+    await createNotifier(d.log).send(messages.clinic_link);
+    for (const record of d.logged) expect(record.fields).not.toHaveProperty('recipientRef');
   });
 
   it('sends nothing: no driver opens a connection', async () => {
@@ -256,7 +286,7 @@ describe('the reminder sample, end to end', () => {
   let testDb: TestDb;
   let ctx: TestApp;
   let lines: string[];
-  const text = { en: TEMPLATES.reminder_text.text.en({ template: 'reminder_text', locale: 'en', to: PHONE }), ar: TEMPLATES.reminder_text.text.ar({ template: 'reminder_text', locale: 'ar', to: PHONE }) };
+  const text = { en: TEMPLATES.reminder_text.text.en({ template: 'reminder_text', locale: 'en', to: PHONE, recipientId: ROW }), ar: TEMPLATES.reminder_text.text.ar({ template: 'reminder_text', locale: 'ar', to: PHONE, recipientId: ROW }) };
 
   beforeEach(async () => {
     testDb = await createTestDb();
@@ -282,12 +312,22 @@ describe('the reminder sample, end to end', () => {
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({ sample: true, nothingSent: true });
       const record = lines.slice(before).map((line) => JSON.parse(line) as { msg?: string; locale?: string; template?: string; recipientRef?: string }).find((entry) => entry.msg === 'text reminder sample (mock: nothing sent)');
-      expect(record, locale).toMatchObject({ template: 'reminder_text', locale, recipientRef: recipientRef(PHONE, KEY) });
+      // The reference is the keyed hash of the stored row's own random id, never of the number.
+      const [row] = await testDb.db.select({ notifyRef: schema.reminderPhones.notifyRef }).from(schema.reminderPhones).where(eq(schema.reminderPhones.personId, person.id));
+      expect(record, locale).toMatchObject({ template: 'reminder_text', locale, recipientRef: recipientRef(row!.notifyRef, KEY) });
+      expect(record!.recipientRef).not.toBe(recipientRef(PHONE, KEY));
+      // Another number in the same row keeps the row's reference; after the row is deleted a new one gets a new reference.
+      await ctx.app.inject({ method: 'PUT', url: '/me/reminder-phone', headers: person.headers, payload: { phone: '+971509990999', intervalWeeks: 2 } });
+      const mark = lines.length;
+      await ctx.app.inject({ method: 'POST', url: '/me/reminder-phone/sample', headers: person.headers });
+      const second = lines.slice(mark).map((line) => JSON.parse(line) as { msg?: string; recipientRef?: string }).find((entry) => entry.msg === 'text reminder sample (mock: nothing sent)');
+      expect(second!.recipientRef, 'the same row keeps its reference when its number changes').toBe(record!.recipientRef);
       expect((await ctx.app.inject({ method: 'DELETE', url: '/me/reminder-phone', headers: person.headers })).statusCode).toBe(200);
     }
     const everything = lines.join('');
     expect(everything).not.toContain(PHONE);
     expect(everything).not.toContain(PHONE.slice(4));
+    expect(everything).not.toContain('09990999');
     expect(everything).not.toContain(text.en);
     expect(everything).not.toContain(text.ar);
     expect(everything).not.toMatch(/phone_ciphertext|v1\.[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{12,}/);

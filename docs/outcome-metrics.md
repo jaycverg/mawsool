@@ -29,6 +29,8 @@ The aggregate decrypts the shared bundle's `scores` on the server, only for tick
 
 The cells (re-measured, and per instrument included, excluded, improved, deteriorated, unchanged) are one `ProtectedTable` with two relations per instrument: re-measured = included + excluded, and included = improved + deteriorated + unchanged. `hiddenCells` / `pinnedCells` hide cells until no small number can be worked out from what is published; a share is also shown only when its part, its whole and what is left over each reach ten; the mean is shown only while the included count is.
 
+The two instruments' included counts are tied, as equity ties its "no bucket given" groups. They count different, overlapping sets of the same re-measured tickets, so two published included counts that differ by 1 to 9 subtract into a small group (25 and 22 leaves three people with a PHQ-9 pair only). When the difference is from 1 to 9, both included cells are hidden, and with them (by the relations) both excluded cells, the means and the shares. A difference of ten or more, or none, publishes nothing small and leaves them independent.
+
 The figures stand on the same people as the funnel's last stage, so the whole response is hidden whenever the funnel hides that stage for the period (`remeasuredHiddenInFunnel`): nothing here can then be combined with the funnel to recover a number it hid.
 
 Not covered, by decision: the same figure in two periods subtracts, as in the funnel and timeliness; and the funnel counts journeys while this counts tickets, which differ only where one journey holds two re-measured tickets (not reachable today).

@@ -31,10 +31,17 @@ export async function exportDeviceData(storage: StorageAdapter, now: () => Date)
   );
 }
 
+/**
+ * What deleting the anonymous check-ins left behind:
+ *  - `none`: nothing;
+ *  - `next_start`: some databases could not be deleted just now; their ids are back on the list and the next start of the app deletes them;
+ *  - `unknown`: some may be left and the list could not be written (or could not be made), so the next start may not find them: the person is asked to run Delete everything again.
+ */
+export type AnonymousLeft = 'none' | 'next_start' | 'unknown';
+
 /** What wiping the phone left behind. */
 export interface DeviceWipe {
-  /** Some anonymous check-in databases could not be deleted just now. Their ids are back on the list, and the next start of the app deletes them. */
-  anonymousLeft: boolean;
+  anonymousLeft: AnonymousLeft;
 }
 
 /**
@@ -48,14 +55,17 @@ export interface DeviceWipe {
  *  1. the list of anonymous session ids is read (a browser that cannot list its databases is searched through that list alone);
  *  2. every database that can be deleted is;
  *  3. the device store is cleared regardless;
- *  4. the ids of the databases still there are written back to the list, so the next start of the app deletes them.
+ *  4. the ids of the databases still there are written back to the list, so the next start of the app deletes them. If a throwing
+ *     deletion leaves it unknown which are there, every id of the first step counts as there; if even that list could not be made, or
+ *     the ids cannot be written back, the result is `unknown`.
  */
 export async function deleteDeviceData(storage: StorageAdapter, tabMark?: TabMarkAdapter<unknown>, anonymous?: AnonymousStore | null): Promise<DeviceWipe> {
-  const { left } = await wipeAnonymousData(anonymous);
+  const { left, unknown } = await wipeAnonymousData(anonymous);
   await storage.clear();
   tabMark?.set(null);
-  // Best effort: the ids are the only way a browser that cannot list its databases finds these again. Failing to write them is not
-  // a failure to erase, and the note to the person is the same either way.
-  await keepAnonymousSessions(left, anonymous);
-  return { anonymousLeft: left.length > 0 };
+  // The ids are the only way a browser that cannot list its databases finds these again, so a list that cannot be written is said
+  // plainly (`unknown`): the erase is still done, and the person is asked to run it again.
+  const kept = await keepAnonymousSessions(left, anonymous);
+  if (unknown || (left.length > 0 && !kept)) return { anonymousLeft: 'unknown' };
+  return { anonymousLeft: left.length > 0 ? 'next_start' : 'none' };
 }

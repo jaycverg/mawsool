@@ -138,10 +138,11 @@ const stubStore = (over: Partial<AnonymousStore> = {}): AnonymousStore => ({
   reconcile: () => Promise.resolve(),
   wipe: () => Promise.resolve('deleted'),
   wipeAll: () => Promise.resolve({ left: [] }),
+  ids: () => Promise.resolve([]),
   keep: () => Promise.resolve(),
   ...over,
 });
-const hangingStore = (): AnonymousStore => stubStore({ open: () => new Promise(() => undefined), reconcile: () => new Promise(() => undefined), wipe: () => new Promise(() => undefined), wipeAll: () => new Promise(() => undefined), keep: () => new Promise(() => undefined) });
+const hangingStore = (): AnonymousStore => stubStore({ open: () => new Promise(() => undefined), reconcile: () => new Promise(() => undefined), wipe: () => new Promise(() => undefined), wipeAll: () => new Promise(() => undefined), ids: () => new Promise(() => undefined), keep: () => new Promise(() => undefined) });
 
 describe('an anonymous session', () => {
   it('is a note on the tab that holds a random id and nothing else: started, read back, and ended', async () => {
@@ -384,8 +385,7 @@ describe('the wipe paths of the anonymous store', () => {
   it('a start that fails or finds no IndexedDB throws nothing and wipes nothing it cannot reach', async () => {
     await expect(reconcileAnonymousStore(null)).resolves.toBeUndefined();
     await expect(reconcileAnonymousStore(stubStore({ reconcile: () => Promise.reject(new Error('x')) }))).resolves.toBeUndefined();
-    await expect(wipeAnonymousData(stubStore({ wipeAll: () => Promise.reject(new Error('x')) }))).resolves.toEqual({ left: [] });
-    await expect(wipeAnonymousData(null)).resolves.toEqual({ left: [] });
+    await expect(wipeAnonymousData(null)).resolves.toEqual({ left: [], unknown: false });
   });
 });
 
@@ -564,7 +564,7 @@ describe('Delete everything never strands the phone\'s data behind an anonymous 
   it('clears every ordinary key anyway when one anonymous database refuses deletion, keeps only that id on the list, and says so', async () => {
     const { env, devices, registry, as } = await twoSessions();
     const wiped = await deleteDeviceData(devices.storage, undefined, as(failingDeletion(env, [dbOf(OTHER)], 'refuse'), null));
-    expect(wiped).toEqual({ anonymousLeft: true });
+    expect(wiped).toEqual({ anonymousLeft: 'next_start' });
     expect(await dbNames(env)).toEqual([dbOf(OTHER)]);
     expect([...devices.data.keys()]).toEqual([KEYS.anonymousSessions]);
     expect(await registry.list()).toEqual([OTHER]);
@@ -582,7 +582,7 @@ describe('Delete everything never strands the phone\'s data behind an anonymous 
   it('does the same when the deletion is only queued behind a connection that ignores it: the id is kept, the rest is erased', async () => {
     const { env, devices, registry, as } = await twoSessions();
     const wiped = await deleteDeviceData(devices.storage, undefined, as(failingDeletion(env, [dbOf(SESSION)], 'block'), null));
-    expect(wiped).toEqual({ anonymousLeft: true });
+    expect(wiped).toEqual({ anonymousLeft: 'next_start' });
     expect([...devices.data.keys()]).toEqual([KEYS.anonymousSessions]);
     expect(await registry.list()).toEqual([SESSION]);
   });
@@ -592,10 +592,41 @@ describe('Delete everything never strands the phone\'s data behind an anonymous 
     const base = env.indexedDB;
     const listingFails = { ...env, indexedDB: { open: base.open.bind(base), deleteDatabase: base.deleteDatabase.bind(base), cmp: base.cmp.bind(base), databases: () => Promise.reject(new Error('no listing')) } as unknown as IDBFactory };
     const wiped = await deleteDeviceData(devices.storage, undefined, as(listingFails, null));
-    expect(wiped).toEqual({ anonymousLeft: false });
+    expect(wiped).toEqual({ anonymousLeft: 'none' });
     expect(await dbNames(env)).toEqual([]);
     expect(devices.data.size).toBe(0);
     expect(await registry.list()).toEqual([]);
+  });
+
+  it('does not report a deletion that throws as clean: every id listed first counts as left, and only a listing that also failed is unknown', async () => {
+    const boom = () => Promise.reject(new Error('x'));
+    await expect(wipeAnonymousData(stubStore({ ids: () => Promise.resolve([SESSION, OTHER]), wipeAll: boom }))).resolves.toEqual({ left: [SESSION, OTHER], unknown: false });
+    await expect(wipeAnonymousData(stubStore({ ids: boom, wipeAll: boom }))).resolves.toEqual({ left: [], unknown: true });
+    // A listing that failed beside a deletion that worked says what the deletion says.
+    await expect(wipeAnonymousData(stubStore({ ids: boom, wipeAll: () => Promise.resolve({ left: [OTHER] }) }))).resolves.toEqual({ left: [OTHER], unknown: false });
+  });
+
+  it('clears every ordinary key and puts every id back on the list when the deletion itself throws, and says the check-ins go at the next start', async () => {
+    const { env, devices, registry, as } = await twoSessions();
+    const throwing = { ...as(env, null), wipeAll: () => Promise.reject(new Error('the browser threw')) };
+    expect(await deleteDeviceData(devices.storage, undefined, throwing)).toEqual({ anonymousLeft: 'next_start' });
+    expect([...devices.data.keys()]).toEqual([KEYS.anonymousSessions]);
+    expect((await registry.list()).sort()).toEqual([OTHER, SESSION].sort());
+    expect((await dbNames(env)).length).toBe(2); // nothing was deleted, and all of it is still findable
+  });
+
+  it('says it is unknown, and asks for a second Delete everything, when the ids cannot be written back', async () => {
+    const { env, devices, as } = await twoSessions();
+    const refusing = { ...as(failingDeletion(env, [dbOf(OTHER)], 'refuse'), null), keep: () => Promise.reject(new Error('the list refused')) };
+    expect(await deleteDeviceData(devices.storage, undefined, refusing)).toEqual({ anonymousLeft: 'unknown' });
+    expect(devices.data.has(KEYS.tickets)).toBe(false); // the erase itself is done
+  });
+
+  it('says it is unknown when neither the listing nor the deletion could be done', async () => {
+    const { devices } = await twoSessions();
+    const boom = () => Promise.reject(new Error('x'));
+    expect(await deleteDeviceData(devices.storage, undefined, stubStore({ ids: boom, wipeAll: boom }))).toEqual({ anonymousLeft: 'unknown' });
+    expect(devices.data.has(KEYS.tickets)).toBe(false);
   });
 
   it('reports the ids it could not delete from wipeAll and takes the deleted ones off the list', async () => {

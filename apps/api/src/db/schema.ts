@@ -351,6 +351,12 @@ export const reminderPhones = pgTable(
       .references(() => persons.id),
     intervalWeeks: integer('interval_weeks').notNull(),
     phoneCiphertext: text('phone_ciphertext').notNull(),
+    /**
+     * A random id of this row alone, made with the row and kept while the row lives (a new number in it keeps it). It is what the
+     * notifier's records name the recipient by (through a keyed hash), so a record can be told to be about the same row without
+     * being derived from the number, and it means nothing once the row is deleted.
+     */
+    notifyRef: uuid('notify_ref').notNull().defaultRandom(),
     createdAt: at('created_at').notNull(),
     updatedAt: at('updated_at').notNull(),
   },
@@ -448,8 +454,9 @@ export const crisisHandoffs = pgTable(
 
 /**
  * The adverse-events log: a coded type, a severity, a status, when it happened (care clock) and when it was recorded (wall
- * clock), and optionally the keyed pseudonymous ticket id the overdue list shows. There is no link to a ticket, a person or a
- * crisis event, and no free text: nothing here can be tied to anyone, so "Delete everything" has nothing of it to erase.
+ * clock), and optionally the keyed pseudonymous ticket id the overdue list shows. That id is a keyed hash of a ticket id, so the
+ * server can map it back to a ticket (it holds the key and the ticket), which adds no link beyond the ticket row the id names.
+ * There is no foreign key to a ticket, a person or a crisis event, and no free text, so "Delete everything" has nothing of the log to erase.
  */
 export const adverseEvents = pgTable(
   'adverse_events',

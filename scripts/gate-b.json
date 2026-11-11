@@ -1938,7 +1938,7 @@
   },
   {
     "id": "delete-everything-clears-the-phone-even-when-an-anonymous-database-will-not-delete",
-    "sentence": "Delete everything never strands the phone's data behind an anonymous database that will not delete: it reads the list of session ids (searching through the list alone when the browser's own listing fails), deletes every database it can, clears the device store regardless, writes the ids that were not deleted back to the list, reports erased with a note in both languages that those check-ins are removed at the next start, and the next start deletes them",
+    "sentence": "Delete everything never strands the phone's data behind an anonymous database that will not delete: it reads the list of session ids (searching through the list alone when the browser's own listing fails), deletes every database it can, clears the device store regardless, writes the ids that were not deleted back to the list, reports erased with a note in both languages that those check-ins are removed at the next start (the note renders in Arabic and English), and the next start deletes them; a deletion that throws outright leaves every listed id left (none is reported clean), and ids that cannot be listed or written back say so in a distinct note asking for Delete everything to be run again",
     "project": "apps/person",
     "tests": [
       {
@@ -1963,6 +1963,37 @@
       },
       {
         "file": "test/erase.test.ts"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "does not report a deletion that throws as clean"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "clears every ordinary key and puts every id back on the list when the deletion itself throws"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "says it is unknown, and asks for a second Delete everything"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "says it is unknown when neither the listing nor the deletion could be done"
+      },
+      {
+        "file": "test/erase.test.ts",
+        "name": "is still erased, with every ordinary key gone, and the result says some are left for the next start"
+      },
+      {
+        "file": "test/erase.test.ts",
+        "name": "says it is unknown when the ids of what is left could not be written back"
+      },
+      {
+        "file": "test/erase.test.ts",
+        "name": "says nothing is left when every database was deleted"
+      },
+      {
+        "file": "test/anonymous-left-note.test.tsx"
       }
     ]
   },
@@ -2149,7 +2180,7 @@
   },
   {
     "id": "mw-802-no-number-or-reminder-body-is-ever-logged",
-    "sentence": "A phone number or a reminder's text is never logged: neither driver writes either, the records carry the template key, language, channel and a non-reversible recipient reference, the sample reminder leaves neither in the API log, and a scan of the API source fails if any other code path writes a log line naming a number or a body",
+    "sentence": "A phone number or a reminder's text is never logged: neither driver writes either, the records carry the template key, language and channel and, for a reminder, a keyed hash of the stored number's random row id (never of the number, so it cannot be recomputed by enumerating numbers, and it maps to nothing once the row is deleted), the sample reminder leaves neither in the API log, and a scan of the API source fails if any other code path writes a log line naming a number or a body",
     "project": "apps/api",
     "tests": [
       {
@@ -2191,6 +2222,14 @@
         "file": "test/reminders.test.ts",
         "project": "apps/person",
         "name": "asks the server for a sample text with no body"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "never derives a reminder record"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "writes no recipient reference for the staff sign-in link"
       }
     ],
     "browser": "reminder-number-is-optional-stored-apart-and-deleted-with-the-reminders"
