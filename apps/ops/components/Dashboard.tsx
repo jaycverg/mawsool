@@ -157,7 +157,6 @@ function Funnel({ data, t, format }: { data: DashboardData; t: Translate; format
   return (
     <section aria-label={t('funnel.label')} className={`${card} flex min-w-0 flex-[1_1_520px] flex-col gap-3`} data-section="funnel">
       <h2 className="text-[17px] font-bold">{t('funnel.heading')}</h2>
-      <InfoPanel id="funnel" label={t('funnel.heading')} />
       {stages.map((stage, index) => {
         const count = stage.count;
         const width = typeof count === 'number' && top > 0 ? Math.max(2, Math.round((count / top) * 100)) : 0;
@@ -181,6 +180,7 @@ function Funnel({ data, t, format }: { data: DashboardData; t: Translate; format
       <p className="t-small rounded-input bg-warning px-3 py-2.5 text-warning-ink" role="note" data-funnel-note>{t('funnel.note')}</p>
       <p className="t-small text-muted">{t('funnel.journeys')}</p>
       <p className="t-small text-muted" data-filter-scope>{t('filters.scope')}</p>
+      <InfoPanel id="funnel" label={t('funnel.heading')} />
     </section>
   );
 }
@@ -211,7 +211,6 @@ function Equity({ equity, t, format }: { equity: EquityResponse; t: Translate; f
           ))}
         </div>
       </div>
-      <InfoPanel id="equity" label={t('equity.heading')} />
       <div className="grid items-center gap-x-3 gap-y-2.5 text-[14px] [grid-template-columns:110px_1fr_minmax(76px,auto)]" data-equity-rows={dimension}>
         {rows.map((row) => {
           const cell = row.cell;
@@ -249,6 +248,7 @@ function Equity({ equity, t, format }: { equity: EquityResponse; t: Translate; f
       ))}
       <p className="t-small font-semibold text-muted" data-equity-period>{t('equity.period')}</p>
       <p className="t-small text-muted">{t('equity.basis')}</p>
+      <InfoPanel id="equity" label={t('equity.heading')} />
     </section>
   );
 }
@@ -265,7 +265,7 @@ function Timeliness({ data, t, format }: { data: DashboardData; t: Translate; fo
   return (
     <section aria-label={t('timeliness.label')} className={`${card} flex min-w-0 flex-[1_1_420px] flex-col gap-3 overflow-x-auto`} data-section="timeliness">
       <h2 className="-mb-0.5 text-[17px] font-bold">{t('timeliness.heading')}</h2>
-      <InfoPanel id="timeliness" label={t('timeliness.heading')} />
+
       <table className="w-full border-collapse text-[14px]">
         <thead>
           <tr className="text-start text-[12px] uppercase tracking-[0.5px] text-muted">
@@ -298,6 +298,7 @@ function Timeliness({ data, t, format }: { data: DashboardData; t: Translate; fo
         </tbody>
       </table>
       <p className="t-small text-muted">{t('timeliness.basis')}</p>
+      <InfoPanel id="timeliness" label={t('timeliness.heading')} />
 
       <h3 className="text-[15px] font-semibold">{t('timeliness.overdueHeading')}</h3>
       <InfoPanel id="overdue" label={t('timeliness.overdueHeading')} />
@@ -345,7 +346,6 @@ function Safety({ data, t, format }: { data: DashboardData; t: Translate; format
   return (
     <section aria-label={t('safety.label')} className={`${card} flex min-w-0 flex-[1_1_420px] flex-col gap-2.5`} data-section="safety">
       <h2 className="text-[17px] font-bold">{t('safety.heading')}</h2>
-      <InfoPanel id="safety" label={t('safety.heading')} />
       <div className="grid grid-cols-3 gap-2.5">
         {stat('shown', t('safety.shown'), isSuppressed(crisis.shown) ? null : format(crisis.shown))}
         {stat('called', t('safety.called'), isSuppressed(crisis.calledALine) ? null : t('safety.of', { count: format(crisis.calledALine.count), of: format(crisis.calledALine.of) }))}
@@ -358,6 +358,7 @@ function Safety({ data, t, format }: { data: DashboardData; t: Translate; format
         </div>
       </div>
       <p className="t-small text-muted">{t('safety.note')}</p>
+      <InfoPanel id="safety" label={t('safety.heading')} />
     </section>
   );
 }
