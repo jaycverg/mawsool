@@ -108,7 +108,8 @@
       "gad7": "القلق (GAD-7)"
     },
     "scoreLine": "{instrument}: {total}",
-    "trajectoryLine": "{instrument}: من {from} إلى {to}",
+    "trajectoryScore": "<name>{instrument}</name>: {total}",
+    "trajectoryLine": "<name>{instrument}</name>: من {from} إلى {to}",
     "trajectoryChart": "{instrument} من {from} إلى {to}",
     "band": {
       "minimal": "طفيف",

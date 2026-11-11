@@ -161,6 +161,23 @@ describe('storage adapter (IndexedDB)', () => {
     expect((await factory.databases()).map((db) => db.name)).toEqual(['other']);
   });
 
+  it('says it deleted the database when it did', async () => {
+    const factory = new IDBFactory();
+    await createIndexedDbStorage({ indexedDB: factory, dbName: 'done' }).set('k', 'v');
+    await expect(deleteIndexedDb(factory, 'done')).resolves.toBe('deleted');
+  });
+
+  it('says it is blocked, without waiting, while a connection ignores the request to close, and the database is still there', async () => {
+    const factory = new IDBFactory();
+    const holder = await new Promise<IDBDatabase>((resolve) => {
+      const opening = factory.open('held');
+      opening.onsuccess = () => resolve(opening.result); // no versionchange handler: this connection never closes
+    });
+    await expect(deleteIndexedDb(factory, 'held')).resolves.toBe('blocked');
+    expect((await factory.databases()).map((db) => db.name)).toContain('held');
+    holder.close();
+  });
+
   it('deleting a database that does not exist succeeds and creates nothing', async () => {
     const factory = new IDBFactory();
     await deleteIndexedDb(factory, 'never-made');

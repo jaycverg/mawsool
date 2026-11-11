@@ -340,6 +340,25 @@ const ANONYMOUS_CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect(api.hits).toEqual([]);
   },
 
+  async 'anonymous-banner-link-is-a-touch-target-and-adds-no-scroll-to-a-short-screen'({ page, context, locale }) {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const api = await watchApi(context);
+    await startAnonymous(page, locale, api);
+    const link = page.locator('[data-anonymous-banner] a');
+    await expect(link).toHaveAttribute('href', `/${locale}/anonymous/`);
+    const box = (await link.boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    // The banner takes its height out of the screen below it: a screen that fits the viewport still fits with the banner on.
+    for (const screen of ['', 'options/', 'check-ins/']) {
+      await page.goto(`/${locale}/${screen}`);
+      await expect(page.locator('[data-anonymous-banner]')).toBeVisible();
+      const extra = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight);
+      expect(extra, `${screen || 'home'} scrolls by`).toBeLessThanOrEqual(0);
+    }
+    expect(api.hits).toEqual([]);
+  },
+
   async 'anonymous-crisis-is-kept-on-the-phone-never-sent-and-removed-by-delete-everything'({ page, context, locale }) {
     const api = await watchApi(context);
     await startAnonymous(page, locale, api);

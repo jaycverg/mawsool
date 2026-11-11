@@ -1,4 +1,4 @@
-import { StorageDecryptError, createEncryptedStorage, createIndexedDbStorage, createTabMark, deleteIndexedDb, safeSessionStorage, type CryptoLike, type StorageAdapter } from '@mawsool/ui';
+import { StorageDecryptError, createEncryptedStorage, createIndexedDbStorage, createTabMark, deleteIndexedDb, safeSessionStorage, type CryptoLike, type IndexedDbDeletion, type StorageAdapter } from '@mawsool/ui';
 import { CRISIS_MARK_KEY, isCrisisMark, type CrisisMark } from './crisis';
 import { deviceStorage } from './device';
 import { KEYS } from './keys';
@@ -114,7 +114,6 @@ export interface SessionRegistry {
   list(): Promise<string[]>;
   add(id: string): Promise<void>;
   remove(id: string): Promise<void>;
-  clear(): Promise<void>;
 }
 
 /** The registry over a store (the device's own, which is local: nothing here ever reaches a server). */
@@ -123,17 +122,19 @@ export function deviceSessionRegistry(storage: () => StorageAdapter): SessionReg
     const stored = await storage().get<unknown>(KEYS.anonymousSessions).catch(() => undefined);
     return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string') : [];
   };
+  // An empty list is not kept: the key goes, so a device with no anonymous session left holds no trace that there ever was one.
   const change = (next: (ids: string[]) => string[] | null) =>
     withStoreLock(storage(), async () => {
       const ids = await read();
       const changed = next(ids);
-      if (changed) await storage().set(KEYS.anonymousSessions, changed);
+      if (!changed) return;
+      if (changed.length === 0) await storage().remove(KEYS.anonymousSessions);
+      else await storage().set(KEYS.anonymousSessions, changed);
     });
   return {
     list: read,
     add: (id) => change((ids) => (ids.includes(id) ? null : [...ids, id])),
     remove: (id) => change((ids) => (ids.includes(id) ? ids.filter((other) => other !== id) : null)),
-    clear: () => storage().remove(KEYS.anonymousSessions),
   };
 }
 
@@ -149,10 +150,21 @@ export interface AnonymousStore {
    * other sessions that are abandoned (no live page holds their lock). A live session's database is never deleted by another tab.
    */
   reconcile(): Promise<void>;
-  /** Deletes one session's database (by default this tab's): every ciphertext and the key. The next `open()` starts a new one. */
-  wipe(session?: string | null): Promise<void>;
-  /** Deletes every anonymous database on the device, live or not (every one the browser lists, every id in the registry, and this tab's own), then clears the registry: "Delete everything". */
-  wipeAll(): Promise<void>;
+  /**
+   * Deletes one session's database (by default this tab's): every ciphertext and the key. The next `open()` starts a new one.
+   * Says `'blocked'` when something still holds the database open and the deletion is only queued; the session's id then stays on
+   * the registry, so a later start finds it again.
+   */
+  wipe(session?: string | null): Promise<IndexedDbDeletion | 'none'>;
+  /**
+   * Deletes every anonymous database on the device, live or not (every one the browser lists, every id in the registry, and this
+   * tab's own): "Delete everything". Never throws and never stops at one it cannot delete: it takes a snapshot of the ids, deletes
+   * each it can (taking that id off the registry) and returns the ids it could not delete (refused or blocked), which stay on the
+   * registry. A browser that cannot list its databases, or whose listing fails, is searched through the registry alone.
+   */
+  wipeAll(): Promise<{ left: string[] }>;
+  /** Puts ids back on the registry after the device store was cleared, so a later start deletes their databases. */
+  keep(ids: readonly string[]): Promise<void>;
 }
 
 /**
@@ -215,25 +227,37 @@ export function createAnonymousStore(env: AnonymousEnv, session: () => string | 
     return current.ready.then(() => current.storage);
   }
 
-  async function wipe(target: string | null = session()): Promise<void> {
+  async function wipe(target: string | null = session()): Promise<IndexedDbDeletion | 'none'> {
     if (target === session()) forget();
-    if (target === null) return;
-    await deleteIndexedDb(env.indexedDB, dbNameOf(target));
-    await registry?.remove(target); // only once the database is confirmed deleted
+    if (target === null) return 'none';
+    const deletion = await deleteIndexedDb(env.indexedDB, dbNameOf(target));
+    // Only once the database is confirmed deleted, never on a queued deletion. An id that stays listed after a delete is harmless: the
+    // next start deletes a database that is not there.
+    if (deletion === 'deleted') await registry?.remove(target).catch(() => undefined);
+    return deletion;
   }
 
-  /** The ids of the anonymous databases the browser lists (none where it cannot list them), and those the registry holds. */
+  /** The ids of the anonymous databases the browser lists (none where it cannot list them, or its listing fails), and those the registry holds. */
   async function candidates(): Promise<string[]> {
-    const all = typeof env.indexedDB.databases === 'function' ? await env.indexedDB.databases() : [];
-    const named = all.flatMap((db) => (db.name?.startsWith(ANONYMOUS_DB_PREFIX) ? [db.name.slice(ANONYMOUS_DB_PREFIX.length)] : []));
-    return [...new Set([...named, ...((await registry?.list()) ?? [])])];
+    const listed = typeof env.indexedDB.databases === 'function' ? await env.indexedDB.databases().catch(() => []) : [];
+    const named = listed.flatMap((db) => (db.name?.startsWith(ANONYMOUS_DB_PREFIX) ? [db.name.slice(ANONYMOUS_DB_PREFIX.length)] : []));
+    return [...new Set([...named, ...((await registry?.list().catch(() => [])) ?? [])])];
   }
 
-  async function wipeAll(): Promise<void> {
+  async function wipeAll(): Promise<{ left: string[] }> {
     forget();
     const own = session();
-    for (const id of new Set([...(await candidates()), ...(own === null ? [] : [own])])) await deleteIndexedDb(env.indexedDB, dbNameOf(id));
-    await registry?.clear();
+    const snapshot = new Set([...(await candidates()), ...(own === null ? [] : [own])]);
+    const left: string[] = [];
+    for (const id of snapshot) {
+      const deletion = await wipe(id).catch(() => 'refused' as const);
+      if (deletion !== 'deleted') left.push(id);
+    }
+    return { left };
+  }
+
+  async function keep(ids: readonly string[]): Promise<void> {
+    for (const id of ids) await registry?.add(id);
   }
 
   /** Whether no live page holds a session's lock, twice, a grace apart (a page that is reloading has none in between). */
@@ -257,7 +281,7 @@ export function createAnonymousStore(env: AnonymousEnv, session: () => string | 
     }
   }
 
-  return { open, reconcile, wipe, wipeAll };
+  return { open, reconcile, wipe, wipeAll, keep };
 }
 
 let browserStore: AnonymousStore | null | undefined;
@@ -283,13 +307,24 @@ export function reconcileAnonymousStore(store: AnonymousStore | null = anonymous
 
 /**
  * Deletes everything an anonymous session kept on this device, whichever mode the deleting is done in and whether or not another
- * tab's session is live: the encrypted check-ins and their keys. Never throws; says whether it all went (a browser with nothing to
- * delete has nothing kept, which counts as gone).
+ * tab's session is live: the encrypted check-ins and their keys. Never throws and never stops at one database it cannot delete.
+ * Returns the ids of the sessions whose database is still there (the caller puts them back on the registry once the device store is
+ * cleared; see `keepAnonymousSessions`). A browser with nothing to delete has nothing kept, which counts as gone.
  */
-export async function wipeAnonymousData(store: AnonymousStore | null = anonymousStore()): Promise<boolean> {
-  if (!store) return true;
+export async function wipeAnonymousData(store: AnonymousStore | null = anonymousStore()): Promise<{ left: string[] }> {
+  if (!store) return { left: [] };
   try {
-    await store.wipeAll();
+    return await store.wipeAll();
+  } catch {
+    return { left: [] };
+  }
+}
+
+/** Writes the ids of the sessions that could not be deleted back to the registry, after the device store was cleared; says whether it could. */
+export async function keepAnonymousSessions(left: readonly string[], store: AnonymousStore | null = anonymousStore()): Promise<boolean> {
+  if (!store || left.length === 0) return true;
+  try {
+    await store.keep(left);
     return true;
   } catch {
     return false;
@@ -315,13 +350,14 @@ export function createAnonymousStorage(persistent: () => StorageAdapter, store: 
   const refuse = (key: string) => new Error(`An anonymous session keeps nothing under "${key}"`);
   const sealed = (): Promise<StorageAdapter> => (store ? store.open() : Promise.reject(new Error('This browser has no IndexedDB to keep an anonymous session in')));
 
-  /** Runs one operation on the sealed store; if its contents cannot be decrypted, deletes the database and runs it once more on the new one. */
+  /** Runs one operation on the sealed store; if its contents cannot be decrypted, deletes the database and runs it once more on the new one (unless the deletion is only queued). */
   async function recovering<T>(operation: (inner: StorageAdapter) => Promise<T>): Promise<T> {
     try {
       return await operation(await sealed());
     } catch (error) {
       if (!(error instanceof StorageDecryptError) || !store) throw error;
-      await store.wipe();
+      // A deletion that is only queued leaves the unreadable database in place: carrying on would write to it, so the failure stands.
+      if ((await store.wipe()) === 'blocked') throw error;
       return operation(await sealed());
     }
   }

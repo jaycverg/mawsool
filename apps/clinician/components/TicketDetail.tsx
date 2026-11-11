@@ -13,7 +13,7 @@ import {
 } from '@mawsool/types';
 import { formatDate, isLocale, staffCall, type StaffCall } from '@mawsool/ui';
 import { useLocale, useTranslations } from 'next-intl';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ACTIONABLE_STATES, API_URL, displayCode, sparkline, trajectoryByInstrument } from '../lib/queue';
 import { SAMPLE_LABS, showsSampleLabs } from '../lib/sample-labs';
 
@@ -352,10 +352,12 @@ function Trajectory({ t, lang, content }: { t: Translate; lang: 'ar' | 'en'; con
         const first = entries[0]!;
         const last = entries[entries.length - 1]!;
         const name = t(`instrument.${instrument}`);
+        // The instrument's name is kept on one line, so a narrow column never breaks "(GAD-7)" after its hyphen.
+        const unbroken = { name: (chunks: ReactNode) => <span className="whitespace-nowrap">{chunks}</span> };
         return (
           <li key={instrument} className="flex items-center gap-3" data-trajectory={instrument}>
             <span className="flex-1 text-[15px]">
-              {entries.length === 1 ? t('scoreLine', { instrument: name, total: last.total }) : t('trajectoryLine', { instrument: name, from: first.total, to: last.total })}
+              {entries.length === 1 ? t.rich('trajectoryScore', { instrument: name, total: last.total, ...unbroken }) : t.rich('trajectoryLine', { instrument: name, from: first.total, to: last.total, ...unbroken })}
               {entries.length > 1 && <span className="text-muted"> · {formatDate(first.takenAt, lang)} – {formatDate(last.takenAt, lang)}</span>}
             </span>
             {entries.length > 1 && (

@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { createIndexedDbStorage, createTabMark } from '@mawsool/ui';
+import { StorageDecryptError, createIndexedDbStorage, createTabMark } from '@mawsool/ui';
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -19,6 +19,7 @@ import {
   type AnonymousEnv,
   type AnonymousStore,
   type LocksLike,
+  type SessionRegistry,
 } from '../lib/anonymous';
 import { createCrisisStore, isCrisisMark, type CrisisMark } from '../lib/crisis';
 import { pendingEvents } from '../lib/crisis-outbox';
@@ -135,11 +136,12 @@ async function saveCheckIn(storage: ReturnType<typeof createAnonymousStorage>) {
 const stubStore = (over: Partial<AnonymousStore> = {}): AnonymousStore => ({
   open: () => Promise.reject(new Error('refused')),
   reconcile: () => Promise.resolve(),
-  wipe: () => Promise.resolve(),
-  wipeAll: () => Promise.resolve(),
+  wipe: () => Promise.resolve('deleted'),
+  wipeAll: () => Promise.resolve({ left: [] }),
+  keep: () => Promise.resolve(),
   ...over,
 });
-const hangingStore = (): AnonymousStore => stubStore({ open: () => new Promise(() => undefined), reconcile: () => new Promise(() => undefined), wipe: () => new Promise(() => undefined), wipeAll: () => new Promise(() => undefined) });
+const hangingStore = (): AnonymousStore => stubStore({ open: () => new Promise(() => undefined), reconcile: () => new Promise(() => undefined), wipe: () => new Promise(() => undefined), wipeAll: () => new Promise(() => undefined), keep: () => new Promise(() => undefined) });
 
 describe('an anonymous session', () => {
   it('is a note on the tab that holds a random id and nothing else: started, read back, and ended', async () => {
@@ -382,8 +384,8 @@ describe('the wipe paths of the anonymous store', () => {
   it('a start that fails or finds no IndexedDB throws nothing and wipes nothing it cannot reach', async () => {
     await expect(reconcileAnonymousStore(null)).resolves.toBeUndefined();
     await expect(reconcileAnonymousStore(stubStore({ reconcile: () => Promise.reject(new Error('x')) }))).resolves.toBeUndefined();
-    await expect(wipeAnonymousData(stubStore({ wipeAll: () => Promise.reject(new Error('x')) }))).resolves.toBe(false);
-    await expect(wipeAnonymousData(null)).resolves.toBe(true);
+    await expect(wipeAnonymousData(stubStore({ wipeAll: () => Promise.reject(new Error('x')) }))).resolves.toEqual({ left: [] });
+    await expect(wipeAnonymousData(null)).resolves.toEqual({ left: [] });
   });
 });
 
@@ -510,12 +512,6 @@ describe('in a browser that cannot list its databases', () => {
     expect(devices.data.size).toBe(0);
   });
 
-  it('refuses to clear the device store when an anonymous database could not be deleted, so the list is not lost', async () => {
-    const devices = memoryStorage({ [KEYS.tickets]: [{ id: 't' }] });
-    await expect(deleteDeviceData(devices.storage, undefined, stubStore({ wipeAll: () => Promise.reject(new Error('refused')) }))).rejects.toThrow(/anonymous check-ins/);
-    expect(devices.data.has(KEYS.tickets)).toBe(true);
-  });
-
   it('is written to the device store only, so an anonymous session still makes no request', async () => {
     const { calls, fetchStub } = stubNetwork();
     const { as, storage } = make(blindEnv());
@@ -531,6 +527,130 @@ describe('in a browser that cannot list its databases', () => {
     expect(await registry.list()).toEqual([]);
     devices.failures.read = true;
     expect(await registry.list()).toEqual([]);
+  });
+});
+
+/** The same browser, except that deleting the named databases is refused, or only queued behind a connection that ignores the request. */
+function failingDeletion(env: AnonymousEnv, names: string[], how: 'refuse' | 'block' | 'block-then-delete'): AnonymousEnv {
+  const base = env.indexedDB;
+  const factory = {
+    open: base.open.bind(base),
+    databases: base.databases.bind(base),
+    cmp: base.cmp.bind(base),
+    deleteDatabase(name: string) {
+      if (!names.includes(name)) return base.deleteDatabase(name);
+      if (how === 'block-then-delete') base.deleteDatabase(name); // the browser finishes it later; the caller is told it is queued now
+      const request: { onerror?: () => void; onblocked?: () => void; error: Error } = { error: new Error('refused') };
+      queueMicrotask(() => (how === 'refuse' ? request.onerror?.() : request.onblocked?.()));
+      return request as unknown as IDBOpenDBRequest;
+    },
+  } as unknown as IDBFactory;
+  return { ...env, indexedDB: factory };
+}
+
+describe('Delete everything never strands the phone\'s data behind an anonymous database', () => {
+  /** Two sessions with check-ins, both on the device's list, beside ordinary keys in the device store. */
+  async function twoSessions() {
+    const env = freshEnv();
+    const devices = memoryStorage({ [KEYS.tickets]: [{ id: 't' }], [KEYS.preferences]: { language: 'en' } });
+    const registry = deviceSessionRegistry(() => devices.storage);
+    const as = (over: AnonymousEnv, session: string | null) => createAnonymousStore(over, () => session, registry);
+    await createAnonymousStorage(() => devices.storage, as(env, SESSION)).set(KEYS.screenings, [{ id: 'one' }]);
+    await createAnonymousStorage(() => devices.storage, as(env, OTHER)).set(KEYS.screenings, [{ id: 'two' }]);
+    expect((await registry.list()).sort()).toEqual([OTHER, SESSION].sort());
+    return { env, devices, registry, as };
+  }
+
+  it('clears every ordinary key anyway when one anonymous database refuses deletion, keeps only that id on the list, and says so', async () => {
+    const { env, devices, registry, as } = await twoSessions();
+    const wiped = await deleteDeviceData(devices.storage, undefined, as(failingDeletion(env, [dbOf(OTHER)], 'refuse'), null));
+    expect(wiped).toEqual({ anonymousLeft: true });
+    expect(await dbNames(env)).toEqual([dbOf(OTHER)]);
+    expect([...devices.data.keys()]).toEqual([KEYS.anonymousSessions]);
+    expect(await registry.list()).toEqual([OTHER]);
+  });
+
+  it('is finished by the next start, which deletes the leftover database and takes the list\'s key away with it', async () => {
+    const { env, devices, registry, as } = await twoSessions();
+    await deleteDeviceData(devices.storage, undefined, as(failingDeletion(env, [dbOf(OTHER)], 'refuse'), null));
+    await reconcileAnonymousStore(as(env, null));
+    expect(await dbNames(env)).toEqual([]);
+    expect(await registry.list()).toEqual([]);
+    expect(devices.data.size).toBe(0);
+  });
+
+  it('does the same when the deletion is only queued behind a connection that ignores it: the id is kept, the rest is erased', async () => {
+    const { env, devices, registry, as } = await twoSessions();
+    const wiped = await deleteDeviceData(devices.storage, undefined, as(failingDeletion(env, [dbOf(SESSION)], 'block'), null));
+    expect(wiped).toEqual({ anonymousLeft: true });
+    expect([...devices.data.keys()]).toEqual([KEYS.anonymousSessions]);
+    expect(await registry.list()).toEqual([SESSION]);
+  });
+
+  it('still deletes every database it can find from the list when the browser\'s listing of databases rejects, and reports nothing left', async () => {
+    const { env, devices, registry, as } = await twoSessions();
+    const base = env.indexedDB;
+    const listingFails = { ...env, indexedDB: { open: base.open.bind(base), deleteDatabase: base.deleteDatabase.bind(base), cmp: base.cmp.bind(base), databases: () => Promise.reject(new Error('no listing')) } as unknown as IDBFactory };
+    const wiped = await deleteDeviceData(devices.storage, undefined, as(listingFails, null));
+    expect(wiped).toEqual({ anonymousLeft: false });
+    expect(await dbNames(env)).toEqual([]);
+    expect(devices.data.size).toBe(0);
+    expect(await registry.list()).toEqual([]);
+  });
+
+  it('reports the ids it could not delete from wipeAll and takes the deleted ones off the list', async () => {
+    const { env, registry, as } = await twoSessions();
+    const result = await as(failingDeletion(env, [dbOf(OTHER)], 'refuse'), null).wipeAll();
+    expect(result).toEqual({ left: [OTHER] });
+    expect(await registry.list()).toEqual([OTHER]);
+  });
+
+  it('does not take an id off the list while its database is only queued for deletion', async () => {
+    const { env, registry, as } = await twoSessions();
+    const store = as(failingDeletion(env, [dbOf(OTHER)], 'block'), null);
+    expect(await store.wipe(OTHER)).toBe('blocked');
+    expect(await registry.list()).toContain(OTHER);
+    expect(await dbNames(env)).toContain(dbOf(OTHER));
+    expect(await as(env, null).wipe(OTHER)).toBe('deleted'); // once it is really deleted the id goes
+    expect(await registry.list()).toEqual([SESSION]);
+  });
+
+  it('stands by the failure instead of writing to a database whose deletion is only queued, when its contents cannot be decrypted', async () => {
+    const env = freshEnv();
+    const devices = memoryStorage();
+    await createAnonymousStorage(() => devices.storage, createAnonymousStore(env, () => SESSION)).set(KEYS.screenings, [{ id: 'sealed' }]);
+    await createIndexedDbStorage({ indexedDB: env.indexedDB, dbName: dbOf(SESSION) }).remove('__device-key');
+    const queued = createAnonymousStorage(() => devices.storage, createAnonymousStore(failingDeletion(env, [dbOf(SESSION)], 'block-then-delete'), () => SESSION));
+    await expect(queued.get(KEYS.screenings)).rejects.toBeInstanceOf(StorageDecryptError);
+  });
+
+  it('keeps no empty list: the key is removed when the last id goes, and is not made by a device with no session', async () => {
+    const devices = memoryStorage();
+    const registry = deviceSessionRegistry(() => devices.storage);
+    await registry.add(SESSION);
+    await registry.add(OTHER);
+    await registry.remove(SESSION);
+    expect(devices.data.get(KEYS.anonymousSessions)).toEqual([OTHER]);
+    await registry.remove(OTHER);
+    expect(devices.data.has(KEYS.anonymousSessions)).toBe(false);
+    await registry.remove(OTHER); // nothing to take off: nothing is written
+    expect(devices.data.has(KEYS.anonymousSessions)).toBe(false);
+  });
+
+  it('drops its claim and rethrows when the list refuses the id, so the next call tries again instead of reusing the failure', async () => {
+    const env = freshEnv();
+    let refusing = true;
+    const registry: SessionRegistry = {
+      list: () => Promise.resolve([]),
+      add: () => (refusing ? Promise.reject(new Error('list refused')) : Promise.resolve()),
+      remove: () => Promise.resolve(),
+    };
+    const store = createAnonymousStore(env, () => SESSION, registry);
+    await expect(store.open()).rejects.toThrow('list refused');
+    refusing = false;
+    const opened = await store.open();
+    await opened.set(KEYS.screenings, [{ id: 'after' }]);
+    expect(await opened.get(KEYS.screenings)).toEqual([{ id: 'after' }]);
   });
 });
 

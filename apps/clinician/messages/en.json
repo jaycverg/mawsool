@@ -108,7 +108,8 @@
       "gad7": "Anxiety (GAD-7)"
     },
     "scoreLine": "{instrument} {total}",
-    "trajectoryLine": "{instrument}: {from} to {to}",
+    "trajectoryScore": "<name>{instrument}</name> {total}",
+    "trajectoryLine": "<name>{instrument}</name>: {from} to {to}",
     "trajectoryChart": "{instrument} from {from} to {to}",
     "band": {
       "minimal": "minimal",
