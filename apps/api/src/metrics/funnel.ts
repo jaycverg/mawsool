@@ -18,6 +18,13 @@ export interface Journey {
   remeasured: boolean;
 }
 
+/** The root of a ticket's journey: the ticket itself, or the parentless ticket its reroutes lead back to (the last one reached if the chain is broken). */
+export function rootOf(byId: ReadonlyMap<string, TicketFact>, ticket: TicketFact): TicketFact {
+  let root = ticket;
+  for (let hops = 0; root.parentId !== null && hops < 1000; hops += 1) root = byId.get(root.parentId) ?? root;
+  return root;
+}
+
 /** Groups tickets into journeys by following each reroute up to its root. */
 export function journeysOf(tickets: readonly TicketFact[]): Journey[] {
   const byId = new Map(tickets.map((ticket) => [ticket.id, ticket]));
@@ -28,9 +35,7 @@ export function journeysOf(tickets: readonly TicketFact[]): Journey[] {
     }
   }
   for (const ticket of tickets) {
-    let root = ticket;
-    for (let hops = 0; root.parentId !== null && hops < 1000; hops += 1) root = byId.get(root.parentId) ?? root;
-    const journey = journeys.get(root.id);
+    const journey = journeys.get(rootOf(byId, ticket).id);
     if (!journey) continue; // a chain whose root is missing cannot be placed
     journey.acknowledged ||= ticket.acknowledged;
     journey.seen ||= ticket.seen;
@@ -158,6 +163,14 @@ export function openingTable(inputs: FunnelInputs): ProtectedTable {
 /** Whether the crisis events are hidden from the funnel's first stage in this period, so the crisis figures must hide them too. */
 export function crisisHiddenInFunnel(inputs: FunnelInputs): boolean {
   return hiddenCells(openingTable(inputs)).has(`s1:${CRISIS}`);
+}
+
+/**
+ * Whether the funnel hides its re-measured stage for everyone (no source or tier filter) in this period. The symptom-change
+ * figures stand on the same people, so they hide everything when the funnel does.
+ */
+export function remeasuredHiddenInFunnel(inputs: FunnelInputs): boolean {
+  return hiddenCells(stageTable('remeasured', inputs)).has(cellKeyOf(null, null));
 }
 
 /**

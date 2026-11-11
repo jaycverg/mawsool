@@ -16,10 +16,12 @@ import { CALLBACK, CONDITION, FREE_TEXT, handoffBody, issue, registerPerson, sen
  *  - inbound-signed:   a front door's hand-over: no bearer token works on it, only a valid per-source signature
  *                      (`inbound.test.ts` holds the signature cases); it returns a claim code and no wellbeing data
  *  - ops-aggregate:    the dashboard's numbers, behind an ops session; every figure is suppressed under ten (`metrics.test.ts` holds the cases)
+ *  - ops-or-admin-log:  the adverse-events log, behind an ops or admin session (`alsoAdmin`); it records coded incidents and holds no person
+ *                      (`adverse-events.test.ts` holds the cases)
  * - crisis-line-consented: the mock crisis line's console, behind a crisis_line session and only under /crisis-handoffs: it reads a
  *                      hand-off while the person's consent for it is live, and 404s once it is revoked (`crisis-handoffs.test.ts`)
  */
-type Kind = 'open' | 'person-own' | 'clinician-scoped' | 'inbound-signed' | 'ops-aggregate' | 'crisis-line-consented' | 'clinic-link-one-ticket' | 'admin-config';
+type Kind = 'open' | 'person-own' | 'clinician-scoped' | 'inbound-signed' | 'ops-aggregate' | 'crisis-line-consented' | 'clinic-link-one-ticket' | 'admin-config' | 'ops-or-admin-log';
 
 const REVIEWED: Record<string, { access: RouteAccess; kind: Kind }> = {
   'GET /health': { access: 'public', kind: 'open' },
@@ -34,6 +36,7 @@ const REVIEWED: Record<string, { access: RouteAccess; kind: Kind }> = {
   'GET /metrics/timeliness': { access: 'ops', kind: 'ops-aggregate' },
   'GET /metrics/crisis': { access: 'ops', kind: 'ops-aggregate' },
   'GET /metrics/equity': { access: 'ops', kind: 'ops-aggregate' },
+  'GET /metrics/outcomes': { access: 'ops', kind: 'ops-aggregate' },
   'POST /crisis-events': { access: 'person', kind: 'person-own' },
   'POST /me/crisis-handoffs': { access: 'person', kind: 'person-own' },
   'DELETE /me/crisis-handoffs/:id': { access: 'person', kind: 'person-own' },
@@ -64,6 +67,9 @@ const REVIEWED: Record<string, { access: RouteAccess; kind: Kind }> = {
   'POST /clinic-link/open': { access: 'clinic_link', kind: 'clinic-link-one-ticket' },
   'POST /clinic-link/act': { access: 'clinic_link', kind: 'clinic-link-one-ticket' },
   'PUT /facilities/:id/portal-access': { access: 'admin', kind: 'admin-config' },
+  'POST /adverse-events': { access: 'ops', kind: 'ops-or-admin-log' },
+  'GET /adverse-events': { access: 'ops', kind: 'ops-or-admin-log' },
+  'POST /adverse-events/:id/status': { access: 'ops', kind: 'ops-or-admin-log' },
 };
 
 describe('no employer or insurer access (MW-505)', () => {
@@ -122,6 +128,12 @@ describe('no employer or insurer access (MW-505)', () => {
       if (kind === 'clinician-scoped') expect(route.access).toBe('clinician');
       if (kind === 'inbound-signed') expect(route.access).toBe('inbound');
       if (kind === 'ops-aggregate') expect(route.access).toBe('ops');
+      if (kind === 'ops-or-admin-log') {
+        expect(route.access).toBe('ops');
+        expect(route.alsoAdmin).toBe(true);
+      } else {
+        expect(route.alsoAdmin, key(route)).toBe(false);
+      }
       if (kind === 'crisis-line-consented') expect(route.access).toBe('crisis_line');
       if (kind === 'clinic-link-one-ticket') expect(route.access).toBe('clinic_link');
       if (kind === 'admin-config') expect(route.access).toBe('admin');
@@ -159,6 +171,8 @@ describe('no employer or insurer access (MW-505)', () => {
       'POST /clinic-link/open': { ticketId, token: 'not-a-token' },
       'POST /clinic-link/act': { ticketId, token: 'not-a-token', to: 'seen' },
       'PUT /facilities/:id/portal-access': { portalAccess: false },
+      'POST /adverse-events': { type: 'wrong_routing', severity: 'low' },
+      'POST /adverse-events/:id/status': { to: 'closed' },
     };
     const outsiders: Record<RouteAccess, { name: string; headers: Record<string, string> }[]> = {
       person: [
@@ -226,7 +240,8 @@ describe('no employer or insurer access (MW-505)', () => {
     for (const route of routes) {
       const idFor = route.url.includes('crisis-handoffs') ? handoffId : route.url.startsWith('/consents') ? consentId : ticketId;
       const url = route.url.replace(':id', idFor);
-      for (const outsider of outsiders[route.access]) {
+      // An ops route that also admits an admin has no reason to turn an admin away.
+      for (const outsider of outsiders[route.access].filter((entry) => !(route.alsoAdmin && entry.name === 'admin'))) {
         const isOtherPersonsOwn = outsider.name === 'another person';
         if (isOtherPersonsOwn && !route.url.includes(':id') && route.url !== '/consents') continue; // those routes act on the caller's own rows
         // The queue has no ticket id to be wrong about: a clinician at another facility reads their own list, which holds none of this facility's tickets (checked in queue.test.ts).
@@ -256,7 +271,11 @@ describe('no employer or insurer access (MW-505)', () => {
     const asLine = await ctx.app.inject({ method: 'GET', url: `/crisis-handoffs/${handoffId}`, headers: { authorization: `Bearer ${tokens['crisis line']}` } });
     expect(asLine.statusCode).toBe(200);
     expect(asLine.body).toContain(CALLBACK);
-    for (const path of ['funnel', 'timeliness', 'crisis', 'equity']) {
+    for (const who of ['ops', 'admin']) {
+      const log = await ctx.app.inject({ method: 'GET', url: '/adverse-events', headers: { authorization: `Bearer ${tokens[who]}` } });
+      expect(log.statusCode, `the log as ${who}`).toBe(200);
+    }
+    for (const path of ['funnel', 'timeliness', 'crisis', 'equity', 'outcomes']) {
       const asOps = await ctx.app.inject({ method: 'GET', url: `/metrics/${path}`, headers: { authorization: `Bearer ${tokens['ops']}` } });
       expect(asOps.statusCode, path).toBe(200);
     }

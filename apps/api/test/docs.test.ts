@@ -83,10 +83,10 @@ describe('GET /docs for the dashboard and the demo', () => {
       const doc = (await ctx.app.inject({ method: 'GET', url: '/docs' })).json() as Doc;
       const funnel = doc.paths['/metrics/funnel']!['get']!;
       expect(funnel.parameters!.filter((parameter) => parameter.in === 'query').map((parameter) => parameter.name).sort()).toEqual(['period', 'source', 'tier']);
-      for (const path of ['/metrics/timeliness', '/metrics/crisis', '/metrics/equity']) {
+      for (const path of ['/metrics/timeliness', '/metrics/crisis', '/metrics/equity', '/metrics/outcomes']) {
         expect(doc.paths[path]!['get']!.parameters!.map((parameter) => parameter.name), path).toEqual(['period']);
       }
-      for (const path of ['/metrics/funnel', '/metrics/timeliness', '/metrics/crisis', '/metrics/equity']) expect(JSON.stringify(doc.paths[path]), path).toContain('suppressed');
+      for (const path of ['/metrics/funnel', '/metrics/timeliness', '/metrics/crisis', '/metrics/equity', '/metrics/outcomes']) expect(JSON.stringify(doc.paths[path]), path).toContain('suppressed');
       expect(JSON.stringify(doc.paths['/clock']!['get'])).toContain('offsetMs');
       // With DEMO_MODE unset the write controls are not part of the API at all, so they are not in its document either.
       expect(doc.paths['/demo/reset']).toBeUndefined();

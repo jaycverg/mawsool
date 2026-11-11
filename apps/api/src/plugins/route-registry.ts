@@ -7,6 +7,8 @@ declare module 'fastify' {
     access?: RouteAccess;
     /** Staff routes under /tickets must say they apply the facility scope. */
     facilityScoped?: boolean;
+    /** An `ops` route that an `admin` session may use too. Declared on the route; nothing else widens a route's role. */
+    alsoAdmin?: boolean;
   }
   interface FastifyInstance {
     routeRegistry: RegisteredRoute[];
@@ -17,6 +19,8 @@ export interface RegisteredRoute {
   method: string;
   url: string;
   access: RouteAccess;
+  /** The route also admits an admin session (only ever on an `ops` route). */
+  alsoAdmin: boolean;
 }
 
 const TICKET_PATH = /^\/tickets(\/|$)/;
@@ -49,6 +53,9 @@ export function registerRouteRegistry(app: FastifyInstance): void {
     if (access === 'clinic_link' && !CLINIC_LINK_PATH.test(route.url)) {
       throw new Error(`Route ${where} gives the no-login clinic link access outside /clinic-link/; a link may only open or act on its one ticket`);
     }
-    registry.push({ method: methods, url: route.url, access });
+    if (route.config?.alsoAdmin === true && access !== 'ops') {
+      throw new Error(`Route ${where} declares alsoAdmin but is not an ops route`);
+    }
+    registry.push({ method: methods, url: route.url, access, alsoAdmin: route.config?.alsoAdmin === true });
   });
 }
