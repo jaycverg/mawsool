@@ -175,18 +175,6 @@ export const CrisisEventSchema = z.object({
 });
 export type CrisisEvent = z.infer<typeof CrisisEventSchema>;
 
-export const AdverseEventSchema = z.object({
-  id: Id,
-  ticketId: Id.nullable(),
-  crisisEventId: Id.nullable(),
-  type: z.enum(['missed_crisis_follow_up', 'wrong_routing', 'data_incident', 'other']),
-  severity: z.enum(['low', 'medium', 'high']),
-  status: z.enum(['open', 'reviewed', 'closed']),
-  reportedBy: z.string().min(1),
-  at: Instant,
-});
-export type AdverseEvent = z.infer<typeof AdverseEventSchema>;
-
 export const StaffUserSchema = z.object({
   id: Id,
   email: z.email(),

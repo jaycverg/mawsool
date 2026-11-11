@@ -16,6 +16,9 @@ import {
 } from 'drizzle-orm/pg-core';
 import {
   ACTORS,
+  ADVERSE_EVENT_SEVERITIES,
+  ADVERSE_EVENT_STATUSES,
+  ADVERSE_EVENT_TYPES,
   AGE_BANDS,
   CARE_LANGUAGES,
   CRISIS_NUMBERS,
@@ -37,6 +40,9 @@ import {
  * `clock.ts`, so the demo clock, the sweep and the seed all agree and stay reproducible.
  */
 const at = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
+
+/** A check that a text column holds one of a fixed list of values. */
+const inList = (column: AnyPgColumn, values: readonly string[]) => sql`${column} IN (${sql.join(values.map((value) => sql.raw(`'${value}'`)), sql`, `)})`;
 
 export const localeEnum = pgEnum('locale', LOCALES);
 export const tierEnum = pgEnum('tier', TIERS);
@@ -440,16 +446,53 @@ export const crisisHandoffs = pgTable(
   (t) => [unique('crisis_handoffs_event_unique').on(t.crisisEventId), unique('crisis_handoffs_consent_unique').on(t.consentId), index('crisis_handoffs_person_idx').on(t.personId)],
 );
 
-export const adverseEvents = pgTable('adverse_events', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  ticketId: uuid('ticket_id').references(() => tickets.id),
-  crisisEventId: uuid('crisis_event_id').references(() => crisisEvents.id),
-  type: text('type').notNull(),
-  severity: text('severity').notNull(),
-  status: text('status').notNull(),
-  reportedBy: text('reported_by').notNull(),
-  at: at('at').notNull(),
-});
+/**
+ * The adverse-events log: a coded type, a severity, a status, when it happened (care clock) and when it was recorded (wall
+ * clock), and optionally the keyed pseudonymous ticket id the overdue list shows. There is no link to a ticket, a person or a
+ * crisis event, and no free text: nothing here can be tied to anyone, so "Delete everything" has nothing of it to erase.
+ */
+export const adverseEvents = pgTable(
+  'adverse_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    type: text('type').notNull(),
+    severity: text('severity').notNull(),
+    status: text('status').notNull(),
+    occurredAt: at('occurred_at').notNull(),
+    recordedAt: at('recorded_at').notNull(),
+    ticketRef: text('ticket_ref'),
+  },
+  (t) => [
+    check('adverse_events_type', inList(t.type, ADVERSE_EVENT_TYPES)),
+    check('adverse_events_severity', inList(t.severity, ADVERSE_EVENT_SEVERITIES)),
+    check('adverse_events_status', inList(t.status, ADVERSE_EVENT_STATUSES)),
+    check('adverse_events_ticket_ref', sql`${t.ticketRef} IS NULL OR ${t.ticketRef} ~ '^od_[0-9a-f]{12}$'`),
+  ],
+);
+
+/** Every move of an adverse event's status with its wall-clock time and the staff member who made it; the first row is the recording. */
+export const adverseEventHistory = pgTable(
+  'adverse_event_history',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    eventId: uuid('event_id')
+      .notNull()
+      .references(() => adverseEvents.id),
+    /** 1 for the recording, then one more for each move: the order of the history, whatever the clock says. */
+    seq: integer('seq').notNull(),
+    fromStatus: text('from_status'),
+    toStatus: text('to_status').notNull(),
+    at: at('at').notNull(),
+    staffUserId: uuid('staff_user_id')
+      .notNull()
+      .references(() => staffUsers.id),
+  },
+  (t) => [
+    unique('adverse_event_history_event_seq_unique').on(t.eventId, t.seq),
+    check('adverse_event_history_from', sql`${t.fromStatus} IS NULL OR ${t.fromStatus} IN ('open', 'investigating')`),
+    check('adverse_event_history_to', inList(t.toStatus, ADVERSE_EVENT_STATUSES)),
+  ],
+);
 
 /**
  * The demo clock's offset from the wall clock, in milliseconds: one row (`id` = 1), absent while the clock has not moved.
@@ -467,6 +510,7 @@ export const demoClock = pgTable(
 
 /** Names of every table, in an order that is safe to truncate in one statement. */
 export const ALL_TABLE_NAMES = [
+  'adverse_event_history',
   'adverse_events',
   'demo_clock',
   'inbound_invites',

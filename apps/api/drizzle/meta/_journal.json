@@ -85,6 +85,20 @@
       "when": 1794133030072,
       "tag": "0011_clinic_links",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794371835791,
+      "tag": "0012_drop_adverse_events_stub",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794371937731,
+      "tag": "0013_adverse_events_log",
+      "breakpoints": true
     }
   ]
 }

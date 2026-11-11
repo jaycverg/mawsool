@@ -106,6 +106,38 @@ export const CrisisResponseSchema = z.object({
 });
 export type CrisisResponse = z.infer<typeof CrisisResponseSchema>;
 
+/** The instruments a symptom change is measured on: the two that have a reliable-change threshold. */
+export const OUTCOME_INSTRUMENTS = ['phq9', 'gad7'] as const;
+export const OutcomeInstrumentSchema = z.enum(OUTCOME_INSTRUMENTS);
+export type OutcomeInstrument = z.infer<typeof OutcomeInstrumentSchema>;
+
+/**
+ * Symptom change among re-measured tickets, per instrument. Only totals the person shared are used (a live `scores`
+ * consent, a referral total and a repeat-check total of the same instrument); a re-measured ticket without both is
+ * `excluded`. `meanChange` is the repeat total minus the referral total, in points (negative is fewer symptoms), and the two
+ * shares are of the included tickets: reliable improvement is a fall of at least the instrument's threshold, deterioration a
+ * rise of at least it. Every figure is `{ suppressed: true }` when too few people stand behind it, or when showing it would let
+ * a hidden number be worked out from the ones beside it (see `hiddenCells`).
+ */
+export const OutcomesResponseSchema = z.object({
+  period: MetricPeriodSchema,
+  /** The points of change that count as reliable, per instrument (`RELIABLE_CHANGE`). */
+  reliableChangePoints: z.object({ phq9: z.number().int().positive(), gad7: z.number().int().positive() }),
+  /** Tickets that reached re-measured in the period: the same people as the funnel's last stage. */
+  remeasured: orSuppressed(Count),
+  instruments: z.array(
+    z.object({
+      instrument: OutcomeInstrumentSchema,
+      included: orSuppressed(Count),
+      excluded: orSuppressed(Count),
+      meanChange: orSuppressed(z.number()),
+      reliableImprovement: orSuppressed(RateSchema),
+      reliableDeterioration: orSuppressed(RateSchema),
+    }),
+  ),
+});
+export type OutcomesResponse = z.infer<typeof OutcomesResponseSchema>;
+
 export const EQUITY_DIMENSIONS = ['age_band', 'gender', 'language', 'region'] as const;
 export const EquityDimensionSchema = z.enum(EQUITY_DIMENSIONS);
 export type EquityDimension = z.infer<typeof EquityDimensionSchema>;

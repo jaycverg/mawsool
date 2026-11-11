@@ -1,12 +1,14 @@
-import { CrisisResponseSchema, EquityQuerySchema, EquityResponseSchema, FunnelQuerySchema, FunnelResponseSchema, PeriodQuerySchema, TimelinessResponseSchema } from '@mawsool/types';
+import { CrisisResponseSchema, EquityQuerySchema, EquityResponseSchema, FunnelQuerySchema, FunnelResponseSchema, OutcomesResponseSchema, PeriodQuerySchema, TimelinessResponseSchema } from '@mawsool/types';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Clock } from '../clock';
+import type { Cipher } from '../crypto';
 import type { Db } from '../db/client';
 import { loadCrisisFacts, loadOpenInvites, loadTicketFacts, periodStart } from '../metrics/facts';
 import { buildCrisis } from '../metrics/crisis';
 import { buildEquity } from '../metrics/equity';
-import { buildFunnel, crisisHiddenInFunnel, journeysOf } from '../metrics/funnel';
+import { buildFunnel, crisisHiddenInFunnel, journeysOf, remeasuredHiddenInFunnel } from '../metrics/funnel';
+import { buildOutcomes, loadOutcomeFacts } from '../metrics/outcomes';
 import { buildTimeliness } from '../metrics/timeliness';
 
 export interface MetricsRouteDeps {
@@ -15,6 +17,8 @@ export interface MetricsRouteDeps {
   clock: Clock;
   /** Keys the pseudonymous ids on the overdue list. */
   encryptionKey: string;
+  /** Opens the shared totals the symptom-change figures are made from. */
+  cipher: Cipher;
 }
 
 /**
@@ -42,6 +46,16 @@ export function registerMetricsRoutes(app: FastifyInstance, deps: MetricsRouteDe
     const [tickets, openInvites, crisis] = await Promise.all([loadTicketFacts(deps.db), loadOpenInvites(deps.db, now), loadCrisisFacts(deps.db)]);
     // The same decision as the funnel's first stage for this period: what it hides, this hides.
     return buildCrisis(request.query.period, crisis, since, crisisHiddenInFunnel({ journeys: journeysOf(tickets), openInvites, crisis, since }));
+  });
+
+  // Symptom change among re-measured tickets. It reads the totals the person shared (live consent only), per ticket and never
+  // returned per ticket, and it hides everything when the funnel hides its re-measured stage for the same period.
+  typed.get('/metrics/outcomes', { config: { access: 'ops' }, schema: { querystring: PeriodQuerySchema, response: { 200: OutcomesResponseSchema } } }, async (request) => {
+    const now = deps.clock.now();
+    const since = periodStart(request.query.period, now);
+    const [tickets, openInvites, crisis] = await Promise.all([loadTicketFacts(deps.db), loadOpenInvites(deps.db, now), loadCrisisFacts(deps.db)]);
+    const hides = remeasuredHiddenInFunnel({ journeys: journeysOf(tickets), openInvites, crisis, since });
+    return buildOutcomes(request.query.period, await loadOutcomeFacts(deps.db, deps.cipher, tickets), since, hides);
   });
 
   // Equity is served for one period only (`EQUITY_PERIOD`): any other `period` is a 400 with no figures, and with none the

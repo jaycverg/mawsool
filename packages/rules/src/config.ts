@@ -5,7 +5,12 @@ import type { Coverage, CrisisNumber, InsuranceClass, Tier } from '@mawsool/type
  * so nothing here is clinical advice. Change values here, never in a code path.
  */
 
-/** Reliable change between two check-ins (NHS Talking Therapies convention, per the spec). */
+/**
+ * Reliable change between two check-ins, in points: a fall of at least this much is reliable improvement and a rise of at
+ * least this much is reliable deterioration (the boundary itself counts). Source: the NHS Talking Therapies (formerly IAPT)
+ * manual, "The Improving Access to Psychological Therapies Manual: Appendices and helpful resources" (NCCMH, v2), Table 1
+ * "Clinical cut-offs and reliable change index": PHQ-9 >= 6, GAD-7 >= 4. See docs/outcome-metrics.md.
+ */
 export const RELIABLE_CHANGE = { phq9: 6, gad7: 4 } as const;
 
 /** UAE has no daylight saving, so a fixed offset is exact for Asia/Dubai. */

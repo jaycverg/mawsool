@@ -67,7 +67,8 @@ async function authenticateStaff(db: Db, clock: Clock, token: string): Promise<P
  *
  * - `public`: nothing required.
  * - `person`: a device credential. A staff token is not one, and fails with 401.
- * - `clinician`, `ops`, `admin`, `crisis_line`: a live staff session whose role equals the declared one, else 403.
+ * - `clinician`, `ops`, `admin`, `crisis_line`: a live staff session whose role equals the declared one, else 403. An `ops` route
+ *   that also declares `alsoAdmin` admits an admin session too.
  * - `inbound`: a signed request from a connector. It is checked later, once the body has been read (see
  *   `registerInboundAuth`), because the signature covers the body; a bearer token is never accepted on it.
  * - `clinic_link`: a one-time link's token and ticket id, sent in the request body. No bearer token is read or accepted: the
@@ -91,7 +92,8 @@ export function registerAuth(app: FastifyInstance, deps: { db: Db; /** The wall 
 
     const principal = await authenticateStaff(deps.db, deps.clock, token);
     if (principal?.kind !== 'staff') return sendError(reply, 401, 'unauthorized', 'Authentication required');
-    if (principal.role !== access) return sendError(reply, 403, 'forbidden', 'This role may not use this route');
+    const alsoAdmin = request.routeOptions.config.alsoAdmin === true && principal.role === 'admin';
+    if (principal.role !== access && !alsoAdmin) return sendError(reply, 403, 'forbidden', 'This role may not use this route');
     request.principal = principal;
   });
 }

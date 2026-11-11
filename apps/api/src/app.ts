@@ -22,6 +22,7 @@ import { registerRouteRegistry } from './plugins/route-registry';
 import { registerSecurityHeaders } from './plugins/security-headers';
 import { registerAuthRoutes } from './routes/auth';
 import { registerClockRoute, registerDemoRoutes } from './routes/demo';
+import { registerAdverseEventRoutes } from './routes/adverse-events';
 import { registerMetricsRoutes } from './routes/metrics';
 import { registerCrisisEventRoutes } from './routes/crisis-events';
 import { registerCrisisHandoffRoutes } from './routes/crisis-handoffs';
@@ -119,7 +120,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerClinicLinkRoutes(app, clinicLinks);
   registerPersonDataRoutes(app, { ...consentDeps, summary: { enabled: deps.config.summaryLlmEnabled, provider: deps.summaryProvider ?? null } });
   registerClockRoute(app, { demoClock });
-  registerMetricsRoutes(app, { db: deps.db, clock, encryptionKey: deps.config.encryptionKey });
+  registerMetricsRoutes(app, { db: deps.db, clock, encryptionKey: deps.config.encryptionKey, cipher });
+  registerAdverseEventRoutes(app, { db: deps.db, clock, securityClock });
   // The write controls exist only in a demo; with `DEMO_MODE` unset these paths are 404.
   if (demoClock) registerDemoRoutes(app, { db: deps.db, clock: demoClock, securityClock, personAppUrl: deps.config.personAppUrl ?? 'http://localhost:3000' });
   // The OpenAPI document is generated from the routes' Zod schemas, so it cannot drift from what the API accepts.
