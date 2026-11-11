@@ -2,7 +2,7 @@ import type { StorageAdapter, TabMarkAdapter } from '@mawsool/ui';
 import type { AnonymousStore } from './anonymous';
 import { loadHandoffs } from './crisis-handoff';
 import { pendingEvents, type FlushResult } from './crisis-outbox';
-import { deleteDeviceData, type DeviceWipe } from './device-data';
+import { deleteDeviceData, type AnonymousLeft, type DeviceWipe } from './device-data';
 import { callServer, hasServerFootprint, type ServerDeps } from './server';
 import { within } from './within';
 
@@ -16,8 +16,8 @@ export type EraseOutcome =
       crisisRecord: 'none' | 'sent' | 'deleted';
       /** A crisis screen was open when everything was wiped. The block goes with the data; Help now remains. */
       crisisWasOpen: boolean;
-      /** An anonymous check-in database could not be deleted just now; it is deleted at the next start of the app. */
-      anonymousLeft: boolean;
+      /** Whether an anonymous check-in database is left: none, to be deleted at the next start of the app, or unknown (the person is asked to run Delete everything again). */
+      anonymousLeft: AnonymousLeft;
     }
   /** The server holds data that only this phone's secret can ask to remove, and it could not be reached. Nothing was deleted. */
   | { status: 'blocked' }

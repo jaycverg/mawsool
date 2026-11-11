@@ -1,6 +1,7 @@
 import { RELIABLE_CHANGE, reliableChange, remeasureAvailableAt, type TrackedInstrument } from '@mawsool/rules';
 import { BundleContentSchema, OUTCOME_INSTRUMENTS, type MetricPeriod, type OutcomesResponse, type ScoreEntry } from '@mawsool/types';
 import { and, desc, inArray, isNull } from 'drizzle-orm';
+import { SUPPRESSION_THRESHOLD } from '@mawsool/rules';
 import type { Cipher } from '../crypto';
 import { schema, type Db } from '../db/client';
 import { bundleContext } from '../tickets/service';
@@ -126,6 +127,12 @@ export function countOutcomes(facts: readonly OutcomeFact[], since: Date | null)
  * enough that no small number, an excluded handful or an unchanged remainder, can be worked out from what is published.
  * The cells hold the counts of one thing each; the figures published are these cells, the shares of them, and the mean of
  * the included changes (shown only while the included count is).
+ *
+ * The two instruments' included counts are tied, as equity ties its "no bucket given" groups: they count different (overlapping)
+ * sets of the same re-measured tickets, and when they differ by 1 to 9 the two published figures subtract into a small group (25
+ * included for one and 22 for the other leaves 3 people with one total only). So when the difference is under ten, and not zero,
+ * both included cells are hidden, and with them (by the relations) both excluded cells, the shares and the means. A difference of
+ * ten or more, or none, publishes nothing small and leaves them independent.
  */
 export function outcomeTable(counts: OutcomeCounts): ProtectedTable {
   const cells = new Map<string, number[]>([['remeasured', [counts.remeasured]]]);
@@ -142,7 +149,10 @@ export function outcomeTable(counts: OutcomeCounts): ProtectedTable {
   }
   // What goes first when a cell has to be hidden for the others' sake: the unpublished remainder, then the shares' parts, then the counts.
   const prefer = (key: string): number => (key.endsWith(':unchanged') ? 0 : key.endsWith(':improved') || key.endsWith(':deteriorated') ? 1 : key.endsWith(':excluded') ? 2 : key.endsWith(':included') ? 3 : 4);
-  return { cells, relations, prefer };
+  const [phq9, gad7] = OUTCOME_INSTRUMENTS.map((instrument) => counts.perInstrument[instrument].included) as [number, number];
+  const apart = Math.abs(phq9 - gad7);
+  const forceHidden = new Set<string>(apart > 0 && apart < SUPPRESSION_THRESHOLD ? OUTCOME_INSTRUMENTS.map((instrument) => `${instrument}:included`) : []);
+  return { cells, relations, prefer, forceHidden };
 }
 
 const SUPPRESSED = { suppressed: true } as const;

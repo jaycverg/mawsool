@@ -1,0 +1,1 @@
+ALTER TABLE "reminder_phones" ADD COLUMN "notify_ref" uuid DEFAULT gen_random_uuid() NOT NULL;

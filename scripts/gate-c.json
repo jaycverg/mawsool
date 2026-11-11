@@ -482,7 +482,7 @@
   },
   {
     "id": "mw-704-symptom-change-is-suppressed-and-follows-the-funnel",
-    "sentence": "Every symptom-change figure goes through suppression: nothing under ten re-measured, included or excluded tickets is shown, a share needs its part, its whole and what is left over at ten, the parts that add up to others are hidden together, and every figure is hidden whenever the funnel hides its re-measured stage",
+    "sentence": "Every symptom-change figure goes through suppression: nothing under ten re-measured, included or excluded tickets is shown, a share needs its part, its whole and what is left over at ten, the parts that add up to others are hidden together, the two instruments' included counts are hidden together when they differ by 1 to 9 so they cannot subtract into a small group, and every figure is hidden whenever the funnel hides its re-measured stage",
     "project": "apps/api",
     "tests": [
       {
@@ -520,6 +520,18 @@
       {
         "file": "test/metrics-outcomes.test.ts",
         "name": "answers for each period of the funnel"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "hides both instruments' included and excluded counts, means and shares when they differ by 3"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "hides them at a difference of 1 and of 9"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "leaves them independent, and shown, at a difference of 10"
       }
     ]
   },
@@ -567,6 +579,14 @@
       {
         "file": "test/erase-reach.test.ts",
         "name": "has a reviewed fate and a proof for each person-linked table"
+      },
+      {
+        "file": "test/adverse-events.test.ts",
+        "name": "records and answers with no read after the commit"
+      },
+      {
+        "file": "test/adverse-events.test.ts",
+        "name": "moves and answers with no read after the commit"
       }
     ]
   },
@@ -595,7 +615,7 @@
   },
   {
     "id": "mw-706-adverse-events-are-listed-by-status-and-severity-for-ops-and-admin-alone",
-    "sentence": "The log is listed by status and severity on the ops dashboard, in both languages, and every route refuses a person, a clinician, the crisis line, an inbound caller and a clinic link",
+    "sentence": "The log is listed by status and severity on the ops dashboard, in both languages, and every route refuses a person, a clinician, the crisis line, an inbound caller (correctly signed) and a clinic link (valid token)",
     "project": "apps/api",
     "tests": [
       {
@@ -619,6 +639,10 @@
       },
       {
         "file": "test/route-registry.test.ts"
+      },
+      {
+        "file": "test/access.test.ts",
+        "name": "refuses a correctly signed inbound request and a valid clinic-link token"
       }
     ],
     "browser": "dashboard-shows-symptom-change-from-shared-totals-and-the-adverse-events-log"

@@ -157,10 +157,15 @@ export interface AnonymousStore {
    */
   wipe(session?: string | null): Promise<IndexedDbDeletion | 'none'>;
   /**
-   * Deletes every anonymous database on the device, live or not (every one the browser lists, every id in the registry, and this
-   * tab's own): "Delete everything". Never throws and never stops at one it cannot delete: it takes a snapshot of the ids, deletes
-   * each it can (taking that id off the registry) and returns the ids it could not delete (refused or blocked), which stay on the
-   * registry. A browser that cannot list its databases, or whose listing fails, is searched through the registry alone.
+   * The ids of every anonymous session this device may hold a database for: the ones the browser lists, the ones on the registry
+   * and this tab's own. Never throws; a browser that cannot list its databases, or whose listing fails, is searched through the
+   * registry alone. "Delete everything" takes this snapshot before it deletes anything.
+   */
+  ids(): Promise<string[]>;
+  /**
+   * Deletes every anonymous database on the device, live or not (every id in `ids()`): "Delete everything". It does not stop at one
+   * it cannot delete: it deletes each it can (taking that id off the registry) and returns the ids it could not delete (refused or
+   * blocked), which stay on the registry.
    */
   wipeAll(): Promise<{ left: string[] }>;
   /** Puts ids back on the registry after the device store was cleared, so a later start deletes their databases. */
@@ -244,12 +249,15 @@ export function createAnonymousStore(env: AnonymousEnv, session: () => string | 
     return [...new Set([...named, ...((await registry?.list().catch(() => [])) ?? [])])];
   }
 
+  async function ids(): Promise<string[]> {
+    const own = session();
+    return [...new Set([...(await candidates()), ...(own === null ? [] : [own])])];
+  }
+
   async function wipeAll(): Promise<{ left: string[] }> {
     forget();
-    const own = session();
-    const snapshot = new Set([...(await candidates()), ...(own === null ? [] : [own])]);
     const left: string[] = [];
-    for (const id of snapshot) {
+    for (const id of await ids()) {
       const deletion = await wipe(id).catch(() => 'refused' as const);
       if (deletion !== 'deleted') left.push(id);
     }
@@ -281,7 +289,7 @@ export function createAnonymousStore(env: AnonymousEnv, session: () => string | 
     }
   }
 
-  return { open, reconcile, wipe, wipeAll, keep };
+  return { open, reconcile, wipe, wipeAll, ids, keep };
 }
 
 let browserStore: AnonymousStore | null | undefined;
@@ -305,18 +313,32 @@ export function reconcileAnonymousStore(store: AnonymousStore | null = anonymous
   return store.reconcile().catch(() => undefined);
 }
 
+/** What deleting the anonymous sessions left: the ids whose database may still be there, and whether even that is unknown. */
+export interface AnonymousWipe {
+  left: string[];
+  /** The ids could not be listed and the deletion failed outright, so nothing can be said about what is left. */
+  unknown: boolean;
+}
+
 /**
  * Deletes everything an anonymous session kept on this device, whichever mode the deleting is done in and whether or not another
  * tab's session is live: the encrypted check-ins and their keys. Never throws and never stops at one database it cannot delete.
- * Returns the ids of the sessions whose database is still there (the caller puts them back on the registry once the device store is
- * cleared; see `keepAnonymousSessions`). A browser with nothing to delete has nothing kept, which counts as gone.
+ * The ids are listed first, so that if the deletion itself fails outright (`wipeAll` throws) every one of them counts as left and
+ * none is reported clean; `unknown` is only for the case where both the listing and the deletion failed. The caller puts `left` back
+ * on the registry once the device store is cleared (see `keepAnonymousSessions`). A browser with nothing to delete has nothing kept.
  */
-export async function wipeAnonymousData(store: AnonymousStore | null = anonymousStore()): Promise<{ left: string[] }> {
-  if (!store) return { left: [] };
+export async function wipeAnonymousData(store: AnonymousStore | null = anonymousStore()): Promise<AnonymousWipe> {
+  if (!store) return { left: [], unknown: false };
+  let snapshot: string[] | null = null;
   try {
-    return await store.wipeAll();
+    snapshot = await store.ids();
   } catch {
-    return { left: [] };
+    snapshot = null;
+  }
+  try {
+    return { ...(await store.wipeAll()), unknown: false };
+  } catch {
+    return snapshot === null ? { left: [], unknown: true } : { left: snapshot, unknown: false };
   }
 }
 

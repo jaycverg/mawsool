@@ -24,12 +24,16 @@ export interface NotifierDriver {
 }
 
 /**
- * A reference to a recipient that lets two records of the same recipient be told to be the same one and cannot be turned back into
- * the recipient: a keyed hash, cut short. It is made from the API's own key, so it cannot be recomputed from a number alone.
+ * The reference a record carries for a person's text reminder: a keyed hash (HMAC-SHA256 under a key derived from the API's
+ * encryption key, cut to 12 hex digits) of the **random id of the stored number's row**, never of the number. A number is a small
+ * space that anyone holding the key could enumerate, so nothing here is computed from it: two records of one row carry the same
+ * reference whatever number the row holds, a new row (a number removed and given again) gets a new one, and once the row is deleted
+ * the reference maps to nothing. Staff and clinic link records carry no reference: their address, facility and ticket code are
+ * written plainly, on purpose, beside the link.
  */
-export function recipientRef(recipient: string, encryptionKey: string): string {
-  const key = createHmac('sha256', Buffer.from(encryptionKey, 'base64')).update('notifier-recipient-v1').digest();
-  return `rcp_${createHmac('sha256', key).update(recipient).digest('hex').slice(0, 12)}`;
+export function recipientRef(rowId: string, encryptionKey: string): string {
+  const key = createHmac('sha256', Buffer.from(encryptionKey, 'base64')).update('notifier-recipient-v2').digest();
+  return `rcp_${createHmac('sha256', key).update(rowId).digest('hex').slice(0, 12)}`;
 }
 
 /** What may be written about a delivery, and nothing else: the message text and a person's number are not among it. */
@@ -45,19 +49,20 @@ const LINK_MESSAGES: { [K in TemplateKey]: string } = {
 };
 
 /**
- * The record of one delivery: the template key, the language, the channel, a recipient reference and that it is a mock. A staff
- * sign-in link adds the address it was made for, the link and its expiry; a clinic link the facility, the ticket's code, the link
- * and its expiry (the link is logged on purpose). A text reminder adds nothing: not the number, not the text.
+ * The record of one delivery: the template key, the language, the channel and that it is a mock. A staff sign-in link adds the
+ * address it was made for, the link and its expiry; a clinic link the facility, the ticket's code, the link and its expiry (the
+ * link is logged on purpose). A text reminder adds only the reference of its stored number's row (`recipientRef`): not the number,
+ * not the text, and nothing computed from the number.
  */
 export function recordOf({ message, rendered }: Delivery, encryptionKey: string, driver: NotifierDriverName): DeliveryRecord {
   const fields: DeliveryRecord['fields'] = { driver, mock: true, template: rendered.template, locale: rendered.locale, channel: rendered.channel satisfies Channel };
   switch (message.template) {
     case 'staff_sign_in':
-      return { message: LINK_MESSAGES.staff_sign_in, fields: { ...fields, recipientRef: recipientRef(message.to, encryptionKey), to: message.to, link: message.link, expiresAt: message.expiresAt.toISOString() } };
+      return { message: LINK_MESSAGES.staff_sign_in, fields: { ...fields, to: message.to, link: message.link, expiresAt: message.expiresAt.toISOString() } };
     case 'clinic_link':
-      return { message: LINK_MESSAGES.clinic_link, fields: { ...fields, recipientRef: recipientRef(message.ticketCode, encryptionKey), facility: message.facility, ticketCode: message.ticketCode, link: message.link, expiresAt: message.expiresAt.toISOString() } };
+      return { message: LINK_MESSAGES.clinic_link, fields: { ...fields, facility: message.facility, ticketCode: message.ticketCode, link: message.link, expiresAt: message.expiresAt.toISOString() } };
     case 'reminder_text':
-      return { message: LINK_MESSAGES.reminder_text, fields: { ...fields, recipientRef: recipientRef(message.to, encryptionKey) } };
+      return { message: LINK_MESSAGES.reminder_text, fields: { ...fields, recipientRef: recipientRef(message.recipientId, encryptionKey) } };
   }
 }
 

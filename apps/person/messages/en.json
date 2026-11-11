@@ -320,6 +320,7 @@
     "deletedCrisisLost": "A crisis record that had not been sent could not be sent, and was deleted with everything else.",
     "deletedCrisisOpen": "A crisis screen was open. It is closed now, and help is still one tap away: use Help now.",
     "deletedAnonymousLater": "Some anonymous check-ins could not be removed just now. They will be removed the next time the app starts.",
+    "deletedAnonymousUnknown": "Some anonymous check-ins may still be on this phone and could not be scheduled for removal. Run Delete everything again to remove them.",
     "equityTitle": "Group totals",
     "equityOnBody": "You are included in anonymous group totals with your age group, gender, language and region. They only count in groups of 10 or more, and a clinic never sees them.",
     "equityOffBody": "You are not included in group totals.",

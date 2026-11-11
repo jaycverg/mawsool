@@ -23,14 +23,14 @@ export interface ReminderSampleDeps extends ReminderDeps {
  */
 export async function sendReminderSample(deps: ReminderSampleDeps, personId: string): Promise<'sample' | 'none' | 'failed'> {
   const [row] = await deps.db
-    .select({ phoneCiphertext: schema.reminderPhones.phoneCiphertext, locale: schema.persons.locale })
+    .select({ phoneCiphertext: schema.reminderPhones.phoneCiphertext, notifyRef: schema.reminderPhones.notifyRef, locale: schema.persons.locale })
     .from(schema.reminderPhones)
     .innerJoin(schema.persons, eq(schema.persons.id, schema.reminderPhones.personId))
     .where(eq(schema.reminderPhones.personId, personId))
     .limit(1);
   if (!row) return 'none';
   try {
-    await deps.notifier.send({ template: 'reminder_text', locale: row.locale, to: deps.cipher.decrypt(row.phoneCiphertext, reminderPhoneContext(personId)) });
+    await deps.notifier.send({ template: 'reminder_text', locale: row.locale, to: deps.cipher.decrypt(row.phoneCiphertext, reminderPhoneContext(personId)), recipientId: row.notifyRef });
     return 'sample';
   } catch {
     return 'failed';

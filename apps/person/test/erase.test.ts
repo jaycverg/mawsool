@@ -1,6 +1,7 @@
 import type { CrisisEventSubmission } from '@mawsool/types';
 import { createTabMark } from '@mawsool/ui';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AnonymousStore } from '../lib/anonymous';
 import { eraseEverything, type EraseDeps } from '../lib/erase';
 import { claimInvite } from '../lib/invite';
 import { saveReminderNumber } from '../lib/reminders';
@@ -65,6 +66,38 @@ function setup(options: { footprint?: boolean; unsent?: boolean; erase?: Reply; 
 
 afterEach(() => vi.useRealTimers());
 
+describe('Delete everything when an anonymous session\'s check-ins cannot all be deleted', () => {
+  /** An anonymous store that deletes nothing it is asked to and reports `left`; `keeps` says whether the ids can be written back. */
+  const leftover = (left: string[], keeps = true): AnonymousStore => ({
+    open: () => Promise.reject(new Error('not used')),
+    reconcile: () => Promise.resolve(),
+    wipe: () => Promise.resolve('deleted'),
+    ids: () => Promise.resolve(left),
+    wipeAll: () => Promise.resolve({ left }),
+    keep: () => (keeps ? Promise.resolve() : Promise.reject(new Error('the list refused'))),
+  });
+
+  it('is still erased, with every ordinary key gone, and the result says some are left for the next start', async () => {
+    const s = setup();
+    await s.prepare();
+    const outcome = await eraseEverything({ ...s.deps, anonymousStore: leftover(['22222222-2222-4222-8222-222222222222']) });
+    expect(outcome).toEqual({ status: 'erased', crisisRecord: 'none', crisisWasOpen: false, anonymousLeft: 'next_start' });
+    expect(s.store.data.has('screenings')).toBe(false);
+  });
+
+  it('says it is unknown when the ids of what is left could not be written back', async () => {
+    const s = setup();
+    await s.prepare();
+    expect(await eraseEverything({ ...s.deps, anonymousStore: leftover(['22222222-2222-4222-8222-222222222222'], false) })).toMatchObject({ status: 'erased', anonymousLeft: 'unknown' });
+  });
+
+  it('says nothing is left when every database was deleted', async () => {
+    const s = setup();
+    await s.prepare();
+    expect(await eraseEverything({ ...s.deps, anonymousStore: leftover([]) })).toMatchObject({ status: 'erased', anonymousLeft: 'none' });
+  });
+});
+
 describe('Delete everything on a phone that only claimed a front-door invite', () => {
   it('asks the server to remove the claim before it wipes the phone, because the wipe destroys the only secret that can', async () => {
     const s = setup();
@@ -102,7 +135,7 @@ describe('Delete everything', () => {
   it('wipes at once, without any network call, when this phone never gave the server anything', async () => {
     const s = setup();
     await s.prepare();
-    expect(await eraseEverything(s.deps)).toEqual({ status: 'erased', crisisRecord: 'none', crisisWasOpen: false, anonymousLeft: false });
+    expect(await eraseEverything(s.deps)).toEqual({ status: 'erased', crisisRecord: 'none', crisisWasOpen: false, anonymousLeft: 'none' });
     expect(s.calls).toEqual(['CLEAR']);
     expect(s.store.data.size).toBe(0);
     expect(s.mark.get()).toBeNull();
@@ -133,14 +166,14 @@ describe('Delete everything', () => {
   it('sends a crisis record that was never sent before it wipes, and says so', async () => {
     const s = setup({ unsent: true, flush: 'sends', crisisOpen: true });
     await s.prepare();
-    expect(await eraseEverything(s.deps)).toEqual({ status: 'erased', crisisRecord: 'sent', crisisWasOpen: true, anonymousLeft: false });
+    expect(await eraseEverything(s.deps)).toEqual({ status: 'erased', crisisRecord: 'sent', crisisWasOpen: true, anonymousLeft: 'none' });
     expect(s.calls).toEqual(['FLUSH', 'CLEAR']);
   });
 
   it('lets erasure win when the crisis record cannot be sent: it is deleted with the rest, and the outcome says so', async () => {
     const s = setup({ unsent: true, flush: 'fails', crisisOpen: true });
     await s.prepare();
-    expect(await eraseEverything(s.deps)).toEqual({ status: 'erased', crisisRecord: 'deleted', crisisWasOpen: true, anonymousLeft: false });
+    expect(await eraseEverything(s.deps)).toEqual({ status: 'erased', crisisRecord: 'deleted', crisisWasOpen: true, anonymousLeft: 'none' });
     expect(s.store.data.size).toBe(0);
     expect(s.mark.get()).toBeNull();
   });

@@ -32,11 +32,16 @@ export interface ClinicLinkMessage {
   expiresAt: Date;
 }
 
-/** The text reminder a person may ask for (a sample: nothing is sent). `to` is their number; no driver writes it anywhere. */
+/**
+ * The text reminder a person may ask for (a sample: nothing is sent). `to` is their number; no driver writes it anywhere.
+ * `recipientId` is the random id of the stored number's row (`reminder_phones.notify_ref`): the one thing a record names the
+ * recipient by, so that nothing written can be worked out from the number.
+ */
 export interface ReminderTextMessage {
   template: 'reminder_text';
   locale: string | null | undefined;
   to: string;
+  recipientId: string;
 }
 
 export type OutboundMessage = StaffSignInMessage | ClinicLinkMessage | ReminderTextMessage;
