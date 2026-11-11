@@ -1,7 +1,7 @@
 import { isCompleteScreening, remeasureAvailableAt } from '@mawsool/rules';
 import { RemeasureResultSchema, type PersonTicketView, type RemeasureRequest, type Screening } from '@mawsool/types';
 import type { StorageAdapter } from '@mawsool/ui';
-import { loadOutcomeStatistics, saveOutcomeStatistics } from './outcome-statistics';
+import { saveOutcomeStatistics } from './outcome-statistics';
 import { loadScreenings } from './screening-store';
 import { callServer, type ServerDeps } from './server';
 
@@ -98,14 +98,13 @@ export type RepeatCheckSent = RemeasureSent | 'note_failed';
  *
  *  - A send that carries `true` writes the note `true` BEFORE it is made, and a note that cannot be written stops the send
  *    (`note_failed`). The note then stays `true` whatever follows: a lost reply or an answer that cannot be read may still have
- *    turned it on. Only a refusal (409), which changed nothing, puts the previous value back.
+ *    turned it on. A refused send (409) leaves it `true` too: another tab's send may have turned it on.
  *  - A send that carries `false` clears the note only on a confirmed `done`; a lost reply leaves it as it was, and so does a note
  *    that cannot be cleared (the choice then still shows in Settings, where it can be turned off again).
  *  - A send with no choice (`undefined`, the totals were not sent) leaves the note alone.
  */
 export async function finishRepeatCheck(server: ServerDeps, ticketId: string, scores: RemeasureRequest['scores'], statisticsOptIn: boolean | undefined): Promise<RepeatCheckSent> {
   if (statisticsOptIn === undefined) return sendRemeasure(server, ticketId, scores);
-  const previous = await loadOutcomeStatistics(server.storage).catch(() => false);
   if (statisticsOptIn) {
     try {
       await saveOutcomeStatistics(server.storage, true);
@@ -115,6 +114,5 @@ export async function finishRepeatCheck(server: ServerDeps, ticketId: string, sc
   }
   const outcome = await sendRemeasure(server, ticketId, scores, statisticsOptIn);
   if (outcome === 'done' && !statisticsOptIn) await saveOutcomeStatistics(server.storage, false).catch(() => undefined);
-  if (outcome === 'not_ready' && statisticsOptIn && !previous) await saveOutcomeStatistics(server.storage, previous).catch(() => undefined);
   return outcome;
 }
