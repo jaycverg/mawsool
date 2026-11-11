@@ -19,7 +19,7 @@ describe('the optional hand-off to the mock crisis line', () => {
 
   beforeAll(async () => {
     testDb = await createTestDb();
-    await runSeed(testDb.db);
+    await runSeed(testDb.db, testDb.cipher);
     ctx = await createTestApp(testDb.db);
     line = { authorization: `Bearer ${await signIn(ctx, 'crisisline@demo.mawsool.test')}` };
   });
@@ -372,7 +372,7 @@ describe('a remembered stop on the demo clock', () => {
 
   beforeAll(async () => {
     testDb = await createTestDb();
-    await runSeed(testDb.db);
+    await runSeed(testDb.db, testDb.cipher);
     ctx = await createTestApp(testDb.db, { demoMode: true });
     admin = { authorization: `Bearer ${await signIn(ctx, 'admin@demo.mawsool.test')}` };
   });

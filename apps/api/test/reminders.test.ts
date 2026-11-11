@@ -20,7 +20,7 @@ describe('the optional number for text reminders', () => {
 
   beforeAll(async () => {
     testDb = await createTestDb();
-    await runSeed(testDb.db);
+    await runSeed(testDb.db, testDb.cipher);
     ctx = await createTestApp(testDb.db);
   });
 
@@ -139,7 +139,7 @@ describe('the optional number for text reminders', () => {
 describe('what the server writes to its log', () => {
   it('holds neither the number nor the body of a reminder request', async () => {
     const testDb = await createTestDb();
-    await runSeed(testDb.db);
+    await runSeed(testDb.db, testDb.cipher);
     const lines: string[] = [];
     const stream = new Writable({
       write(chunk, _encoding, done) {

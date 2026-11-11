@@ -1,10 +1,10 @@
-import { CrisisResponseSchema, EquityQuerySchema, EquityResponseSchema, FunnelQuerySchema, FunnelResponseSchema, OutcomesResponseSchema, PeriodQuerySchema, TimelinessResponseSchema } from '@mawsool/types';
+import { CrisisResponseSchema, EquityQuerySchema, EquityResponseSchema, FunnelQuerySchema, FunnelResponseSchema, OutcomesQuerySchema, OutcomesResponseSchema, PeriodQuerySchema, TimelinessResponseSchema } from '@mawsool/types';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Clock } from '../clock';
 import type { Cipher } from '../crypto';
 import type { Db } from '../db/client';
-import { loadCrisisFacts, loadOpenInvites, loadTicketFacts, periodStart } from '../metrics/facts';
+import { loadCrisisFacts, loadOpenInvites, loadTicketFacts, onePeriodStart, periodStart } from '../metrics/facts';
 import { buildCrisis } from '../metrics/crisis';
 import { buildEquity } from '../metrics/equity';
 import { buildFunnel, crisisHiddenInFunnel, journeysOf, remeasuredHiddenInFunnel } from '../metrics/funnel';
@@ -48,14 +48,16 @@ export function registerMetricsRoutes(app: FastifyInstance, deps: MetricsRouteDe
     return buildCrisis(request.query.period, crisis, since, crisisHiddenInFunnel({ journeys: journeysOf(tickets), openInvites, crisis, since }));
   });
 
-  // Symptom change among re-measured tickets. It reads the totals the person shared (live consent only), per ticket and never
-  // returned per ticket, and it hides everything when the funnel hides its re-measured stage for the same period.
-  typed.get('/metrics/outcomes', { config: { access: 'ops' }, schema: { querystring: PeriodQuerySchema, response: { 200: OutcomesResponseSchema } } }, async (request) => {
+  // Symptom change among re-measured tickets. It reads the totals the person shared (live consent only) and only for a person
+  // who also opted in to anonymous statistics, per ticket and never returned per ticket. It is served for one period only
+  // (`EQUITY_PERIOD`): any other `period` is a 400 with no figures, since the same figure in two periods subtracts into a small
+  // group's results. It hides everything when the funnel hides its re-measured stage for that same 90-day window.
+  typed.get('/metrics/outcomes', { config: { access: 'ops' }, schema: { querystring: OutcomesQuerySchema, response: { 200: OutcomesResponseSchema } } }, async () => {
     const now = deps.clock.now();
-    const since = periodStart(request.query.period, now);
+    const since = onePeriodStart(now);
     const [tickets, openInvites, crisis] = await Promise.all([loadTicketFacts(deps.db), loadOpenInvites(deps.db, now), loadCrisisFacts(deps.db)]);
     const hides = remeasuredHiddenInFunnel({ journeys: journeysOf(tickets), openInvites, crisis, since });
-    return buildOutcomes(request.query.period, await loadOutcomeFacts(deps.db, deps.cipher, tickets), since, hides);
+    return buildOutcomes(await loadOutcomeFacts(deps.db, deps.cipher, tickets), since, hides);
   });
 
   // Equity is served for one period only (`EQUITY_PERIOD`): any other `period` is a 400 with no figures, and with none the

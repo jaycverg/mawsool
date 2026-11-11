@@ -9,7 +9,8 @@
 //   6c. two presses of one no-login clinic link at once, over two connections, leave exactly one clinic move and one spent link;
 //   6d. two moves of one adverse event's status at once over two connections leave one unbroken history ending on the stored status;
 //   7. the demo's POST /demo/reset and one sweep (the +7 days step) leave the funnel and the Urdu row the dashboard reads
-//      equal to the ones PGlite gives for the same steps, with the Urdu row flagged 18 to 22 points below overall, and the
+//      equal to the ones PGlite gives for the same steps, with the Urdu row flagged 18 to 22 points below overall, the
+//      symptom-change figures equal too and showing numbers right after the reset, and the
 //      step's stored clock offset (a bigint column) reads back as 7 days, also to an API started afterwards.
 // It works in a database of its own, created here and dropped at the end, so the dev data is never touched.
 import { randomUUID } from 'node:crypto';
@@ -34,7 +35,7 @@ import { runSeed } from '../seed/run';
 import { sweep } from '../sweep';
 import { createTestApp, signIn } from '../../test/helpers/app';
 import { createTestDb } from '../../test/helpers/db';
-import { FREE_TEXT, handoffBody, issue, rawBundle, registerPerson, sendCrisisEvent, serviceAt, ticketRequest } from '../../test/helpers/flow';
+import { FREE_TEXT, cipher, handoffBody, issue, rawBundle, registerPerson, sendCrisisEvent, serviceAt, ticketRequest } from '../../test/helpers/flow';
 
 const POOLS = 8;
 const config = loadConfig();
@@ -48,7 +49,7 @@ const check = (ok: boolean, message: string) => {
 /** What the dashboard reads from a database: the funnel for all time and for the last 90 days, and the Urdu row of the equity view. */
 interface DemoFigures {
   funnel: FunnelResponse[];
-  /** The symptom-change figures: the seeded tickets that reached re-measured shared nothing, so none is included. */
+  /** The symptom-change figures (the last 90 days, the only period they are served for): the seeded re-measured tickets that share their totals and opted in are included. */
   outcomes: OutcomesResponse;
   urdu: EquityCell | null;
 }
@@ -60,7 +61,7 @@ interface DemoFigures {
  */
 async function demoFigures(database: Db): Promise<{ resetStatus: number; advanceStatus: number; markedOverdue: number; storedOffsetMs: number; restartedOffsetMs: number; afterReset: DemoFigures; afterSweep: DemoFigures }> {
   // Staff have to exist to sign in; the reset below reloads the seed anyway and keeps these sign-ins.
-  await runSeed(database);
+  await runSeed(database, cipher);
   const demo = await createTestApp(database, { demoMode: true });
   try {
     const admin = { authorization: `Bearer ${await signIn(demo, 'admin@demo.mawsool.test')}` };
@@ -73,7 +74,7 @@ async function demoFigures(database: Db): Promise<{ resetStatus: number; advance
     const figures = async (): Promise<DemoFigures> => {
       const equity = await read<EquityResponse>('/metrics/equity');
       const urdu = equity.dimensions.find((entry) => entry.dimension === 'language')?.rows.find((row) => row.value === 'ur')?.cell;
-      return { funnel: [await read<FunnelResponse>('/metrics/funnel?period=all'), await read<FunnelResponse>('/metrics/funnel?period=90d')], outcomes: await read<OutcomesResponse>('/metrics/outcomes?period=all'), urdu: urdu && !('suppressed' in urdu) ? urdu : null };
+      return { funnel: [await read<FunnelResponse>('/metrics/funnel?period=all'), await read<FunnelResponse>('/metrics/funnel?period=90d')], outcomes: await read<OutcomesResponse>('/metrics/outcomes?period=90d'), urdu: urdu && !('suppressed' in urdu) ? urdu : null };
     };
     const reset = await demo.app.inject({ method: 'POST', url: '/demo/reset', headers: admin });
     const afterReset = await figures();
@@ -110,7 +111,7 @@ const clock = new ManualClock(new Date('2030-01-01T00:00:00Z'));
 
 try {
   await migrate(drizzle(migrationPool, { schema }), { migrationsFolder: MIGRATIONS_FOLDER });
-  await runSeed(db);
+  await runSeed(db, cipher);
   const open = async () => (await db.select({ id: schema.tickets.id }).from(schema.tickets).where(inArray(schema.tickets.state, ['issued', 'acknowledged']))).map((row) => row.id);
   const overdue = async () => db.select({ ticketId: schema.ticketEvents.ticketId }).from(schema.ticketEvents).where(eq(schema.ticketEvents.toState, 'overdue'));
 
@@ -129,7 +130,7 @@ try {
   check(events.length - before === due.length && marked === due.length, 'every due ticket got exactly one overdue event, and the sweeps agree on the count');
 
   // 2. pg-boss: starts, schedule exists, one fire runs the sweep.
-  await runSeed(db);
+  await runSeed(db, cipher);
   const dueAgain = (await open()).length;
   const eventsBefore = (await overdue()).length;
   const jobs = await startJobs({ databaseUrl: gateUrl.toString(), db, clock, log: { error: console.error, info: () => undefined } as never });
@@ -154,7 +155,7 @@ try {
   check((await migrationPool.query("SELECT 1 FROM information_schema.columns WHERE table_name = 'inbound_nonces' AND column_name = 'seen_at'")).rowCount === 1, 'the nonce table has its timestamp');
 
   // 4. The same nonce spent at once over two connections: one invite, one nonce, one winner.
-  await runSeed(db);
+  await runSeed(db, cipher);
   const screen = { result: 'positive' as const, screenedAt: '2026-11-01T08:00:00+04:00', locale: 'ar' as const };
   const invitesBefore = (await db.select({ id: schema.inboundInvites.id }).from(schema.inboundInvites)).length;
   const raced = await Promise.all([acceptScreen(pools[0]!.db, clock, 'tamm', 'nonce-spent-at-once-0123456789', screen), acceptScreen(pools[1]!.db, clock, 'tamm', 'nonce-spent-at-once-0123456789', screen)]);
@@ -163,7 +164,7 @@ try {
   check((await db.select({ nonce: schema.inboundNonces.nonce }).from(schema.inboundNonces).where(eq(schema.inboundNonces.nonce, 'nonce-spent-at-once-0123456789'))).length === 1, 'and exactly one nonce');
 
   // 5 and 6. The app on real Postgres.
-  await runSeed(db);
+  await runSeed(db, cipher);
   const ctx = await createTestApp(db, { summaryLlmEnabled: true, summaryProvider: { complete: async () => 'PROVIDER-WORDS-FROM-THE-NOTE' } as never });
   try {
     const gp = await serviceAt(db, 'A', 'gp');
@@ -285,9 +286,12 @@ try {
     check(urdu !== null && urdu.flagged && urdu.gapPoints <= -18 && urdu.gapPoints >= -22, `the Urdu row ${when === 'afterReset' ? 'after the reset' : 'after the sweep'} is flagged 18 to 22 points below overall (${urdu?.gapPoints ?? 'missing'})`);
     check(JSON.stringify(onPostgres[when].urdu) === JSON.stringify(onPglite[when].urdu), `the Urdu row ${when === 'afterReset' ? 'after the reset' : 'after the sweep'} is the same on Postgres and PGlite`);
     check(JSON.stringify(onPostgres[when].funnel) === JSON.stringify(onPglite[when].funnel), `the funnel ${when === 'afterReset' ? 'after the reset' : 'after the sweep'} is the same on Postgres and PGlite`);
-    check(JSON.stringify(onPostgres[when].outcomes) === JSON.stringify(onPglite[when].outcomes) && typeof onPostgres[when].outcomes.remeasured === 'number', `the symptom-change figures ${when === 'afterReset' ? 'after the reset' : 'after the sweep'} are the same on Postgres and PGlite, with the seeded re-measured tickets counted and excluded`);
+    check(JSON.stringify(onPostgres[when].outcomes) === JSON.stringify(onPglite[when].outcomes) && typeof onPostgres[when].outcomes.remeasured === 'number', `the symptom-change figures ${when === 'afterReset' ? 'after the reset' : 'after the sweep'} are the same on Postgres and PGlite, with the seeded re-measured tickets counted`);
     check(onPostgres[when].funnel.every((view) => typeof view.stages[0]?.count === 'number'), `the funnel's first stage is a figure, not a suppressed cell, ${when === 'afterReset' ? 'after the reset' : 'after the sweep'} on Postgres`);
   }
+  // On the default view at the demo's start (the reset, offset 0) the seeded shares are counted and the tile shows numbers.
+  const [phq9] = onPostgres.afterReset.outcomes.instruments;
+  check(typeof phq9?.included === 'number' && typeof phq9.excluded === 'number' && typeof phq9.meanChange === 'number', 'the symptom-change figures after the reset show the included count, the excluded count and the mean change on Postgres');
 } catch (error) {
   problems.push(`threw: ${error instanceof Error ? error.stack : String(error)}`);
 } finally {

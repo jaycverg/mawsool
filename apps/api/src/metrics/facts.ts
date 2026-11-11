@@ -17,7 +17,19 @@ export function startOfDubaiDay(at: Date): Date {
  */
 export function periodStart(period: MetricPeriod, now: Date): Date | null {
   if (period === 'all') return null;
-  const days = period === '90d' ? 90 : 30;
+  return daysBack(period === '90d' ? 90 : 30, now);
+}
+
+/**
+ * Where the one period the equity view and the symptom-change figures are served for (`EQUITY_PERIOD`, the last 90 days)
+ * begins: the same moment `periodStart('90d', now)` gives, so the funnel asked for 90 days and these figures stand on the same
+ * tickets.
+ */
+export function onePeriodStart(now: Date): Date {
+  return daysBack(90, now);
+}
+
+function daysBack(days: number, now: Date): Date {
   return startOfDubaiDay(new Date(now.getTime() - days * DAY_MS));
 }
 
@@ -52,6 +64,8 @@ export interface TicketFact {
   region: Region | null;
   /** The language the person chose to share as an equity bucket; null for anyone who did not opt in. Not the ticket's language. */
   bucketLanguage: CareLanguage | null;
+  /** Whether the person opted in to counting their shared totals in the anonymous symptom-change figures, as it stands now. Read by no other metric. */
+  outcomeStatsOptIn: boolean;
 }
 
 type EventRow = {
@@ -79,6 +93,7 @@ export async function loadTicketFacts(db: Db): Promise<TicketFact[]> {
       deadlineAt: schema.tickets.deadlineAt,
       state: schema.tickets.state,
       optedIn: schema.persons.equityOptIn,
+      outcomeStatsOptIn: schema.persons.outcomeStatsOptIn,
       ageBand: schema.persons.ageBand,
       gender: schema.persons.gender,
       region: schema.persons.region,
@@ -118,6 +133,7 @@ export async function loadTicketFacts(db: Db): Promise<TicketFact[]> {
       gender: ticket.optedIn ? ticket.gender : null,
       region: ticket.optedIn ? ticket.region : null,
       bucketLanguage: ticket.optedIn ? ticket.bucketLanguage : null,
+      outcomeStatsOptIn: ticket.outcomeStatsOptIn,
     };
   });
 }

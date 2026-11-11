@@ -143,7 +143,8 @@
     "outcomes": {
       "label": "Symptom change",
       "heading": "Symptom change after re-measure",
-      "remeasured": "{count} tickets were re-measured at six weeks in this period.",
+      "remeasured": "{count} tickets were re-measured at six weeks in the last 90 days.",
+      "period": "Always the last 90 days, whatever the period filter says, so a small group's results cannot be worked out by comparing periods.",
       "instrument": {
         "phq9": "Depression (PHQ-9)",
         "gad7": "Anxiety (GAD-7)"
@@ -153,9 +154,9 @@
       "improved": "Reliable improvement",
       "deteriorated": "Reliable deterioration",
       "of": "{count} of {of}",
-      "included": "{count} with both totals",
+      "included": "{count} counted",
       "excluded": "{count} excluded",
-      "basis": "Change is the repeat total minus the referral total, so a fall means fewer symptoms. Reliable change is a fall or a rise of at least {phq9} points on the PHQ-9 and {gad7} on the GAD-7 (NHS Talking Therapies manual). Only totals the person chose to share are used; a re-measured ticket without both totals is excluded."
+      "basis": "Change is the repeat total minus the referral total, so a fall means fewer symptoms. Reliable change is a fall or a rise of at least {phq9} points on the PHQ-9 and {gad7} on the GAD-7 (NHS Talking Therapies manual). Only totals the person chose to share with their clinic and also chose to count in anonymous group figures are used; a re-measured ticket without both totals or without that second choice is excluded."
     }
   },
   "admin": {
@@ -370,7 +371,7 @@
     "outcomes": {
       "definition": "How symptoms changed for people re-measured at six weeks: the mean change in PHQ-9 and GAD-7, and the share with a reliable improvement or a reliable deterioration.",
       "numerator": "For the mean, the sum of the changes (the repeat total minus the referral total) divided by the tickets included. For each share, the included tickets whose total fell, or rose, by at least the reliable-change points.",
-      "denominator": "Re-measured tickets whose person shared both totals of the instrument. A re-measured ticket without both totals is excluded and counted as excluded."
+      "denominator": "Re-measured tickets whose person shared both totals of the instrument and chose to count them in anonymous statistics. A re-measured ticket without both totals, or whose person did not make that choice, is excluded and counted as excluded."
     },
     "adverse-events": {
       "definition": "A log of adverse events that staff recorded: a missed crisis follow-up, a wrong routing or a data incident, with severity and status.",

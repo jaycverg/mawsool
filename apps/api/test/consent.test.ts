@@ -22,7 +22,7 @@ describe('consent, revoke and the bundle', () => {
 
   beforeAll(async () => {
     testDb = await createTestDb();
-    await runSeed(testDb.db);
+    await runSeed(testDb.db, testDb.cipher);
     ctx = await createTestApp(testDb.db);
     gpA = await serviceAt(testDb.db, 'A', 'gp');
     person = await registerPerson(ctx);
@@ -301,6 +301,62 @@ describe('consent, revoke and the bundle', () => {
       expect((await put({ optIn: false, buckets: { ageBand: '18_24', gender: null, language: null, region: null } })).statusCode).toBe(200);
       expect(await row()).toMatchObject({ equityOptIn: false, ageBand: null, gender: null, language: null, region: null });
       expect((await put({ optIn: true, buckets: { nationality: 'x' } })).statusCode).toBe(400);
+    });
+  });
+
+  describe('the anonymous statistics opt-in', () => {
+    it('is off for a new person, turns on and off through its own route, and is not the equity choice', async () => {
+      const p = await registerPerson(ctx);
+      const put = (payload: object) => ctx.app.inject({ method: 'PUT', url: '/me/outcome-statistics', headers: p.headers, payload });
+      const row = async () => (await testDb.db.select().from(schema.persons).where(eq(schema.persons.id, p.id)))[0]!;
+      expect(await row()).toMatchObject({ outcomeStatsOptIn: false, equityOptIn: false });
+      const on = await put({ optIn: true });
+      expect([on.statusCode, on.json()]).toEqual([200, { optIn: true }]);
+      expect(await row()).toMatchObject({ outcomeStatsOptIn: true, equityOptIn: false });
+      expect((await put({ optIn: false })).json()).toEqual({ optIn: false });
+      expect(await row()).toMatchObject({ outcomeStatsOptIn: false });
+      // Turning the equity choice on or off leaves this one as it was, and the other way round.
+      await put({ optIn: true });
+      await ctx.app.inject({ method: 'PUT', url: '/me/equity', headers: p.headers, payload: { optIn: true, buckets: { ageBand: '18_24', gender: 'male', language: 'ar', region: 'abu_dhabi_city' } } });
+      await ctx.app.inject({ method: 'PUT', url: '/me/equity', headers: p.headers, payload: { optIn: false } });
+      expect(await row()).toMatchObject({ outcomeStatsOptIn: true, equityOptIn: false });
+    });
+
+    it('refuses a body that is not exactly a yes or a no, and changes nothing', async () => {
+      const p = await registerPerson(ctx);
+      await ctx.app.inject({ method: 'PUT', url: '/me/outcome-statistics', headers: p.headers, payload: { optIn: true } });
+      for (const payload of [{}, { optIn: 'yes' }, { optIn: false, extra: 1 }, { optIn: 1 }]) {
+        const res = await ctx.app.inject({ method: 'PUT', url: '/me/outcome-statistics', headers: p.headers, payload });
+        expect(res.statusCode, JSON.stringify(payload)).toBe(400);
+      }
+      expect((await testDb.db.select().from(schema.persons).where(eq(schema.persons.id, p.id)))[0]).toMatchObject({ outcomeStatsOptIn: true });
+    });
+
+    it('is cleared by delete everything, and only for the person who asked', async () => {
+      const mine = await registerPerson(ctx);
+      const theirs = await registerPerson(ctx);
+      for (const p of [mine, theirs]) await ctx.app.inject({ method: 'PUT', url: '/me/outcome-statistics', headers: p.headers, payload: { optIn: true } });
+      const row = async (id: string) => (await testDb.db.select().from(schema.persons).where(eq(schema.persons.id, id)))[0]!;
+      expect((await ctx.app.inject({ method: 'DELETE', url: '/me/data', headers: mine.headers })).statusCode).toBe(200);
+      expect(await row(mine.id)).toMatchObject({ outcomeStatsOptIn: false });
+      expect(await row(theirs.id)).toMatchObject({ outcomeStatsOptIn: true });
+    });
+
+    it('never reaches what a clinic reads: the queue, the ticket, the bundle and the FHIR export are the same before and after the person turns it on', async () => {
+      const p = await registerPerson(ctx);
+      const ticket = await issue(ctx, p, ticketRequest(gpA));
+      const clinician = staff(tokenA);
+      const reads = async () =>
+        Promise.all(['/tickets', `/tickets/${ticket.id}`, `/tickets/${ticket.id}/bundle`, `/tickets/${ticket.id}/fhir`].map(async (url) => {
+          const res = await ctx.app.inject({ method: 'GET', url, headers: clinician });
+          expect(res.statusCode, url).toBe(200);
+          return res.body;
+        }));
+      const before = await reads();
+      expect((await ctx.app.inject({ method: 'PUT', url: '/me/outcome-statistics', headers: p.headers, payload: { optIn: true } })).statusCode).toBe(200);
+      const after = await reads();
+      expect(after).toEqual(before);
+      for (const body of after) expect(body).not.toMatch(/outcome|statistic|optIn|opt_in/i);
     });
   });
 });

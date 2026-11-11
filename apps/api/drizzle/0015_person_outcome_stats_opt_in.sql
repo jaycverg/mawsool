@@ -1,0 +1,1 @@
+ALTER TABLE "persons" ADD COLUMN "outcome_stats_opt_in" boolean DEFAULT false NOT NULL;

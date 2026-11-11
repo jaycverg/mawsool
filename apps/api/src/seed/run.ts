@@ -1,5 +1,7 @@
 import { sql } from 'drizzle-orm';
+import type { Cipher } from '../crypto';
 import { schema, type Db } from '../db/client';
+import { bundleContext } from '../tickets/service';
 import { ALL_TABLE_NAMES } from '../db/schema';
 import { SEED_ANCHOR } from './fixtures';
 import { generateSeed, type SeedData } from './generate';
@@ -25,10 +27,14 @@ export async function readStaffAccess(db: Db): Promise<KeptStaffAccess> {
  * Replaces the whole database content with the deterministic seed, in one transaction. Existing rows in every
  * table are removed first, so running it twice leaves exactly the same data as running it once.
  *
+ * `cipher` is the API's own bundle cipher: the seeded tickets that share their repeat totals get a bundle stored the way the
+ * real flow stores it, as ciphertext bound to its ticket, so the same key must open it. The ciphertext differs on every run
+ * (a random IV); the plain content is what is deterministic.
+ *
  * `keep` puts staff sessions and unspent sign-in links back after the reload (the seed's staff keep their ids, so they
  * still point at a user); a demo reset passes the ones that existed, so the admin who pressed the button is not signed out.
  */
-export async function runSeed(db: Db, anchor: Date = SEED_ANCHOR, keep?: KeptStaffAccess): Promise<SeedData> {
+export async function runSeed(db: Db, cipher: Cipher, anchor: Date = SEED_ANCHOR, keep?: KeptStaffAccess): Promise<SeedData> {
   const data = generateSeed(anchor);
   await db.transaction(async (tx) => {
     await tx.execute(sql.raw(`TRUNCATE TABLE ${ALL_TABLE_NAMES.join(', ')} RESTART IDENTITY CASCADE`));
@@ -45,6 +51,12 @@ export async function runSeed(db: Db, anchor: Date = SEED_ANCHOR, keep?: KeptSta
     await insertChunked(data.persons, (chunk) => tx.insert(schema.persons).values(chunk));
     await insertChunked(data.tickets, (chunk) => tx.insert(schema.tickets).values(chunk));
     await insertChunked(data.ticketEvents, (chunk) => tx.insert(schema.ticketEvents).values(chunk));
+    await insertChunked(data.consents, (chunk) => tx.insert(schema.consents).values(chunk));
+    await insertChunked(data.sharedBundles, (chunk) =>
+      tx.insert(schema.sharedBundles).values(
+        chunk.map(({ content, ...bundle }) => ({ ...bundle, contentCiphertext: cipher.encrypt(JSON.stringify(content), bundleContext(bundle.ticketId)) })),
+      ),
+    );
     await insertChunked(data.crisisEvents, (chunk) => tx.insert(schema.crisisEvents).values(chunk));
     await insertChunked(data.inboundInvites, (chunk) => tx.insert(schema.inboundInvites).values(chunk));
   });

@@ -17,7 +17,7 @@ describe('the overdue sweep', () => {
 
   beforeAll(async () => {
     testDb = await createTestDb();
-    await runSeed(testDb.db);
+    await runSeed(testDb.db, testDb.cipher);
     ctx = await createTestApp(testDb.db);
     person = await registerPerson(ctx);
     gp = await serviceAt(testDb.db, 'A', 'gp');

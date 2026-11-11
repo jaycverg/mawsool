@@ -1,8 +1,13 @@
-import { sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { REGIONS, TICKET_SOURCES } from '@mawsool/types';
+import { reliableChange, remeasureAvailableAt, SUPPRESSION_THRESHOLD } from '@mawsool/rules';
+import { BundleContentSchema, REGIONS, TICKET_SOURCES } from '@mawsool/types';
 import { generateSeed, LOOP_CLOSED_OTHER, LOOP_CLOSED_URDU, TICKET_COUNT, URDU_TICKET_COUNT } from '../src/seed/generate';
+import { SEED_OUTCOME_QUOTAS, SEED_OUTCOME_SHARES } from '../src/seed/outcome-shares';
+import { bundleContext } from '../src/tickets/service';
 import { FACILITY_A_ID, FACILITY_B_ID, SEED_ANCHOR } from '../src/seed/fixtures';
+import { schema } from '../src/db/client';
 import { ALL_TABLE_NAMES } from '../src/db/schema';
 import { runSeed } from '../src/seed/run';
 import { loopClosedByLanguage, urduGap } from '../src/seed/stats';
@@ -93,6 +98,64 @@ describe('seed content', () => {
   });
 });
 
+describe('seeded re-measured tickets that share their totals and opted in to the statistics', () => {
+  const data = generateSeed();
+  const eventsOf = Map.groupBy(data.ticketEvents, (event) => event.ticketId);
+  const reachedRemeasured = data.tickets.filter((ticket) => eventsOf.get(ticket.id)!.some((event) => event.toState === 'remeasured'));
+  const personOf = new Map(data.persons.map((person) => [person.id, person]));
+  const sharedIds = new Set(data.sharedBundles.map((bundle) => bundle.ticketId));
+  const scoresOf = (ticketId: string) => data.sharedBundles.find((bundle) => bundle.ticketId === ticketId)!.content.scores!;
+
+  it('gives 36 of the 47 re-measured tickets a ticket consent, a scores consent and a bundle, and no other ticket any', () => {
+    expect(reachedRemeasured).toHaveLength(47);
+    expect(data.sharedBundles).toHaveLength(SEED_OUTCOME_SHARES);
+    expect(sharedIds.size).toBe(SEED_OUTCOME_SHARES);
+    for (const id of sharedIds) expect(reachedRemeasured.map((ticket) => ticket.id)).toContain(id);
+    expect(data.consents).toHaveLength(2 * SEED_OUTCOME_SHARES);
+    expect(new Set(data.consents.map((consent) => consent.ticketId))).toEqual(sharedIds);
+    for (const id of sharedIds) expect(data.consents.filter((consent) => consent.ticketId === id).map((consent) => consent.element).sort()).toEqual(['scores', 'ticket']);
+    for (const consent of data.consents) expect(consent.revokedAt ?? null).toBeNull();
+  });
+
+  it('opts in the people of those tickets and nobody else', () => {
+    const owners = new Set(reachedRemeasured.filter((ticket) => sharedIds.has(ticket.id)).map((ticket) => ticket.personId));
+    expect(owners.size).toBe(SEED_OUTCOME_SHARES);
+    expect(new Set(data.persons.filter((person) => person.outcomeStatsOptIn).map((person) => person.id))).toEqual(owners);
+    for (const ticket of reachedRemeasured.filter((candidate) => !sharedIds.has(candidate.id))) expect(personOf.get(ticket.personId)!.outcomeStatsOptIn).toBe(false);
+  });
+
+  it('holds a referral and a repeat total of each instrument, taken before and after the repeat check opened, that the bundle schema accepts', () => {
+    for (const bundle of data.sharedBundles) {
+      expect(BundleContentSchema.safeParse(bundle.content).success, bundle.ticketId).toBe(true);
+      const events = eventsOf.get(bundle.ticketId)!;
+      const opens = remeasureAvailableAt(events.find((event) => event.toState === 'seen')!.at).getTime();
+      const remeasuredAt = events.find((event) => event.toState === 'remeasured')!.at.getTime();
+      for (const instrument of ['phq9', 'gad7'] as const) {
+        const own = scoresOf(bundle.ticketId).filter((score) => score.instrument === instrument);
+        const taken = own.map((score) => Date.parse(score.takenAt));
+        expect(own, `${bundle.ticketId} ${instrument}`).toHaveLength(2);
+        expect(taken.filter((at) => at < opens), 'one referral total before the check opened').toHaveLength(1);
+        const repeatAt = taken.filter((at) => at >= opens);
+        expect(repeatAt, 'one repeat total from when it opened').toHaveLength(1);
+        expect(repeatAt[0]!, 'and not after it was finished').toBeLessThanOrEqual(remeasuredAt);
+      }
+    }
+  });
+
+  it('splits the changes the way the quotas say, by the rule the dashboard uses, so the tile has ten or more on every side that needs it', () => {
+    for (const instrument of ['phq9', 'gad7'] as const) {
+      const tally = { improved: 0, deteriorated: 0, unchanged: 0 };
+      for (const bundle of data.sharedBundles) {
+        const own = scoresOf(bundle.ticketId).filter((score) => score.instrument === instrument).sort((a, b) => Date.parse(a.takenAt) - Date.parse(b.takenAt));
+        const kind = reliableChange(instrument, own[0]!.total, own[1]!.total).kind;
+        tally[kind === 'reliable_improvement' ? 'improved' : kind === 'reliable_deterioration' ? 'deteriorated' : 'unchanged'] += 1;
+      }
+      expect(tally, instrument).toEqual(SEED_OUTCOME_QUOTAS[instrument]);
+    }
+    expect(SEED_OUTCOME_SHARES).toBeGreaterThanOrEqual(2 * SUPPRESSION_THRESHOLD);
+  });
+});
+
 describe('seed event logs', () => {
   const data = generateSeed();
   const eventsByTicket = Map.groupBy(data.ticketEvents, (e) => e.ticketId);
@@ -180,10 +243,10 @@ describe('seeded database', () => {
 
   beforeAll(async () => {
     [first, second] = await Promise.all([createTestDb(), createTestDb()]);
-    await runSeed(first.db);
+    await runSeed(first.db, first.cipher);
     vi.setSystemTime(new Date('2031-05-05T05:05:05Z'));
     try {
-      await runSeed(second.db);
+      await runSeed(second.db, second.cipher);
     } finally {
       vi.useRealTimers();
     }
@@ -195,7 +258,7 @@ describe('seeded database', () => {
   });
 
   it('holds the same data in two separate databases seeded at different times', async () => {
-    const [a, b] = await Promise.all([dumpDatabase(first.db), dumpDatabase(second.db)]);
+    const [a, b] = await Promise.all([dumpDatabase(first.db, first.cipher), dumpDatabase(second.db, second.cipher)]);
     expect(Object.keys(a)).toHaveLength(ALL_TABLE_NAMES.length);
     expect(ALL_TABLE_NAMES).toHaveLength(22);
     expect(a['tickets']).toHaveLength(TICKET_COUNT);
@@ -203,9 +266,36 @@ describe('seeded database', () => {
   });
 
   it('holds the same data after seeding the same database a second time', async () => {
-    const before = await dumpDatabase(first.db);
-    await runSeed(first.db);
-    expect(await dumpDatabase(first.db)).toEqual(before);
+    const before = await dumpDatabase(first.db, first.cipher);
+    await runSeed(first.db, first.cipher);
+    expect(await dumpDatabase(first.db, first.cipher)).toEqual(before);
+  });
+
+  it('stores each seeded bundle as ciphertext that opens for its own ticket only, with the content the generator made', async () => {
+    const stored = await first.db.select().from(schema.sharedBundles);
+    const made = generateSeed();
+    expect(stored).toHaveLength(SEED_OUTCOME_SHARES);
+    for (const row of stored) {
+      expect(row.contentCiphertext).toMatch(/^v1\./);
+      expect(row.contentCiphertext).not.toContain('phq9');
+      expect(JSON.parse(first.cipher.decrypt(row.contentCiphertext!, bundleContext(row.ticketId)))).toEqual(JSON.parse(JSON.stringify(made.sharedBundles.find((bundle) => bundle.ticketId === row.ticketId)!.content)));
+      expect(() => first.cipher.decrypt(row.contentCiphertext!, bundleContext(randomUUID()))).toThrow();
+    }
+  });
+
+  it('would notice a changed total when two databases are compared, because the comparison opens the bundles', async () => {
+    const third = await createTestDb();
+    try {
+      await runSeed(third.db, third.cipher);
+      const [row] = await third.db.select().from(schema.sharedBundles).limit(1);
+      const content = JSON.parse(third.cipher.decrypt(row!.contentCiphertext!, bundleContext(row!.ticketId))) as { scores: { total: number }[] };
+      content.scores[0]!.total += 1;
+      await third.db.update(schema.sharedBundles).set({ contentCiphertext: third.cipher.encrypt(JSON.stringify(content), bundleContext(row!.ticketId)) }).where(eq(schema.sharedBundles.id, row!.id));
+      expect((await dumpDatabase(third.db, third.cipher))['shared_bundles']).not.toEqual((await dumpDatabase(first.db, first.cipher))['shared_bundles']);
+      expect((await dumpDatabase(first.db))['shared_bundles']).not.toEqual((await dumpDatabase(second.db))['shared_bundles']);
+    } finally {
+      await third.close();
+    }
   });
 
   it('counts rows through the database, not only in memory', async () => {

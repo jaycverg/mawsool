@@ -31,7 +31,7 @@ describe('database constraints', () => {
 
   beforeAll(async () => {
     testDb = await createTestDb();
-    const data = await runSeed(testDb.db);
+    const data = await runSeed(testDb.db, testDb.cipher);
     serviceId = data.services.find((s) => s.tier === 'gp')!.id;
     personId = data.persons[0]!.id;
   });

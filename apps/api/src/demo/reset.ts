@@ -1,5 +1,6 @@
 import type { DemoResetResult } from '@mawsool/types';
 import type { OffsetClock } from '../clock';
+import type { Cipher } from '../crypto';
 import type { Db } from '../db/client';
 import { createInvite, formatInviteCode } from '../inbound/service';
 import { startOfDubaiDay } from '../metrics/facts';
@@ -18,7 +19,7 @@ import { readStaffAccess, runSeed } from '../seed/run';
  * A phone that still holds a person id from before the reset is not handled here: the person is gone from the database,
  * and the phone re-registers itself the next time the server answers 401 (`callServer`).
  */
-export async function resetDemo(deps: { db: Db; clock: OffsetClock; personAppUrl: string }): Promise<DemoResetResult> {
+export async function resetDemo(deps: { db: Db; cipher: Cipher; clock: OffsetClock; personAppUrl: string }): Promise<DemoResetResult> {
   // The clock is zeroed before the reload, so a sweep that starts during it reads the fresh seed at real time and cannot mark
   // the new tickets overdue at a demo date. The routes run this after any advance and that advance's own sweep (the clock
   // mover's queue). Not covered: the sweep pg-boss runs every minute is not on that queue, and one that began before this
@@ -28,7 +29,7 @@ export async function resetDemo(deps: { db: Db; clock: OffsetClock; personAppUrl
   deps.clock.reset();
   const now = deps.clock.now();
   try {
-    await runSeed(deps.db, startOfDubaiDay(now), await readStaffAccess(deps.db));
+    await runSeed(deps.db, deps.cipher, startOfDubaiDay(now), await readStaffAccess(deps.db));
   } catch (error) {
     deps.clock.setOffset(previousOffset);
     throw error;

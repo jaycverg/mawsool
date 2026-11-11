@@ -20,7 +20,7 @@ export interface MetricField {
 /**
  * The period a figure answers for:
  *  - `selected`: the period chosen at the top of the dashboard;
- *  - `equity90`: always the last 90 days (the equity view's one period), whatever is chosen;
+ *  - `equity90`: always the last 90 days (the one period the equity view and the symptom-change figures are served for), whatever is chosen;
  *  - `now`: how things stand at this moment, not tied to a period;
  *  - `log`: the whole adverse-events log, whatever is chosen.
  */
@@ -143,7 +143,7 @@ export const METRIC_DEFINITIONS = [
     id: 'outcomes',
     label: 'dash.outcomes.heading',
     surface: 'section',
-    period: 'selected',
+    period: 'equity90',
     numerator: [
       { route: '/metrics/outcomes', path: 'instruments.reliableImprovement.count' },
       { route: '/metrics/outcomes', path: 'instruments.reliableDeterioration.count' },

@@ -7,6 +7,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { API_URL } from '../lib/api';
+import { loadOutcomeStatistics, saveOutcomeStatistics } from '../lib/outcome-statistics';
 import { deviceFetch } from '../lib/net';
 import { INSTRUMENT_TAG } from '../lib/bands';
 import { deviceNow } from '../lib/clock';
@@ -23,12 +24,12 @@ type Load =
   | { status: 'missing' }
   | { status: 'ready'; ticket: PersonTicketView; check: RepeatCheck | null };
 
-type Send = 'idle' | 'sending' | 'failed' | 'not_ready';
+export type Send = 'idle' | 'sending' | 'failed' | 'not_ready';
 
 /**
- * The end of the repeat check. With both questionnaires done it shows the two totals and one choice, off until ticked:
- * send those two totals to the clinic. Finishing moves the ticket on, and without the tick nothing but that move leaves
- * the phone. Before both are done it offers to start; before six weeks after the clinic saw the person, or when the
+ * The end of the repeat check. With both questionnaires done it shows the two totals and two choices, each off until ticked:
+ * send those two totals to the clinic, and (only with that one) count them in anonymous group statistics. Finishing moves the
+ * ticket on, and without the first tick nothing but that move leaves the phone. Before both are done it offers to start; before six weeks after the clinic saw the person, or when the
  * ticket is not waiting for one, it says so and does not offer the questionnaires.
  */
 export function RemeasureScreen() {
@@ -45,9 +46,16 @@ export function RemeasureScreen() {
   const device = useDevice();
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [share, setShare] = useState(false);
+  // The separate choice to count the totals in anonymous statistics: off unless the phone's note says it is on, and sent only with the totals.
+  const [statistics, setStatistics] = useState(false);
   const [send, setSend] = useState<Send>('idle');
   // Re-render when the demo clock moves, so a repeat check that the clock made due opens.
   useDemoOffsetMs();
+
+  useEffect(() => {
+    if (device === null || device === 'unavailable') return;
+    void loadOutcomeStatistics(device.storage).then(setStatistics, () => setStatistics(false));
+  }, [device]);
 
   const refresh = useCallback(async () => {
     if (device === null || device === 'unavailable') return;
@@ -77,8 +85,11 @@ export function RemeasureScreen() {
     if (device === null || device === 'unavailable') return;
     setSend('sending');
     const server = { storage: device.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, random: window.crypto };
-    const outcome = await sendRemeasure(server, ticket.id, share ? totalsOf(check) : []);
-    if (outcome === 'done') return window.location.assign(href(lang, 'ticket', { id: ticket.id }));
+    const outcome = await sendRemeasure(server, ticket.id, share ? totalsOf(check) : [], share ? statistics : undefined);
+    if (outcome === 'done') {
+      if (share) await saveOutcomeStatistics(device.storage, statistics).catch(() => undefined);
+      return window.location.assign(href(lang, 'ticket', { id: ticket.id }));
+    }
     setSend(outcome === 'not_ready' ? 'not_ready' : 'failed');
   }
 
@@ -123,6 +134,8 @@ export function RemeasureScreen() {
             names={{ phq9: ti('phq9Full'), gad7: ti('gad7Full') }}
             share={share}
             setShare={setShare}
+            statistics={statistics}
+            setStatistics={setStatistics}
             send={send}
             onFinish={() => void finish(load.ticket, load.check!)}
           />
@@ -132,18 +145,25 @@ export function RemeasureScreen() {
   );
 }
 
-interface TotalsProps {
+export interface TotalsProps {
   check: RepeatCheck;
   ticket: PersonTicketView;
   bandNames: Record<string, string>;
   names: { phq9: string; gad7: string };
   share: boolean;
   setShare: (share: boolean) => void;
+  statistics: boolean;
+  setStatistics: (statistics: boolean) => void;
   send: Send;
   onFinish: () => void;
 }
 
-function Totals({ check, ticket, bandNames, names, share, setShare, send, onFinish }: TotalsProps) {
+/**
+ * The two totals and the two choices beneath them. The second choice, to count the totals in anonymous statistics, is its own
+ * box: off unless the person has it on, and available only while the first is ticked, because a total is counted only if the
+ * clinic's copy of it exists. While the first is unticked the second is disabled and shows unticked.
+ */
+export function Totals({ check, ticket, bandNames, names, share, setShare, statistics, setStatistics, send, onFinish }: TotalsProps) {
   const t = useTranslations('remeasure');
   /** The clinic can be sent the totals only while the person is still sharing the ticket with it. */
   const sharing = ticket.consents.some((consent) => consent.element === 'ticket' && consent.revokedAt === null);
@@ -162,13 +182,29 @@ function Totals({ check, ticket, bandNames, names, share, setShare, send, onFini
         ))}
       </ul>
       {sharing ? (
-        <label className="flex min-h-tap cursor-pointer items-start gap-3 rounded-staff border border-border bg-surface p-3.5 text-[15px]">
-          <input type="checkbox" checked={share} onChange={(event) => setShare(event.target.checked)} className="mt-0.5 size-[22px] shrink-0 accent-accent" data-control="share-totals" />
-          <span className="flex flex-col gap-1">
-            <span className="font-semibold">{t('shareLabel')}</span>
-            <span className="t-small text-muted">{t('shareHelp')}</span>
-          </span>
-        </label>
+        <>
+          <label className="flex min-h-tap cursor-pointer items-start gap-3 rounded-staff border border-border bg-surface p-3.5 text-[15px]">
+            <input type="checkbox" checked={share} onChange={(event) => setShare(event.target.checked)} className="mt-0.5 size-[22px] shrink-0 accent-accent" data-control="share-totals" />
+            <span className="flex flex-col gap-1">
+              <span className="font-semibold">{t('shareLabel')}</span>
+              <span className="t-small text-muted">{t('shareHelp')}</span>
+            </span>
+          </label>
+          <label className={`flex min-h-tap items-start gap-3 rounded-staff border border-border bg-surface p-3.5 text-[15px] ${share ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
+            <input
+              type="checkbox"
+              checked={share && statistics}
+              disabled={!share}
+              onChange={(event) => setStatistics(event.target.checked)}
+              className="mt-0.5 size-[22px] shrink-0 accent-accent"
+              data-control="count-in-statistics"
+            />
+            <span className="flex flex-col gap-1">
+              <span className="font-semibold">{t('statisticsLabel')}</span>
+              <span className="t-small text-muted">{t('statisticsHelp')}</span>
+            </span>
+          </label>
+        </>
       ) : (
         <p className="t-small text-muted" data-share-unavailable>{t('shareUnavailable')}</p>
       )}

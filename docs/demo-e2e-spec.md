@@ -15,7 +15,8 @@ The demo script (steps 1 to 12) runs in Arabic and in English against the real A
 - `staff-apps-have-icons-and-log-no-console-error`: The clinician and ops apps declare an icon that loads, and their sign-in and home pages log no console error
 - `dashboard-toggle-and-rtl`: The ops dashboard has the Arabic and English toggle and runs right to left in Arabic
 - `dashboard-info-panels-define-every-tile-by-keyboard-and-touch`: Every tile and section of the ops dashboard has an info button that opens by Enter, Space and touch, is announced as a collapsed or expanded button, closes on Escape and returns the focus, and shows its definition, numerator, denominator, period and suppression note in the page's language, right to left in Arabic, in a 44 px target and with no sideways scroll at 390 px
-- `dashboard-shows-symptom-change-from-shared-totals-and-the-adverse-events-log`: The dashboard shows the mean change and the shares with reliable improvement and deterioration among re-measured tickets from the totals people shared (the threshold itself counts as reliable, tickets without both totals are counted as excluded), and its adverse events log records an event from the screen, offers only the legal status moves with their times, lists by status and severity, and holds no free text
+- `symptom-change-tile-shows-numbers-on-the-default-view-and-ignores-the-period-filter`: Straight after a reset, on the dashboard's default view, the symptom-change tile shows numbers and no Suppressed cell: the re-measured count, the mean change and the share who improved for both instruments, ten or more counted and ten or more excluded; choosing another period leaves the tile as it was, the page asks the API for the last 90 days each time, and the tile and its info panel say so
+- `dashboard-shows-symptom-change-from-shared-totals-and-the-adverse-events-log`: The dashboard shows the mean change and the shares with reliable improvement and deterioration among re-measured tickets from the totals people shared and chose to count in anonymous statistics (the threshold itself counts as reliable; tickets without both totals, or whose person did not opt in, are counted as excluded and move no figure), and its adverse events log records an event from the screen, offers only the legal status moves with their times, lists by status and severity, and holds no free text
 - `dashboard-holds-the-board-and-plan-tokens`: The ops dashboard holds the board's type, colours, radii, chart sizes and 44 px tap targets
 - `snapshot-ops-dashboard`: The ops dashboard matches the committed snapshot
 - `overdue-ticket-prompts-the-person-to-reroute`: A ticket past its deadline goes overdue on the demo clock, the phone shows the overdue prompt, the prompt leads to a reroute that moves the old ticket to rerouted, and the ops dashboard's overdue list counts the tickets the table holds as overdue
@@ -890,20 +891,89 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await touch.context().close();
   },
 
+  async 'symptom-change-tile-shows-numbers-on-the-default-view-and-ignores-the-period-filter'({ context, browser, locale }) {
+    test.setTimeout(240_000);
+    const admin = await signedInPage(context, OPS, ADMIN);
+    await resetFromPanel(admin, locale);
+    // The demo's default clock position: straight after a reset, the offset is zero.
+    expect(await offsetMs()).toBe(0);
+    const dash = await dashboard(browser, locale);
+    await expect(dash.locator('[data-filter="period"]')).toHaveValue('90d');
+    const asked: string[] = [];
+    dash.on('request', (request) => void (new URL(request.url()).pathname === '/metrics/outcomes' && asked.push(request.url())));
+    await dash.reload();
+    const section = dash.locator('[data-section="outcomes"]');
+    await expect(section.locator('[data-outcomes-period]')).toHaveText(omsg(locale, 'dash.outcomes.period'));
+
+    /** What the tile shows, read off the page: every number, and whether any cell reads Suppressed. */
+    const tile = async () => ({
+      remeasured: numbersIn(await section.locator('[data-outcomes-remeasured]').innerText())[0]!,
+      cards: await Promise.all(
+        (['phq9', 'gad7'] as const).map(async (name) => {
+          const card = section.locator(`[data-outcome="${name}"]`);
+          return {
+            name,
+            mean: await card.locator('[data-outcome-stat="mean"] [data-value]').innerText(),
+            improved: await card.locator('[data-outcome-stat="improved"] [data-value]').innerText(),
+            coverage: numbersIn(await card.locator('[data-outcome-coverage]').innerText()),
+            suppressedMean: await card.locator('[data-outcome-stat="mean"] [data-suppressed]').count(),
+            suppressedImproved: await card.locator('[data-outcome-stat="improved"] [data-suppressed]').count(),
+          };
+        }),
+      ),
+    });
+
+    // Numbers, not Suppressed, straight from the seed: the re-measured count, the mean change and the share who improved, for both instruments.
+    const first = await tile();
+    expect(first.remeasured).toBeGreaterThanOrEqual(10);
+    for (const card of first.cards) {
+      expect(card.suppressedMean, `${card.name} mean`).toBe(0);
+      expect(card.suppressedImproved, `${card.name} improved`).toBe(0);
+      expect(card.mean, `${card.name} mean shows a number`).toMatch(/\d/);
+      expect(card.improved, `${card.name} share shows a percentage`).toMatch(/\d%$/);
+      const [included, excluded] = card.coverage as [number, number];
+      expect(included, `${card.name} counted`).toBeGreaterThanOrEqual(10);
+      expect(excluded, `${card.name} excluded`).toBeGreaterThanOrEqual(10);
+    }
+    // The API says the same, so the page is not the only witness.
+    const opsHeaders = bearer(await staffSession(OPS_USER));
+    const api = (await call('GET', '/metrics/outcomes?period=90d', { headers: opsHeaders })).json() as { remeasured: number; instruments: { instrument: string; included: number; excluded: number }[] };
+    expect(api.remeasured).toBe(first.remeasured);
+    expect(first.cards.map((card) => card.coverage)).toEqual(api.instruments.map((entry) => [entry.included, entry.excluded]));
+
+    // The info panel says the same about its period.
+    await section.locator('[data-info="outcomes"] > button').click();
+    await expect(dash.locator('[data-info-panel="outcomes"]')).toContainText(omsg(locale, 'defs.period.equity90'));
+
+    // The period filter does not reach it: every other choice leaves the tile as it was, and the page asks for the last 90 days each time.
+    for (const period of ['all', '30d', '90d'] as const) {
+      const answered = dash.waitForResponse((response) => new URL(response.url()).pathname === '/metrics/outcomes');
+      await dash.locator('[data-filter="period"]').selectOption(period);
+      await answered;
+      await expect(section.locator('[data-outcomes-period]')).toBeVisible();
+      expect(await tile(), `period ${period}`).toEqual(first);
+    }
+    expect(asked.length).toBeGreaterThanOrEqual(4);
+    expect([...new Set(asked)]).toEqual([`${API}/metrics/outcomes?period=90d`]);
+  },
+
   async 'dashboard-shows-symptom-change-from-shared-totals-and-the-adverse-events-log'({ context, browser, locale }) {
     test.setTimeout(420_000);
     const admin = await signedInPage(context, OPS, ADMIN);
     await resetFromPanel(admin, locale);
 
     // Thirty-two people: a PHQ-9 and a GAD-7 at referral, seen by the clinic, then (six weeks on, on the demo clock) re-measured
-    // with the totals sent. PHQ-9: 6 fall by 6 (exactly the threshold) and 6 by 10, 10 rise by 6 (exactly the threshold), 10 rise by 1.
-    // GAD-7: 6 fall by 4 (exactly the threshold) and 6 by 5, 10 rise by 4 (exactly the threshold), 10 fall by 3.
+    // with the totals sent and counted in the anonymous statistics. PHQ-9: 6 fall by 6 (exactly the threshold) and 6 by 10, 10 rise
+    // by 6 (exactly the threshold), 10 rise by 1. GAD-7: 6 fall by 4 (exactly the threshold) and 6 by 5, 10 rise by 4 (exactly the
+    // threshold), 10 fall by 3. Twelve more share the very same kind of totals with their clinic and do not opt in to the
+    // statistics: they are re-measured and excluded, and nothing they shared moves a figure.
     const phq9Changes = [...Array(6).fill(-6), ...Array(6).fill(-10), ...Array(10).fill(6), ...Array(10).fill(1)] as number[];
     const gad7Changes = [...Array(6).fill(-4), ...Array(6).fill(-5), ...Array(10).fill(4), ...Array(10).fill(-3)] as number[];
+    const NOT_COUNTED = 12;
     const clinic = bearer(await staffSession(CLINICIAN_A));
     const serviceId = await serviceAt(FACILITY_A);
     const people: { person: Awaited<ReturnType<typeof newPerson>>; id: string }[] = [];
-    for (let i = 0; i < phq9Changes.length; i += 1) {
+    for (let i = 0; i < phq9Changes.length + NOT_COUNTED; i += 1) {
       const person = await newPerson();
       const takenAt = new Date().toISOString();
       const made = await makeTicket(person, {
@@ -917,11 +987,13 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await advanceFromPanel(admin, '6w', 42);
     const careNow = new Date(Date.now() + (await offsetMs())).toISOString();
     for (const [i, { person, id }] of people.entries()) {
+      // The last twelve change a lot (a fall of 12 and 9), so one counted by mistake would move every mean and share below.
+      const counted = i < phq9Changes.length;
       const scores = [
-        { instrument: 'phq9', total: 14 + phq9Changes[i]!, band: 'moderate', takenAt: careNow },
-        { instrument: 'gad7', total: 12 + gad7Changes[i]!, band: 'moderate', takenAt: careNow },
+        { instrument: 'phq9', total: 14 + (counted ? phq9Changes[i]! : -12), band: 'moderate', takenAt: careNow },
+        { instrument: 'gad7', total: 12 + (counted ? gad7Changes[i]! : -9), band: 'moderate', takenAt: careNow },
       ];
-      const done = await call('POST', `/me/tickets/${id}/remeasure`, { headers: person.headers, body: { scores } });
+      const done = await call('POST', `/me/tickets/${id}/remeasure`, { headers: person.headers, body: counted ? { scores, statisticsOptIn: true } : { scores } });
       expect(done.status, done.text).toBe(200);
     }
 
@@ -932,9 +1004,12 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     const mean = (changes: number[]) => oneDecimal.format(Math.round((changes.reduce((a, b) => a + b, 0) / changes.length) * 10) / 10);
     const section = dash.locator('[data-section="outcomes"]');
     await expect(section).toBeVisible();
-    // The seeded tickets that reached re-measured shared nothing, so they are excluded; ours are the 32 included.
+    // The period filter was set to all time, and the section does not follow it: it is the last 90 days, so six weeks into the
+    // demo the seeded re-measured tickets (made 69 to 89 days before the reset) are outside it and the section holds ours alone,
+    // the 32 counted and the 12 who shared but did not opt in.
+    await expect(section.locator('[data-outcomes-period]')).toHaveText(omsg(locale, 'dash.outcomes.period'));
     const remeasured = numbersIn(await section.locator('[data-outcomes-remeasured]').innerText())[0]!;
-    expect(remeasured).toBeGreaterThanOrEqual(32 + 10);
+    expect(remeasured).toBe(32 + NOT_COUNTED);
     for (const [name, changes] of [['phq9', phq9Changes], ['gad7', gad7Changes]] as const) {
       const card = section.locator(`[data-outcome="${name}"]`);
       await expect(card.locator('[data-outcome-stat="mean"] [data-value]')).toHaveText(omsg(locale, 'dash.outcomes.points', { points: mean(changes) }));
@@ -949,7 +1024,10 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(section).toContainText(omsg(locale, 'dash.outcomes.basis', { phq9: 6, gad7: 4 }));
     // The same figures, from the API, so the page is not the only witness.
     const opsHeaders = bearer(await staffSession(OPS_USER));
-    const api = (await call('GET', '/metrics/outcomes?period=all', { headers: opsHeaders })).json() as { instruments: { instrument: string; included: number; reliableImprovement: { count: number; of: number }; reliableDeterioration: { count: number } }[] };
+    const refused = await call('GET', '/metrics/outcomes?period=all', { headers: opsHeaders });
+    expect(refused.status, 'the other periods are refused').toBe(400);
+    expect(Object.keys(refused.json() as object).sort(), 'with no figures').toEqual(['error', 'message']);
+    const api = (await call('GET', '/metrics/outcomes?period=90d', { headers: opsHeaders })).json() as { instruments: { instrument: string; included: number; reliableImprovement: { count: number; of: number }; reliableDeterioration: { count: number } }[] };
     expect(api.instruments.find((entry) => entry.instrument === 'phq9')).toMatchObject({ included: 32, reliableImprovement: { count: 12, of: 32 }, reliableDeterioration: { count: 10 } });
     expect(api.instruments.find((entry) => entry.instrument === 'gad7')).toMatchObject({ included: 32, reliableImprovement: { count: 12, of: 32 }, reliableDeterioration: { count: 10 } });
 

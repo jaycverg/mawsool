@@ -30,7 +30,7 @@ describe('logged summaries and the elements they were made from', () => {
 
   beforeAll(async () => {
     testDb = await createTestDb();
-    await runSeed(testDb.db);
+    await runSeed(testDb.db, testDb.cipher);
     ctx = await createTestApp(testDb.db, { summaryLlmEnabled: true, summaryProvider: new StubProvider() });
     gpA = await serviceAt(testDb.db, 'A', 'gp');
     person = await registerPerson(ctx);

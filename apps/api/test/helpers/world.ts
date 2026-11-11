@@ -26,6 +26,8 @@ export interface WorldTicket {
 
 export interface WorldPerson {
   optIn?: boolean;
+  /** The separate choice to count shared totals in the anonymous symptom-change figures; off unless said. */
+  statsOptIn?: boolean;
   ageBand?: AgeBand;
   gender?: Gender;
   region?: Region;
@@ -50,6 +52,7 @@ export async function createWorld(db: Db) {
       secretHash: 'x',
       locale: 'en',
       equityOptIn: person.optIn ?? false,
+      outcomeStatsOptIn: person.statsOptIn ?? false,
       ageBand: person.optIn ? (person.ageBand ?? null) : null,
       gender: person.optIn ? (person.gender ?? null) : null,
       region: person.optIn ? (person.region ?? null) : null,

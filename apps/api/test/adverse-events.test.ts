@@ -22,7 +22,7 @@ const REF = pseudonymOf('00000000-0000-4000-8000-0000000000aa', TEST_ENCRYPTION_
 
 beforeAll(async () => {
   testDb = await createTestDb();
-  await runSeed(testDb.db);
+  await runSeed(testDb.db, testDb.cipher);
   ctx = await createTestApp(testDb.db, { demoMode: true });
   for (const [who, email] of Object.entries({ ops: 'ops@demo.mawsool.test', admin: 'admin@demo.mawsool.test', clinician: 'clinician.a@demo.mawsool.test', line: 'crisisline@demo.mawsool.test' })) tokens[who] = await signIn(ctx, email);
 });

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { CrisisResponse, EquityResponse, FunnelResponse, TimelinessResponse } from '@mawsool/types';
+import type { CrisisResponse, EquityResponse, FunnelResponse, OutcomesResponse, TimelinessResponse } from '@mawsool/types';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadTicketFacts } from '../src/metrics/facts';
 import { pseudonymOf } from '../src/metrics/timeliness';
@@ -554,7 +554,7 @@ describe('GET /metrics/equity', () => {
   });
 
   it('measures the Urdu gap on the real query: 18 to 22 points below the overall rate, the way the seed measures it', async () => {
-    await runSeed(testDb.db, SEED_ANCHOR);
+    await runSeed(testDb.db, testDb.cipher, SEED_ANCHOR);
     headers = await world.opsHeaders();
     ctx.clock.set(SEED_ANCHOR);
     const equity = await get<EquityResponse>('/metrics/equity');
@@ -590,7 +590,7 @@ describe('the seeded data against the metric definitions', () => {
   it('counts the same positive screens whatever day the seed is anchored on, as long as the clock reads that day', async () => {
     const expected = 36 + 470 + 40; // open invites + parentless tickets + crisis events
     for (const anchor of [SEED_ANCHOR, new Date('2027-03-15T00:00:00+04:00'), new Date('2031-08-02T00:00:00+04:00')]) {
-      await runSeed(testDb.db, anchor);
+      await runSeed(testDb.db, testDb.cipher, anchor);
     headers = await world.opsHeaders();
       ctx.clock.set(anchor);
       const funnel = await get<FunnelResponse>('/metrics/funnel');
@@ -600,7 +600,7 @@ describe('the seeded data against the metric definitions', () => {
   });
 
   it('stops counting the seeded open invites once the clock passes their expiry, and counts none of the expired ones before it', async () => {
-    await runSeed(testDb.db, SEED_ANCHOR);
+    await runSeed(testDb.db, testDb.cipher, SEED_ANCHOR);
     headers = await world.opsHeaders();
     ctx.clock.set(SEED_ANCHOR);
     expect(counts(await get<FunnelResponse>('/metrics/funnel')).positive_screen).toBe(36 + 470 + 40);
@@ -610,7 +610,7 @@ describe('the seeded data against the metric definitions', () => {
   });
 
   it('keeps the demo’s dashboard readable in the default view, straight after a reset and 28 days into the demo, and in all time at 28 days', async () => {
-    await runSeed(testDb.db, SEED_ANCHOR);
+    await runSeed(testDb.db, testDb.cipher, SEED_ANCHOR);
     const moments = [0, 28 * DAY, 28 * DAY + 23 * HOUR];
     for (const [period, offsets] of [['90d', moments], ['all', [28 * DAY]]] as const) {
       for (const offset of offsets) {
@@ -636,8 +636,23 @@ describe('the seeded data against the metric definitions', () => {
     }
   });
 
+  it('shows numbers on the symptom-change tile in the default view straight after a reset, from the seeded re-measured tickets that shared their totals and opted in', async () => {
+    await runSeed(testDb.db, testDb.cipher, SEED_ANCHOR);
+    headers = await world.opsHeaders();
+    ctx.clock.set(SEED_ANCHOR);
+    const outcomes = await get<OutcomesResponse>('/metrics/outcomes');
+    expect(outcomes.period).toBe('90d');
+    // 47 seeded tickets reached re-measured; 36 of them shared both totals of both instruments and opted in, the other 11 are excluded.
+    expect(outcomes.remeasured).toBe(47);
+    const [phq9, gad7] = outcomes.instruments;
+    expect(phq9).toEqual({ instrument: 'phq9', included: 36, excluded: 11, meanChange: -2.4, reliableImprovement: { count: 15, of: 36, percent: 41.7 }, reliableDeterioration: { suppressed: true } });
+    expect(gad7).toEqual({ instrument: 'gad7', included: 36, excluded: 11, meanChange: -1.2, reliableImprovement: { count: 13, of: 36, percent: 36.1 }, reliableDeterioration: { suppressed: true } });
+    // The funnel's re-measured stage for the same 90 days is the same 47.
+    expect(counts(await get<FunnelResponse>('/metrics/funnel?period=90d')).remeasured).toBe(47);
+  });
+
   it('shows a funnel and a timeliness table from the seed with the equity opt-in buckets and the crisis events', async () => {
-    await runSeed(testDb.db, SEED_ANCHOR);
+    await runSeed(testDb.db, testDb.cipher, SEED_ANCHOR);
     headers = await world.opsHeaders();
     ctx.clock.set(SEED_ANCHOR);
     const funnel = await get<FunnelResponse>('/metrics/funnel');

@@ -1,11 +1,13 @@
 import { loadConfig } from '../config';
+import { createCipher } from '../crypto';
 import { connect } from '../db/client';
 import { runSeed } from '../seed/run';
 import { urduGap } from '../seed/stats';
 
-const { db, close } = connect(loadConfig().databaseUrl);
+const config = loadConfig();
+const { db, close } = connect(config.databaseUrl);
 try {
-  const data = await runSeed(db);
+  const data = await runSeed(db, createCipher(config.encryptionKey));
   const gap = await urduGap(db);
   console.log(
     `seeded ${data.facilities.length} facilities, ${data.services.length} services, ${data.persons.length} persons, ` +

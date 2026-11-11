@@ -240,7 +240,7 @@ export interface EraseResult {
 /**
  * "Delete everything" on the server: revokes the `ticket` consent of every ticket the person holds that is still
  * shared (which revokes the rest and withdraws what is live), deletes every logged summary the person has, and
- * clears the equity buckets. The invites the person claimed, the number they gave for text reminders, any hand-off to the crisis line and the clinic links of their tickets are deleted too (see below). The tickets themselves
+ * clears the equity buckets and the anonymous-statistics choice. The invites the person claimed, the number they gave for text reminders, any hand-off to the crisis line and the clinic links of their tickets are deleted too (see below). The tickets themselves
  * and their events remain, as pseudonymous timings with no data: an event's reason is a code from a fixed list, never free text.
  */
 export async function eraseEverything(deps: ConsentDeps, personId: string, unseenHandoffIds: readonly string[] = []): Promise<EraseResult> {
@@ -270,7 +270,7 @@ export async function eraseEverything(deps: ConsentDeps, personId: string, unsee
   await deleteClinicLinksOf(db, personId);
   await db
     .update(schema.persons)
-    .set({ equityOptIn: false, ageBand: null, gender: null, language: null, region: null })
+    .set({ equityOptIn: false, outcomeStatsOptIn: false, ageBand: null, gender: null, language: null, region: null })
     .where(eq(schema.persons.id, personId));
   return { ticketsWithdrawn, consentsRevoked, summariesDeleted: deleted.length };
 }

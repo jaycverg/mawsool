@@ -34,7 +34,7 @@ describe('POST /summary/draft', () => {
 
   beforeAll(async () => {
     testDb = await createTestDb();
-    await runSeed(testDb.db);
+    await runSeed(testDb.db, testDb.cipher);
   });
 
   afterEach(async () => {

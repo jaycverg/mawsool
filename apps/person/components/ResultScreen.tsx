@@ -177,12 +177,12 @@ export function ResultScreen() {
         ) : (
           <div className="mt-auto flex flex-col gap-2.5">
             {anonymous ? (
-              <p className="rounded-[12px] bg-mock p-3 text-[14px] leading-5 text-mock-ink" data-anonymous-result-note>
-                {ta('resultNote')}{' '}
-                <a className="font-semibold underline" href={href(lang, 'anonymous')}>
+              <div className="flex flex-col items-start rounded-[12px] bg-mock p-3 text-[14px] leading-5 text-mock-ink" data-anonymous-result-note>
+                <p>{ta('resultNote')}</p>
+                <a className="tap inline-flex items-center font-semibold underline" href={href(lang, 'anonymous')}>
                   {ta('bannerLink')}
                 </a>
-              </p>
+              </div>
             ) : (
               <a className="btn-primary" href={href(lang, 'options')}>
                 {t('options')}

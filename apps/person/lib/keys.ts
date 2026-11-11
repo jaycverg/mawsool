@@ -9,6 +9,7 @@ export const KEYS = {
   tickets: 'tickets',
   invite: 'invite',
   equity: 'equity',
+  outcomeStatistics: 'outcome-statistics',
   footprint: 'server:footprint',
   directory: 'directory',
   crisisBlock: 'crisis:block',

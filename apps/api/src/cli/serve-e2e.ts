@@ -71,7 +71,7 @@ function loggedSignInLink(to: string): string | null {
 const client = new PGlite();
 const db = drizzle(client, { schema }) as unknown as Db;
 await migrate(drizzle(client, { schema }), { migrationsFolder: MIGRATIONS_FOLDER });
-await runSeed(db);
+await runSeed(db, cipher);
 
 // One staff session per seeded clinician, so a test can ask what the clinic at a ticket's facility would be told.
 const clinicTokens = new Map<string, string>();
@@ -150,7 +150,7 @@ const inspect = createServer(async (request, response) => {
     response.end(JSON.stringify({ bundle: bundle.statusCode, ticket: ticket.statusCode, body: bundle.body }));
   } else if (/^\/persons\/[0-9a-f-]{36}$/.test(url.pathname)) {
     const [person] = await db.select().from(schema.persons).where(eq(schema.persons.id, url.pathname.split('/')[2]!));
-    response.end(JSON.stringify(person ? { equityOptIn: person.equityOptIn, ageBand: person.ageBand, gender: person.gender, language: person.language, region: person.region } : null));
+    response.end(JSON.stringify(person ? { equityOptIn: person.equityOptIn, outcomeStatsOptIn: person.outcomeStatsOptIn, ageBand: person.ageBand, gender: person.gender, language: person.language, region: person.region } : null));
   } else if (url.pathname === '/reminder-phones') {
     // Every stored reminder number: the raw ciphertext as the table holds it, and the number decrypted with this harness's key.
     const rows = await db.select().from(schema.reminderPhones);
@@ -192,7 +192,7 @@ const inspect = createServer(async (request, response) => {
   } else if (request.method === 'POST' && url.pathname === '/e2e/reseed') {
     // Puts the database back to the seed behind every phone's back, the way a lost database would: the people are gone.
     // Staff sign-ins are kept. Not a product route.
-    await runSeed(db, startOfDubaiDay(systemClock.now()), await readStaffAccess(db));
+    await runSeed(db, cipher, startOfDubaiDay(systemClock.now()), await readStaffAccess(db));
     response.end('{}');
   } else if (url.pathname === '/persons/count') {
     response.end(JSON.stringify({ count: (await db.select({ id: schema.persons.id }).from(schema.persons)).length }));

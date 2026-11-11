@@ -143,7 +143,7 @@ describe('resetting the demo', () => {
   let clock: OffsetClock;
   beforeEach(async () => {
     testDb = await createTestDb();
-    await runSeed(testDb.db);
+    await runSeed(testDb.db, testDb.cipher);
     clock = new OffsetClock(new ManualClock(TEST_START));
     await createClockMover(testDb.db, clock).advance(21 * DAY);
   });
@@ -158,7 +158,7 @@ describe('resetting the demo', () => {
     const failing = withReload(async () => {
       throw new Error('the reload failed');
     });
-    await expect(resetDemo({ db: failing, clock, personAppUrl: 'http://localhost:3000' })).rejects.toThrow('the reload failed');
+    await expect(resetDemo({ db: failing, cipher: testDb.cipher, clock, personAppUrl: 'http://localhost:3000' })).rejects.toThrow('the reload failed');
     expect(clock.offset).toBe(21 * DAY);
     expect(await readDemoOffset(testDb.db)).toBe(21 * DAY);
   });
@@ -169,7 +169,7 @@ describe('resetting the demo', () => {
       seenDuringReload = clock.offset;
       throw new Error('stop after looking');
     });
-    await expect(resetDemo({ db: watching, clock, personAppUrl: 'http://localhost:3000' })).rejects.toThrow('stop after looking');
+    await expect(resetDemo({ db: watching, cipher: testDb.cipher, clock, personAppUrl: 'http://localhost:3000' })).rejects.toThrow('stop after looking');
     expect(seenDuringReload).toBe(0);
   });
 
@@ -237,7 +237,7 @@ describe('resetting the demo', () => {
     }) as Db;
     const mover = createClockMover(slow, clock);
     const advance = mover.advance(7 * DAY);
-    const reset = mover.exclusive(() => resetDemo({ db: testDb.db, clock, personAppUrl: 'http://localhost:3000' }));
+    const reset = mover.exclusive(() => resetDemo({ db: testDb.db, cipher: testDb.cipher, clock, personAppUrl: 'http://localhost:3000' }));
     await Promise.all([advance, reset]);
     expect(order).toEqual(['write 28d']);
     expect(clock.offset).toBe(0);
@@ -253,7 +253,7 @@ describe('the demo clock in the API', () => {
 
   beforeEach(async () => {
     testDb = await createTestDb();
-    await runSeed(testDb.db);
+    await runSeed(testDb.db, testDb.cipher);
     ctx = await createTestApp(testDb.db, { demoMode: true });
     admin = await signIn(ctx, 'admin@demo.mawsool.test');
   });
@@ -444,7 +444,7 @@ describe('the demo clock in the API', () => {
 describe('with DEMO_MODE unset', () => {
   it('the offset the API reports is zero, care time is the wall clock, and nothing can move it', async () => {
     const testDb = await createTestDb();
-    await runSeed(testDb.db);
+    await runSeed(testDb.db, testDb.cipher);
     const ctx = await createTestApp(testDb.db);
     try {
       expect((await ctx.app.inject({ method: 'GET', url: '/clock' })).json()).toEqual({ demoMode: false, offsetMs: 0 });

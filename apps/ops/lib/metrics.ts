@@ -22,8 +22,8 @@ import { staffCall } from '@mawsool/ui';
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 /**
- * What the dashboard filters on. Period applies to every figure except the equity section and the loop-closed tile, which
- * read equity and so always show the last 90 days (the tile says so); source and tier narrow the funnel.
+ * What the dashboard filters on. Period applies to every figure except the equity section, the loop-closed tile and the
+ * symptom-change section, which are always the last 90 days (each says so); source and tier narrow the funnel.
  */
 export interface Filters {
   period: MetricPeriod;
@@ -58,10 +58,10 @@ function query(filters: Filters, withFunnelFilters: boolean): string {
 
 /** Loads the five metric routes together. Any 401 is `unauthorized`; an answer that is missing or the wrong shape is `failed`. */
 export async function loadDashboard(session: Pick<Session, 'sessionToken'>, filters: Filters): Promise<DashboardResult> {
-  // The equity section ignores the period filter: it is always the one period the API serves it for (see `EQUITY_PERIOD`).
+  // The equity and symptom-change sections ignore the period filter: each is always the one period the API serves it for (see `EQUITY_PERIOD`).
   const call = (path: string, withFunnelFilters = false, period?: MetricPeriod) =>
     staffCall<unknown>({ fetch: window.fetch.bind(window), apiUrl: API_URL, session, path: `${path}${query(period ? { ...filters, period } : filters, withFunnelFilters)}` });
-  const [funnel, timeliness, crisis, equity, outcomes] = await Promise.all([call('/metrics/funnel', true), call('/metrics/timeliness'), call('/metrics/crisis'), call('/metrics/equity', false, EQUITY_PERIOD), call('/metrics/outcomes')]);
+  const [funnel, timeliness, crisis, equity, outcomes] = await Promise.all([call('/metrics/funnel', true), call('/metrics/timeliness'), call('/metrics/crisis'), call('/metrics/equity', false, EQUITY_PERIOD), call('/metrics/outcomes', false, EQUITY_PERIOD)]);
   const all = [funnel, timeliness, crisis, equity, outcomes];
   if (all.some((result) => result.status === 'unauthorized')) return { status: 'unauthorized' };
   if (all.some((result) => result.status !== 'ok')) return { status: 'failed' };

@@ -24,13 +24,15 @@ export type TicketTier = z.infer<typeof TicketTierSchema>;
 export const PeriodQuerySchema = z.object({ period: MetricPeriodSchema.default('all') });
 
 /**
- * The one period the equity view is served for. Two periods of the same group subtract (all time less the last 90 days is
- * the group's tickets from before the window, which can be a handful of named people), and the small-number guardrail
- * forbids publishing that. So equity has a single period, a request for any other is refused, and the dashboard's period
- * filter does not reach it.
+ * The one period the equity view and the symptom-change figures are served for. Two periods of the same group subtract (all
+ * time less the last 90 days is the group's tickets from before the window, which can be a handful of named people), and the
+ * small-number guardrail forbids publishing that. So each has a single period, a request for any other is refused, and the
+ * dashboard's period filter does not reach them.
  */
 export const EQUITY_PERIOD = '90d' as const;
 export const EquityQuerySchema = z.object({ period: z.literal(EQUITY_PERIOD).default(EQUITY_PERIOD) });
+/** The symptom-change figures are served for the equity view's one period, and the same request shape refuses every other. */
+export const OutcomesQuerySchema = EquityQuerySchema;
 
 /** The funnel's filters. A filter that is not sent means every value. */
 export const FunnelQuerySchema = PeriodQuerySchema.extend({ source: TicketSourceSchema.optional(), tier: TicketTierSchema.optional() });
@@ -112,18 +114,18 @@ export const OutcomeInstrumentSchema = z.enum(OUTCOME_INSTRUMENTS);
 export type OutcomeInstrument = z.infer<typeof OutcomeInstrumentSchema>;
 
 /**
- * Symptom change among re-measured tickets, per instrument. Only totals the person shared are used (a live `scores`
- * consent, a referral total and a repeat-check total of the same instrument); a re-measured ticket without both is
- * `excluded`. `meanChange` is the repeat total minus the referral total, in points (negative is fewer symptoms), and the two
- * shares are of the included tickets: reliable improvement is a fall of at least the instrument's threshold, deterioration a
- * rise of at least it. Every figure is `{ suppressed: true }` when too few people stand behind it, or when showing it would let
+ * Symptom change among re-measured tickets, per instrument, for the last 90 days only. Only totals the person shared are used
+ * (a live `scores` consent, a referral total and a repeat-check total of the same instrument) and only when the person also
+ * opted in to anonymous statistics; a re-measured ticket without all of that is `excluded`. `meanChange` is the repeat total
+ * minus the referral total, in points (negative is fewer symptoms), and the two shares are of the included tickets: reliable
+ * improvement is a fall of at least the instrument's threshold, deterioration a rise of at least it. Every figure is `{ suppressed: true }` when too few people stand behind it, or when showing it would let
  * a hidden number be worked out from the ones beside it (see `hiddenCells`).
  */
 export const OutcomesResponseSchema = z.object({
-  period: MetricPeriodSchema,
+  period: z.literal(EQUITY_PERIOD),
   /** The points of change that count as reliable, per instrument (`RELIABLE_CHANGE`). */
   reliableChangePoints: z.object({ phq9: z.number().int().positive(), gad7: z.number().int().positive() }),
-  /** Tickets that reached re-measured in the period: the same people as the funnel's last stage. */
+  /** Tickets that reached re-measured in the last 90 days: the same people as the funnel's last stage for that period. */
   remeasured: orSuppressed(Count),
   instruments: z.array(
     z.object({
