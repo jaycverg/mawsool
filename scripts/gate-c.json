@@ -482,7 +482,7 @@
   },
   {
     "id": "mw-704-symptom-change-is-suppressed-and-follows-the-funnel",
-    "sentence": "Every symptom-change figure goes through suppression: nothing under ten re-measured, included or excluded tickets is shown, a share needs its part, its whole and what is left over at ten, the parts that add up to others are hidden together, the two instruments' included counts are hidden together when they differ by 1 to 9 so they cannot subtract into a small group, and every figure is hidden whenever the funnel hides its re-measured stage",
+    "sentence": "Every symptom-change figure goes through suppression: nothing under ten re-measured, included or excluded tickets is shown, a share needs its part, its whole and what is left over at ten, the parts that add up to others are hidden together, the two instruments' included counts are hidden together when they differ by 1 to 9 so they cannot subtract into a small group (the re-measured count itself stays shown unless the funnel hides it), and every figure is hidden whenever the funnel hides its re-measured stage",
     "project": "apps/api",
     "tests": [
       {
@@ -532,6 +532,10 @@
       {
         "file": "test/metrics-outcomes.test.ts",
         "name": "leaves them independent, and shown, at a difference of 10"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "keeps the re-measured count shown when the tie hides an instrument whose excluded count is nothing"
       }
     ]
   },

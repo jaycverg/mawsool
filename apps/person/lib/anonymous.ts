@@ -111,17 +111,21 @@ function browserEnv(): AnonymousEnv | null {
  * An id is added before the session's database is first written and removed once that database is confirmed deleted.
  */
 export interface SessionRegistry {
+  /** The ids on the list; a list that cannot be read, or is not a list, reads as empty (it never blocks a session). */
   list(): Promise<string[]>;
+  /** The same, but a store that fails to answer rejects, so a caller that must know whether it read the list can tell. */
+  listStrict(): Promise<string[]>;
   add(id: string): Promise<void>;
   remove(id: string): Promise<void>;
 }
 
 /** The registry over a store (the device's own, which is local: nothing here ever reaches a server). */
 export function deviceSessionRegistry(storage: () => StorageAdapter): SessionRegistry {
-  const read = async (): Promise<string[]> => {
-    const stored = await storage().get<unknown>(KEYS.anonymousSessions).catch(() => undefined);
+  const readStrict = async (): Promise<string[]> => {
+    const stored = await storage().get<unknown>(KEYS.anonymousSessions);
     return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string') : [];
   };
+  const read = (): Promise<string[]> => readStrict().catch(() => []);
   // An empty list is not kept: the key goes, so a device with no anonymous session left holds no trace that there ever was one.
   const change = (next: (ids: string[]) => string[] | null) =>
     withStoreLock(storage(), async () => {
@@ -133,6 +137,7 @@ export function deviceSessionRegistry(storage: () => StorageAdapter): SessionReg
     });
   return {
     list: read,
+    listStrict: readStrict,
     add: (id) => change((ids) => (ids.includes(id) ? null : [...ids, id])),
     remove: (id) => change((ids) => (ids.includes(id) ? ids.filter((other) => other !== id) : null)),
   };
@@ -158,10 +163,11 @@ export interface AnonymousStore {
   wipe(session?: string | null): Promise<IndexedDbDeletion | 'none'>;
   /**
    * The ids of every anonymous session this device may hold a database for: the ones the browser lists, the ones on the registry
-   * and this tab's own. Never throws; a browser that cannot list its databases, or whose listing fails, is searched through the
-   * registry alone. "Delete everything" takes this snapshot before it deletes anything.
+   * and this tab's own. Never throws. `complete` says whether the ids could be listed at all: the browser's own listing answered, or
+   * the registry could be read. When neither did, the ids are only this tab's own and others may exist that cannot be found.
+   * "Delete everything" takes this snapshot before it deletes anything.
    */
-  ids(): Promise<string[]>;
+  ids(): Promise<{ ids: string[]; complete: boolean }>;
   /**
    * Deletes every anonymous database on the device, live or not (every id in `ids()`): "Delete everything". It does not stop at one
    * it cannot delete: it deletes each it can (taking that id off the registry) and returns the ids it could not delete (refused or
@@ -242,22 +248,38 @@ export function createAnonymousStore(env: AnonymousEnv, session: () => string | 
     return deletion;
   }
 
-  /** The ids of the anonymous databases the browser lists (none where it cannot list them, or its listing fails), and those the registry holds. */
-  async function candidates(): Promise<string[]> {
-    const listed = typeof env.indexedDB.databases === 'function' ? await env.indexedDB.databases().catch(() => []) : [];
-    const named = listed.flatMap((db) => (db.name?.startsWith(ANONYMOUS_DB_PREFIX) ? [db.name.slice(ANONYMOUS_DB_PREFIX.length)] : []));
-    return [...new Set([...named, ...((await registry?.list().catch(() => [])) ?? [])])];
+  /** The ids of the anonymous databases the browser lists, those the registry holds and this tab's own, and whether either source answered. */
+  async function ids(): Promise<{ ids: string[]; complete: boolean }> {
+    let named: string[] = [];
+    let listed = false;
+    if (typeof env.indexedDB.databases === 'function') {
+      try {
+        named = (await env.indexedDB.databases()).flatMap((db) => (db.name?.startsWith(ANONYMOUS_DB_PREFIX) ? [db.name.slice(ANONYMOUS_DB_PREFIX.length)] : []));
+        listed = true;
+      } catch {
+        listed = false;
+      }
+    }
+    let registered: string[] = [];
+    let read = false;
+    if (registry) {
+      try {
+        registered = await registry.listStrict();
+        read = true;
+      } catch {
+        read = false;
+      }
+    }
+    const own = session();
+    return { ids: [...new Set([...named, ...registered, ...(own === null ? [] : [own])])], complete: listed || read };
   }
 
-  async function ids(): Promise<string[]> {
-    const own = session();
-    return [...new Set([...(await candidates()), ...(own === null ? [] : [own])])];
-  }
+  const candidates = async (): Promise<string[]> => (await ids()).ids;
 
   async function wipeAll(): Promise<{ left: string[] }> {
     forget();
     const left: string[] = [];
-    for (const id of await ids()) {
+    for (const id of await candidates()) {
       const deletion = await wipe(id).catch(() => 'refused' as const);
       if (deletion !== 'deleted') left.push(id);
     }
@@ -316,7 +338,7 @@ export function reconcileAnonymousStore(store: AnonymousStore | null = anonymous
 /** What deleting the anonymous sessions left: the ids whose database may still be there, and whether even that is unknown. */
 export interface AnonymousWipe {
   left: string[];
-  /** The ids could not be listed and the deletion failed outright, so nothing can be said about what is left. */
+  /** The sessions could not be listed (neither the browser's listing nor the device's list answered), so others may be left that were never found. */
   unknown: boolean;
 }
 
@@ -324,21 +346,23 @@ export interface AnonymousWipe {
  * Deletes everything an anonymous session kept on this device, whichever mode the deleting is done in and whether or not another
  * tab's session is live: the encrypted check-ins and their keys. Never throws and never stops at one database it cannot delete.
  * The ids are listed first, so that if the deletion itself fails outright (`wipeAll` throws) every one of them counts as left and
- * none is reported clean; `unknown` is only for the case where both the listing and the deletion failed. The caller puts `left` back
+ * none is reported clean. `unknown` is set whenever the listing could not be completed (`ids().complete` false, or `ids()` threw):
+ * the deletion then only covers the sessions that were found, and the device's list may be the only record of the others. The caller puts `left` back
  * on the registry once the device store is cleared (see `keepAnonymousSessions`). A browser with nothing to delete has nothing kept.
  */
 export async function wipeAnonymousData(store: AnonymousStore | null = anonymousStore()): Promise<AnonymousWipe> {
   if (!store) return { left: [], unknown: false };
-  let snapshot: string[] | null = null;
+  let snapshot: { ids: string[]; complete: boolean } | null = null;
   try {
     snapshot = await store.ids();
   } catch {
     snapshot = null;
   }
+  const unknown = snapshot === null || !snapshot.complete;
   try {
-    return { ...(await store.wipeAll()), unknown: false };
+    return { ...(await store.wipeAll()), unknown };
   } catch {
-    return snapshot === null ? { left: [], unknown: true } : { left: snapshot, unknown: false };
+    return { left: snapshot?.ids ?? [], unknown };
   }
 }
 

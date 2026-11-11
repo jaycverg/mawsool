@@ -1938,7 +1938,7 @@
   },
   {
     "id": "delete-everything-clears-the-phone-even-when-an-anonymous-database-will-not-delete",
-    "sentence": "Delete everything never strands the phone's data behind an anonymous database that will not delete: it reads the list of session ids (searching through the list alone when the browser's own listing fails), deletes every database it can, clears the device store regardless, writes the ids that were not deleted back to the list, reports erased with a note in both languages that those check-ins are removed at the next start (the note renders in Arabic and English), and the next start deletes them; a deletion that throws outright leaves every listed id left (none is reported clean), and ids that cannot be listed or written back say so in a distinct note asking for Delete everything to be run again",
+    "sentence": "Delete everything never strands the phone's data behind an anonymous database that will not delete: it reads the list of session ids (searching through the list alone when the browser's own listing fails), deletes every database it can, clears the device store regardless, writes the ids that were not deleted back to the list, reports erased with a note in both languages that those check-ins are removed at the next start (the note renders in Arabic and English), and the next start deletes them; a deletion that throws outright leaves every listed id left (none is reported clean), and a listing that is not complete (neither the browser's listing nor the device's list could be read) or ids that cannot be written back say so in a distinct note asking for Delete everything to be run again",
     "project": "apps/person",
     "tests": [
       {
@@ -1978,7 +1978,7 @@
       },
       {
         "file": "test/anonymous.test.ts",
-        "name": "says it is unknown when neither the listing nor the deletion could be done"
+        "name": "says it is unknown when the browser cannot list its databases and the device's list cannot be read"
       },
       {
         "file": "test/erase.test.ts",
@@ -1994,6 +1994,10 @@
       },
       {
         "file": "test/anonymous-left-note.test.tsx"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "counts a listing as complete when either the browser's listing or the device's list answered"
       }
     ]
   },

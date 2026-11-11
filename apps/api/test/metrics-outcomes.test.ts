@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { schema } from '../src/db/client';
 import { loadTicketFacts } from '../src/metrics/facts';
 import { journeysOf, remeasuredHiddenInFunnel } from '../src/metrics/funnel';
-import { buildOutcomes, countOutcomes, loadOutcomeFacts, totalsPair, type OutcomeFact, type TotalsPair } from '../src/metrics/outcomes';
+import { hiddenCells, pinnedCells } from '../src/metrics/protect';
+import { buildOutcomes, countOutcomes, hiddenOutcomeCells, loadOutcomeFacts, outcomeTable, totalsPair, type OutcomeFact, type TotalsPair } from '../src/metrics/outcomes';
 import { bundleContext } from '../src/tickets/service';
 import { createTestApp, TEST_START, type TestApp } from './helpers/app';
 import { createTestDb, type TestDb } from './helpers/db';
@@ -334,6 +335,25 @@ describe('the two instruments\' counts cannot be subtracted into a small group',
       const response = buildOutcomes('all', facts(30, apart, 40), null, false);
       for (const entry of response.instruments) expect(entry.included, `${apart} apart, ${entry.instrument}`).toEqual(SUPPRESSED);
     }
+  });
+
+  it('keeps the re-measured count shown when the tie hides an instrument whose excluded count is nothing, and derives no hidden cell from it', () => {
+    // 30 re-measured, every one with a GAD-7 pair and 22 with a PHQ-9 pair as well: GAD-7 included 30 and excluded 0, PHQ-9 included 22.
+    const all = facts(22, 8, 0).map((fact, index) => (index < 22 ? fact : { ...fact, totals: { phq9: null, gad7: { referral: 14, remeasure: 12 } } }));
+    const table = outcomeTable(countOutcomes(all, null));
+    // Left to `hiddenCells`, the relation 30 = included + excluded hides the re-measured count (the funnel publishes it anyway).
+    expect(hiddenCells(table).has('remeasured')).toBe(true);
+    const hidden = hiddenOutcomeCells(table, false);
+    expect(hidden.has('remeasured')).toBe(false);
+    expect(hidden.has('phq9:included') && hidden.has('gad7:included')).toBe(true);
+    // With it shown, no non-empty hidden cell can be worked out exactly from the published ones.
+    const nonEmpty = pinnedCells(table, hidden).filter((key) => table.cells.get(key)!.some((count) => count > 0));
+    expect(nonEmpty).toEqual([]);
+    const response = buildOutcomes('all', all, null, false);
+    expect(response.remeasured).toBe(30);
+    for (const entry of response.instruments) expect(entry, entry.instrument).toEqual(hiddenEverywhere(entry));
+    // The funnel hiding that stage still hides it.
+    expect(buildOutcomes('all', all, null, true).remeasured).toEqual(SUPPRESSED);
   });
 
   it('leaves them independent, and shown, at a difference of 10 (25 and 15) and of none', () => {

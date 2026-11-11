@@ -72,7 +72,7 @@ describe('Delete everything when an anonymous session\'s check-ins cannot all be
     open: () => Promise.reject(new Error('not used')),
     reconcile: () => Promise.resolve(),
     wipe: () => Promise.resolve('deleted'),
-    ids: () => Promise.resolve(left),
+    ids: () => Promise.resolve({ ids: left, complete: true }),
     wipeAll: () => Promise.resolve({ left }),
     keep: () => (keeps ? Promise.resolve() : Promise.reject(new Error('the list refused'))),
   });
