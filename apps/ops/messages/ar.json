@@ -297,7 +297,7 @@
       "moved": "تغيّرت الحالة.",
       "conflict": "لم يعد هذا التغيير ممكنًا. أُعيد تحميل القائمة."
     },
-    "countLine": "{label}: {count}"
+    "countLine": "{label} ({count})"
   },
   "defs": {
     "toggle": "عن هذا الرقم",

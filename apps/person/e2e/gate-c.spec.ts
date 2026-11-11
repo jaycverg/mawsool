@@ -1,5 +1,6 @@
 import { type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { TIER_TARGET_DAYS } from '@mawsool/rules';
+import { METRIC_DEFINITIONS } from '@mawsool/types';
 import { expect, test, type ConsoleGuard } from './fixtures';
 import acceptance from './acceptance-c.json';
 import {
@@ -799,6 +800,175 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     // Every other row, suppressed or not, reads exactly as it did.
     const others = (rows: Record<string, string>) => Object.fromEntries(Object.entries(rows).filter(([band]) => band !== '25_34'));
     expect(others(after), 'no other age-band row moves').toEqual(others(before));
+  },
+
+  async 'dashboard-info-panels-define-every-tile-by-keyboard-and-touch'({ browser, locale }) {
+    const toggle = omsg(locale, 'defs.toggle');
+    const labelOf = (path: string) => omsg(locale, path);
+    // Keyboard: Enter and Space open a panel and Escape closes it and gives the focus back to its button.
+    const dash = await dashboard(browser, locale);
+    for (const definition of METRIC_DEFINITIONS) {
+      const id = definition.id;
+      const button = dash.getByRole('button', { name: `${toggle}: ${labelOf(definition.label)}`, exact: true, expanded: false });
+      await expect(button, `${id} has its info button`).toHaveCount(1);
+      await expect(dash.locator(`[data-info="${id}"] button`).first()).toHaveAttribute('aria-expanded', 'false');
+      await expect(dash.locator(`[data-info-panel="${id}"]`)).toHaveCount(0);
+      await button.focus();
+      await dash.keyboard.press('Enter');
+      const panel = dash.locator(`[data-info-panel="${id}"]`);
+      await expect(panel, id).toBeVisible();
+      await expect(dash.locator(`[data-info="${id}"] button`).first()).toHaveAttribute('aria-expanded', 'true');
+      // The region is named by its button, and says the five things.
+      await expect(panel).toHaveAttribute('role', 'region');
+      await expect(panel.locator('[data-info-part="definition"]')).toContainText(omsg(locale, `defs.${id}.definition`));
+      await expect(panel.locator('[data-info-part="numerator"]')).toContainText(omsg(locale, `defs.${id}.numerator`));
+      await expect(panel.locator('[data-info-part="denominator"]')).toContainText(omsg(locale, `defs.${id}.denominator`));
+      await expect(panel.locator('[data-info-part="period"]')).toContainText(omsg(locale, `defs.period.${definition.period}`));
+      await expect(panel.locator('[data-info-part="suppression"]')).toContainText(omsg(locale, `defs.suppression.${definition.suppression}`));
+      // Right to left in Arabic: the panel's text starts at the right edge.
+      expect(await panel.evaluate((element) => getComputedStyle(element).direction)).toBe(locale === 'ar' ? 'rtl' : 'ltr');
+      expect(await panel.evaluate((element) => getComputedStyle(element).textAlign)).toBe(locale === 'ar' ? 'right' : 'left');
+      await dash.keyboard.press('Escape');
+      await expect(panel, `${id} closes on Escape`).toHaveCount(0);
+      await expect(dash.locator(`[data-info="${id}"] button`).first(), `${id} gets the focus back`).toBeFocused();
+      await dash.keyboard.press('Space');
+      await expect(panel, `${id} opens on Space`).toBeVisible();
+      await panel.getByRole('button', { name: omsg(locale, 'defs.close'), exact: true }).press('Enter');
+      await expect(panel).toHaveCount(0);
+    }
+    // The info buttons are 44 px touch targets.
+    for (const box of await dash.locator('[data-info] > button').evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().height))) expect(box).toBeGreaterThanOrEqual(44);
+
+    // Touch: a tap opens a panel and a second tap closes it.
+    const touch = await signedInPage(await browser.newContext({ hasTouch: true, viewport: { width: 390, height: 844 } }), OPS, OPS_USER);
+    await touch.goto(opsUrl(locale));
+    await expect(touch.locator('[data-funnel-stage="positive_screen"]')).toBeVisible();
+    const tile = touch.locator('[data-info="loop-closed"] > button');
+    await tile.tap();
+    await expect(touch.locator('[data-info-panel="loop-closed"]')).toBeVisible();
+    await expect(touch.locator('[data-info-panel="loop-closed"]')).toContainText(omsg(locale, 'defs.loop-closed.definition'));
+    expect(await touch.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'no sideways scroll at 390 px').toBe(true);
+    await tile.tap();
+    await expect(touch.locator('[data-info-panel="loop-closed"]')).toHaveCount(0);
+    await touch.context().close();
+  },
+
+  async 'dashboard-shows-symptom-change-from-shared-totals-and-the-adverse-events-log'({ context, browser, locale }) {
+    test.setTimeout(420_000);
+    const admin = await signedInPage(context, OPS, ADMIN);
+    await resetFromPanel(admin, locale);
+
+    // Thirty-two people: a PHQ-9 and a GAD-7 at referral, seen by the clinic, then (six weeks on, on the demo clock) re-measured
+    // with the totals sent. PHQ-9: 6 fall by 6 (exactly the threshold) and 6 by 10, 10 rise by 6 (exactly the threshold), 10 rise by 1.
+    // GAD-7: 6 fall by 4 (exactly the threshold) and 6 by 5, 10 rise by 4 (exactly the threshold), 10 fall by 3.
+    const phq9Changes = [...Array(6).fill(-6), ...Array(6).fill(-10), ...Array(10).fill(6), ...Array(10).fill(1)] as number[];
+    const gad7Changes = [...Array(6).fill(-4), ...Array(6).fill(-5), ...Array(10).fill(4), ...Array(10).fill(-3)] as number[];
+    const clinic = bearer(await staffSession(CLINICIAN_A));
+    const serviceId = await serviceAt(FACILITY_A);
+    const people: { person: Awaited<ReturnType<typeof newPerson>>; id: string }[] = [];
+    for (let i = 0; i < phq9Changes.length; i += 1) {
+      const person = await newPerson();
+      const takenAt = new Date().toISOString();
+      const made = await makeTicket(person, {
+        serviceId,
+        consents: ['ticket', 'scores'],
+        content: { scores: [{ instrument: 'phq9', total: 14, band: 'moderate', takenAt }, { instrument: 'gad7', total: 12, band: 'moderate', takenAt }] },
+      });
+      expect((await call('POST', `/tickets/${made.id}/events`, { headers: clinic, body: { to: 'seen' } })).status).toBe(200);
+      people.push({ person, id: made.id });
+    }
+    await advanceFromPanel(admin, '6w', 42);
+    const careNow = new Date(Date.now() + (await offsetMs())).toISOString();
+    for (const [i, { person, id }] of people.entries()) {
+      const scores = [
+        { instrument: 'phq9', total: 14 + phq9Changes[i]!, band: 'moderate', takenAt: careNow },
+        { instrument: 'gad7', total: 12 + gad7Changes[i]!, band: 'moderate', takenAt: careNow },
+      ];
+      const done = await call('POST', `/me/tickets/${id}/remeasure`, { headers: person.headers, body: { scores } });
+      expect(done.status, done.text).toBe(200);
+    }
+
+    const dash = await dashboard(browser, locale);
+    await dash.locator('[data-filter="period"]').selectOption('all');
+    const oneDecimal = new Intl.NumberFormat(locale === 'ar' ? 'ar-AE-u-nu-latn' : 'en-GB', { maximumFractionDigits: 1, signDisplay: 'exceptZero' });
+    const whole = new Intl.NumberFormat(locale === 'ar' ? 'ar-AE-u-nu-latn' : 'en-GB', { maximumFractionDigits: 0 });
+    const mean = (changes: number[]) => oneDecimal.format(Math.round((changes.reduce((a, b) => a + b, 0) / changes.length) * 10) / 10);
+    const section = dash.locator('[data-section="outcomes"]');
+    await expect(section).toBeVisible();
+    // The seeded tickets that reached re-measured shared nothing, so they are excluded; ours are the 32 included.
+    const remeasured = numbersIn(await section.locator('[data-outcomes-remeasured]').innerText())[0]!;
+    expect(remeasured).toBeGreaterThanOrEqual(32 + 10);
+    for (const [name, changes] of [['phq9', phq9Changes], ['gad7', gad7Changes]] as const) {
+      const card = section.locator(`[data-outcome="${name}"]`);
+      await expect(card.locator('[data-outcome-stat="mean"] [data-value]')).toHaveText(omsg(locale, 'dash.outcomes.points', { points: mean(changes) }));
+      await expect(card.locator('[data-outcome-stat="improved"] [data-value]')).toHaveText(`${whole.format(12 / 32 * 100)}%`);
+      await expect(card.locator('[data-outcome-stat="improved"]')).toContainText(omsg(locale, 'dash.outcomes.of', { count: 12, of: 32 }));
+      await expect(card.locator('[data-outcome-stat="deteriorated"] [data-value]')).toHaveText(`${whole.format(10 / 32 * 100)}%`);
+      await expect(card.locator('[data-outcome-stat="deteriorated"]')).toContainText(omsg(locale, 'dash.outcomes.of', { count: 10, of: 32 }));
+      await expect(card.locator('[data-outcome-coverage]')).toContainText(omsg(locale, 'dash.outcomes.included', { count: 32 }));
+      await expect(card.locator('[data-outcome-coverage]')).toContainText(omsg(locale, 'dash.outcomes.excluded', { count: remeasured - 32 }));
+      await expect(card.locator('[data-suppressed]')).toHaveCount(0);
+    }
+    await expect(section).toContainText(omsg(locale, 'dash.outcomes.basis', { phq9: 6, gad7: 4 }));
+    // The same figures, from the API, so the page is not the only witness.
+    const opsHeaders = bearer(await staffSession(OPS_USER));
+    const api = (await call('GET', '/metrics/outcomes?period=all', { headers: opsHeaders })).json() as { instruments: { instrument: string; included: number; reliableImprovement: { count: number; of: number }; reliableDeterioration: { count: number } }[] };
+    expect(api.instruments.find((entry) => entry.instrument === 'phq9')).toMatchObject({ included: 32, reliableImprovement: { count: 12, of: 32 }, reliableDeterioration: { count: 10 } });
+    expect(api.instruments.find((entry) => entry.instrument === 'gad7')).toMatchObject({ included: 32, reliableImprovement: { count: 12, of: 32 }, reliableDeterioration: { count: 10 } });
+
+    // The adverse events log: record one from the screen, move it along its legal moves, and list by status and severity.
+    const log = dash.locator('[data-section="adverse-events"]');
+    await expect(log.locator('[data-adverse-empty]')).toHaveText(omsg(locale, 'adverse.empty'));
+    const posts: string[] = [];
+    dash.on('request', (request) => void (request.method() === 'POST' && request.url().startsWith(`${API}/adverse-events`) && posts.push(request.url())));
+    await log.locator('[data-field="type"]').selectOption('wrong_routing');
+    await log.locator('[data-field="severity"]').selectOption('high');
+    await log.locator('[data-field="ticket-ref"]').fill('od_zz');
+    await expect(log.locator('#adverse-ref-help')).toHaveText(omsg(locale, 'adverse.ticketRefInvalid'));
+    await expect(log.locator('[data-adverse-record]')).toBeDisabled();
+    expect(posts, 'an id that is not one is refused on the page, with no request').toEqual([]);
+    await log.locator('[data-field="ticket-ref"]').fill('od_0123456789ab');
+    await log.locator('[data-adverse-record]').click();
+    await expect(log.locator('[data-adverse-notice="recorded"]')).toHaveText(omsg(locale, 'adverse.notice.recorded'));
+    const item = log.locator('[data-adverse-event]');
+    await expect(item).toHaveCount(1);
+    await expect(item).toHaveAttribute('data-status', 'open');
+    await expect(item).toHaveAttribute('data-severity', 'high');
+    await expect(item).toContainText(omsg(locale, 'adverse.types.wrong_routing'));
+    await expect(item).toContainText('od_0123456789ab');
+    await expect(log.locator('[data-count-status="open"]')).toHaveText(omsg(locale, 'adverse.countLine', { label: omsg(locale, 'adverse.statuses.open'), count: 1 }));
+    await expect(log.locator('[data-count-severity="high"]')).toHaveText(omsg(locale, 'adverse.countLine', { label: omsg(locale, 'adverse.severities.high'), count: 1 }));
+    // Only the legal moves are offered: open can go to investigating or closed; investigating only to closed; closed to nothing.
+    await expect(item.locator('[data-move]')).toHaveCount(2);
+    await item.locator('[data-move="investigating"]').click();
+    await expect(item).toHaveAttribute('data-status', 'investigating');
+    await expect(item.locator('[data-move]')).toHaveCount(1);
+    await expect(item.locator('[data-move="closed"]')).toBeVisible();
+    await item.locator('[data-move="closed"]').click();
+    await expect(item).toHaveAttribute('data-status', 'closed');
+    await expect(item.locator('[data-move]')).toHaveCount(0);
+    await item.locator('details summary').click();
+    await expect(item.locator('[data-adverse-history] li')).toHaveCount(3);
+    // Another event from the API (as admin, who may record too) is listed beside it, and the filters narrow the list.
+    const adminHeaders = bearer(await staffSession(ADMIN));
+    const second = await call('POST', '/adverse-events', { headers: adminHeaders, body: { type: 'data_incident', severity: 'critical' } });
+    expect(second.status).toBe(201);
+    await log.locator('[data-filter="adverse-severity"]').selectOption('critical');
+    await expect(log.locator('[data-adverse-event]')).toHaveCount(1);
+    await expect(log.locator('[data-adverse-event]')).toHaveAttribute('data-severity', 'critical');
+    await log.locator('[data-filter="adverse-severity"]').selectOption('');
+    await log.locator('[data-filter="adverse-status"]').selectOption('open');
+    await expect(log.locator('[data-adverse-event]')).toHaveCount(1);
+    await expect(log.locator('[data-adverse-event]')).toHaveAttribute('data-status', 'open');
+    await log.locator('[data-filter="adverse-status"]').selectOption('investigating');
+    await expect(log.locator('[data-adverse-empty]')).toHaveText(omsg(locale, 'adverse.empty'));
+    // What the API stored: a coded row with the pseudonym and no free text, and the history with its times.
+    const listed = (await call('GET', '/adverse-events', { headers: opsHeaders })).json() as { items: { type: string; status: string; ticketRef: string | null; history: { to: string; at: string }[] }[] };
+    const first = listed.items.find((entry) => entry.ticketRef === 'od_0123456789ab')!;
+    expect(first).toMatchObject({ type: 'wrong_routing', status: 'closed' });
+    expect(first.history.map((move) => move.to)).toEqual(['open', 'investigating', 'closed']);
+    for (const move of first.history) expect(Number.isNaN(Date.parse(move.at))).toBe(false);
+    expect(JSON.stringify(listed)).not.toMatch(/phone|name|note|text/i);
   },
 
   async 'seam-crisis-contact-reaches-the-crisis-figures'({ context, browser, locale }) {

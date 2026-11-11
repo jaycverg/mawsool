@@ -504,7 +504,7 @@
       },
       {
         "file": "test/tickets.test.ts",
-        "name": "refuses a person\u2019s own `rerouted` event"
+        "name": "refuses a person’s own `rerouted` event"
       }
     ]
   },
@@ -527,7 +527,7 @@
       },
       {
         "file": "test/revoke-reach.test.ts",
-        "name": "removes a draft left under the ticket\u2019s own request id"
+        "name": "removes a draft left under the ticket’s own request id"
       },
       {
         "file": "test/revoke-reach.test.ts",
@@ -558,7 +558,7 @@
       },
       {
         "file": "test/summary-log-built-from.test.ts",
-        "name": "deletes a draft left unlinked under the ticket\u2019s request id"
+        "name": "deletes a draft left unlinked under the ticket’s request id"
       },
       {
         "file": "test/summary-log-built-from.test.ts",
@@ -1635,7 +1635,7 @@
   },
   {
     "id": "anonymous-sessions-are-found-and-deleted-where-the-browser-cannot-list-databases",
-    "sentence": "Where the browser cannot list its databases, the ids of the anonymous sessions this device made are kept in the device store (never sent to a server) and added before a session's database is first written; a closed session's database is swept at the next start and its id taken off, a live one is left alone, Delete everything deletes every listed session's database and clears the list before the device store is cleared, and refuses to clear it when a database could not be deleted",
+    "sentence": "Where the browser cannot list its databases, the ids of the anonymous sessions this device made are kept in the device store (never sent to a server) and added before a session's database is first written; a closed session's database is swept at the next start and its id taken off, a live one is left alone, Delete everything deletes every listed session's database it can, clears the device store regardless and writes the ids that could not be deleted back to the list",
     "project": "apps/person",
     "tests": [
       {
@@ -1656,7 +1656,7 @@
       },
       {
         "file": "test/anonymous.test.ts",
-        "name": "refuses to clear the device store when an anonymous database could not be deleted"
+        "name": "clears every ordinary key anyway when one anonymous database refuses deletion"
       },
       {
         "file": "test/anonymous.test.ts",
@@ -1933,6 +1933,283 @@
       {
         "file": "test/clinic-links.test.ts",
         "name": "forgets a link a day after it was spent or expired"
+      }
+    ]
+  },
+  {
+    "id": "delete-everything-clears-the-phone-even-when-an-anonymous-database-will-not-delete",
+    "sentence": "Delete everything never strands the phone's data behind an anonymous database that will not delete: it reads the list of session ids (searching through the list alone when the browser's own listing fails), deletes every database it can, clears the device store regardless, writes the ids that were not deleted back to the list, reports erased with a note in both languages that those check-ins are removed at the next start, and the next start deletes them",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "clears every ordinary key anyway when one anonymous database refuses deletion"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "is finished by the next start, which deletes the leftover database"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "does the same when the deletion is only queued behind a connection that ignores it"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "still deletes every database it can find from the list when the browser's listing of databases rejects"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "reports the ids it could not delete from wipeAll"
+      },
+      {
+        "file": "test/erase.test.ts"
+      }
+    ]
+  },
+  {
+    "id": "a-blocked-deletion-does-not-take-an-id-off-the-list",
+    "sentence": "A deletion that is only queued behind a connection that ignores the request is reported as blocked, not deleted, and the session id stays on the list; a blocked deletion of an unreadable database leaves the failure standing instead of writing to it",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "does not take an id off the list while its database is only queued for deletion"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "stands by the failure instead of writing to a database whose deletion is only queued"
+      },
+      {
+        "file": "test/platform.test.ts",
+        "project": "packages/ui",
+        "name": "says it is blocked, without waiting"
+      },
+      {
+        "file": "test/platform.test.ts",
+        "project": "packages/ui",
+        "name": "says it deleted the database when it did"
+      }
+    ]
+  },
+  {
+    "id": "the-session-list-leaves-no-empty-trace-and-a-refused-write-drops-the-claim",
+    "sentence": "When the last anonymous session id leaves the list the key is removed rather than an empty list kept, and a list that refuses an id in open() drops the claim and rethrows so the next call tries again",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "keeps no empty list: the key is removed when the last id goes"
+      },
+      {
+        "file": "test/anonymous.test.ts",
+        "name": "drops its claim and rethrows when the list refuses the id"
+      }
+    ]
+  },
+  {
+    "id": "anonymous-banner-fits-the-screen-with-a-touch-target",
+    "sentence": "The anonymous banner's \"What this means\" link is a 44 px target and the banner adds no scroll to a screen that fits the viewport, at 390 px in both languages",
+    "browser": "anonymous-banner-link-is-a-touch-target-and-adds-no-scroll-to-a-short-screen"
+  },
+  {
+    "id": "mw-802-every-outbound-message-goes-through-a-notifier-with-mock-drivers",
+    "sentence": "Every outbound message (the staff sign-in link, the clinic link and the sample text reminder) goes through one Notifier with a console driver and a log driver, both labelled mocks that send nothing; the driver is chosen by NOTIFIER_DRIVER, parsed strictly, and any other value stops the API",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/notifier.test.ts",
+        "name": "has exactly two, a console driver and a log driver"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "log driver: writes one structured record per message"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "console driver: prints one readable line per message"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "sends nothing: no driver opens a connection"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "builds the driver a name asks for"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "is the log driver when unset or empty"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "stops the API from starting for anything else"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "is read at startup: the app builds the driver the setting names"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "reaches the notifier as its own template, in English, with the link"
+      },
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "logs one link for a ticket at a facility without the portal"
+      },
+      {
+        "file": "test/magic-link.test.ts"
+      }
+    ]
+  },
+  {
+    "id": "mw-802-templates-are-keyed-in-arabic-and-english-with-an-english-fallback",
+    "sentence": "Every template is keyed and exists in Arabic and English, the recipient's language is used and English is the fallback for any other",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/notifier.test.ts",
+        "name": "staff_sign_in reads in ar"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "staff_sign_in reads in en"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "clinic_link reads in ar"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "clinic_link reads in en"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "reminder_text reads in ar"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "reminder_text reads in en"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "staff_sign_in falls back to English"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "clinic_link falls back to English"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "reminder_text falls back to English"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "picks the language by the recipient, and only ever Arabic or English"
+      }
+    ]
+  },
+  {
+    "id": "mw-802-no-clinical-content-in-any-template",
+    "sentence": "No template in either language carries clinical content: the person-facing reminder holds none of the banned words (score, band, instrument, condition, service, crisis and the rest) and no number, and the staff templates hold no score, band, instrument, condition or crisis wording",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/notifier.test.ts",
+        "name": "carry no clinical content reminder_text in en"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "carry no clinical content reminder_text in ar"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "carry no clinical content staff_sign_in in en"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "carry no clinical content staff_sign_in in ar"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "carry no clinical content clinic_link in en"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "carry no clinical content clinic_link in ar"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "catches clinical wording, so the checks above are not vacuous"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "holds a person-facing template to the strict list"
+      }
+    ]
+  },
+  {
+    "id": "mw-802-no-number-or-reminder-body-is-ever-logged",
+    "sentence": "A phone number or a reminder's text is never logged: neither driver writes either, the records carry the template key, language, channel and a non-reversible recipient reference, the sample reminder leaves neither in the API log, and a scan of the API source fails if any other code path writes a log line naming a number or a body",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/notifier.test.ts",
+        "name": "never writes a phone number or the text of a reminder, in either driver"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "makes a recipient reference that is the same for the same recipient"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "prepares a sample in the person's own language through the notifier"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "refuses a sample for a person who gave no number"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "answers 502 and changes nothing when the notifier cannot deliver"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "lists every writer that exists"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "has none of them name a phone number"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "would catch a new writer that does"
+      },
+      {
+        "file": "test/reminders.test.ts"
+      },
+      {
+        "file": "test/reminders.test.ts",
+        "project": "apps/person",
+        "name": "asks the server for a sample text with no body"
+      }
+    ],
+    "browser": "reminder-number-is-optional-stored-apart-and-deleted-with-the-reminders"
+  },
+  {
+    "id": "mw-802-staff-links-keep-their-logged-not-sent-behaviour",
+    "sentence": "The staff sign-in link and the clinic link are still logged on purpose, not sent, with their link, address or facility and expiry, in both drivers",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/notifier.test.ts",
+        "name": "keeps the staff sign-in link logged, on purpose, in both drivers"
+      },
+      {
+        "file": "test/notifier.test.ts",
+        "name": "keeps the clinic link logged, on purpose, in both drivers"
+      },
+      {
+        "file": "test/staff-links.test.ts"
       }
     ]
   }

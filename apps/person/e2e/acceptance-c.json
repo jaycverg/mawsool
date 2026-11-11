@@ -32,6 +32,14 @@
     "sentence": "The ops dashboard has the Arabic and English toggle and runs right to left in Arabic"
   },
   {
+    "id": "dashboard-info-panels-define-every-tile-by-keyboard-and-touch",
+    "sentence": "Every tile and section of the ops dashboard has an info button that opens by Enter, Space and touch, is announced as a collapsed or expanded button, closes on Escape and returns the focus, and shows its definition, numerator, denominator, period and suppression note in the page's language, right to left in Arabic, in a 44 px target and with no sideways scroll at 390 px"
+  },
+  {
+    "id": "dashboard-shows-symptom-change-from-shared-totals-and-the-adverse-events-log",
+    "sentence": "The dashboard shows the mean change and the shares with reliable improvement and deterioration among re-measured tickets from the totals people shared (the threshold itself counts as reliable, tickets without both totals are counted as excluded), and its adverse events log records an event from the screen, offers only the legal status moves with their times, lists by status and severity, and holds no free text"
+  },
+  {
     "id": "dashboard-holds-the-board-and-plan-tokens",
     "sentence": "The ops dashboard holds the board's type, colours, radii, chart sizes and 44 px tap targets"
   },
