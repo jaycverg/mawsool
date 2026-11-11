@@ -138,7 +138,24 @@
       "median": "Median to contact",
       "minutes": "{minutes} min",
       "of": "{count} of {of}",
-      "note": "Contact is what the person told the app. Adverse events are not part of this build."
+      "note": "Contact is what the person told the app."
+    },
+    "outcomes": {
+      "label": "Symptom change",
+      "heading": "Symptom change after re-measure",
+      "remeasured": "{count} tickets were re-measured at six weeks in this period.",
+      "instrument": {
+        "phq9": "Depression (PHQ-9)",
+        "gad7": "Anxiety (GAD-7)"
+      },
+      "mean": "Mean change",
+      "points": "{points} points",
+      "improved": "Reliable improvement",
+      "deteriorated": "Reliable deterioration",
+      "of": "{count} of {of}",
+      "included": "{count} with both totals",
+      "excluded": "{count} excluded",
+      "basis": "Change is the repeat total minus the referral total, so a fall means fewer symptoms. Reliable change is a fall or a rise of at least {phq9} points on the PHQ-9 and {gad7} on the GAD-7 (NHS Talking Therapies manual). Only totals the person chose to share are used; a re-measured ticket without both totals is excluded."
     }
   },
   "admin": {
@@ -224,5 +241,141 @@
     "marked": "Marked as contact made.",
     "markFailed": "That could not be saved. Try again.",
     "gone": "The person stopped sharing this note, so it has been removed."
+  },
+  "adverse": {
+    "label": "Adverse events",
+    "heading": "Adverse events log",
+    "type": "Type",
+    "severity": "Severity",
+    "ticketRef": "Ticket id (optional)",
+    "ticketRefHelp": "Paste the pseudonymous id from the overdue list. Do not type a name, number or note: none is accepted.",
+    "ticketRefInvalid": "An id looks like od_ followed by 12 letters or digits (0 to 9, a to f).",
+    "record": "Record event",
+    "noPerson": "This log holds a coded type, a severity, times and, if you give one, a ticket by its pseudonymous id. It never holds a name, phone number, score, answer or note.",
+    "filterStatus": "Filter by status",
+    "filterSeverity": "Filter by severity",
+    "allStatuses": "All statuses",
+    "allSeverities": "All severities",
+    "loading": "Loading the log…",
+    "failed": "The log could not be loaded.",
+    "retry": "Try again",
+    "counts": "Events by status and severity",
+    "empty": "No adverse events match.",
+    "happened": "Happened {at}",
+    "recorded": "Recorded {at}",
+    "history": "History ({count})",
+    "moveFirst": "Recorded as {to}, {at}, by {by}",
+    "move": "{from} to {to}, {at}, by {by}",
+    "types": {
+      "missed_crisis_follow_up": "Missed crisis follow-up",
+      "wrong_routing": "Wrong routing",
+      "data_incident": "Data incident"
+    },
+    "severities": {
+      "low": "Low",
+      "moderate": "Moderate",
+      "high": "High",
+      "critical": "Critical"
+    },
+    "statuses": {
+      "open": "Open",
+      "investigating": "Investigating",
+      "closed": "Closed"
+    },
+    "roles": {
+      "ops": "Ops",
+      "admin": "Admin"
+    },
+    "moveTo": {
+      "investigating": "Start investigating",
+      "closed": "Close"
+    },
+    "notice": {
+      "recorded": "Event recorded.",
+      "invalid": "The event could not be recorded: check the type, the severity and the ticket id.",
+      "failed": "Something went wrong. Nothing was changed.",
+      "moved": "Status changed.",
+      "conflict": "That change is no longer possible. The list has been reloaded."
+    },
+    "countLine": "{label}: {count}"
+  },
+  "defs": {
+    "toggle": "About this figure",
+    "definitionLabel": "Definition",
+    "numeratorLabel": "Numerator",
+    "denominatorLabel": "Denominator",
+    "periodLabel": "Period",
+    "suppressionLabel": "Suppression",
+    "close": "Close",
+    "period": {
+      "selected": "The period chosen at the top of the dashboard.",
+      "equity90": "Always the last 90 days, whatever period is chosen at the top.",
+      "now": "How things stand now. It does not follow the period chosen at the top.",
+      "log": "The whole log. It does not follow the period chosen at the top."
+    },
+    "suppression": {
+      "shares": "A share is shown only when the part, the whole and what is left over each reach 10 people or tickets. Otherwise it reads Suppressed.",
+      "counts": "A count under 10 is hidden and reads Suppressed, and so is any figure worked out from fewer than 10.",
+      "funnel": "A count under 10 is hidden. Cells that add up to others are hidden together, so a hidden count cannot be worked out by subtracting the ones shown. The first two stages are protected as one table.",
+      "equity": "A group under 10 is hidden, and enough of the other groups go with it that none can be worked out from the overall figure. A hidden group shows nothing else, not even a gap.",
+      "outcomes": "A count under 10 is hidden, and so is the mean. Counts that add up to others are hidden together. When the funnel hides its re-measured stage, everything here is hidden too.",
+      "list": "Shown only when 10 or more tickets are overdue. Ids are pseudonyms.",
+      "log": "Not suppressed: this is a log of incidents, not a count of people. It holds no name, number, score or answer, and a ticket appears only by a pseudonymous id."
+    },
+    "loop-closed": {
+      "definition": "The share of tickets whose loop was closed: the person was seen.",
+      "numerator": "Tickets issued in the period that reached seen, re-measured or closed, counted per ticket. A ticket withdrawn after it was seen still counts.",
+      "denominator": "All tickets issued in the period."
+    },
+    "within-target": {
+      "definition": "The share of settled tickets that were seen on or before the deadline promised to the person (7 or 14 days).",
+      "numerator": "Settled tickets seen on or before their own deadline.",
+      "denominator": "Settled tickets: those that reached seen or went overdue. A ticket still inside its window, declined or withdrawn is not counted."
+    },
+    "median-seen": {
+      "definition": "The middle time from issue to first seen, in days, with the 90th percentile beneath it.",
+      "numerator": "Days from issue to first seen for each ticket that reached seen. The figure is their median, and the note beneath it is their 90th percentile.",
+      "denominator": "Not a share. It stands on the tickets that reached seen, and needs 10 or more."
+    },
+    "crisis-contact": {
+      "definition": "The share of crisis screens shown where a human contact was confirmed, by the person or by the crisis line.",
+      "numerator": "Crisis screens with a confirmed human contact.",
+      "denominator": "All crisis screens shown in the period. Screens opened in an anonymous session are not counted."
+    },
+    "funnel": {
+      "definition": "How many journeys reach each stage, from a positive screen to a re-measure at six weeks. A journey is a first ticket and every reroute after it.",
+      "numerator": "Journeys that reached the stage and, for the percentage beside it, the journeys that reached the next stage.",
+      "denominator": "Journeys that reached the stage before, for the percentage carried on."
+    },
+    "equity": {
+      "definition": "The loop-closed rate for each group of people who chose to share an age band, gender, language or region.",
+      "numerator": "Tickets in the group that reached seen, re-measured or closed.",
+      "denominator": "All tickets in the group in the last 90 days."
+    },
+    "timeliness": {
+      "definition": "How promptly each tier of care sees people: the share seen within target, and the median and 90th percentile time to seen.",
+      "numerator": "Settled tickets in the tier that were seen on or before their deadline.",
+      "denominator": "Settled tickets in the tier: those that reached seen or went overdue."
+    },
+    "overdue": {
+      "definition": "Tickets that are overdue right now: the deadline passed and the clinic had not seen the person.",
+      "numerator": "Tickets whose state is overdue at this moment, listed by pseudonymous id.",
+      "denominator": "Not a share. The list is shown only when 10 or more tickets are overdue."
+    },
+    "safety": {
+      "definition": "Crisis response: how many crisis screens were shown, how many led to a call to a line and how many to a confirmed human contact, with the median time to contact.",
+      "numerator": "Crisis screens where a line was called, and crisis screens with a confirmed contact.",
+      "denominator": "Crisis screens shown in the period. The median is of the minutes from the screen to the confirmed contact."
+    },
+    "outcomes": {
+      "definition": "How symptoms changed for people re-measured at six weeks: the mean change in PHQ-9 and GAD-7, and the share with a reliable improvement or a reliable deterioration.",
+      "numerator": "For the mean, the sum of the changes (the repeat total minus the referral total) divided by the tickets included. For each share, the included tickets whose total fell, or rose, by at least the reliable-change points.",
+      "denominator": "Re-measured tickets whose person shared both totals of the instrument. A re-measured ticket without both totals is excluded and counted as excluded."
+    },
+    "adverse-events": {
+      "definition": "A log of adverse events that staff recorded: a missed crisis follow-up, a wrong routing or a data incident, with severity and status.",
+      "numerator": "Events in each status (open, investigating, closed) and in each severity, counted over the whole log.",
+      "denominator": "Not a share: these are counts of events."
+    }
   }
 }

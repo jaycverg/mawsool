@@ -1,12 +1,14 @@
 'use client';
 
-import { EQUITY_FLAG_POINTS, TICKET_SOURCES, TICKET_TIERS, METRIC_PERIODS, type EquityDimension, type EquityResponse, type MetricPeriod, type Session, type TicketSource, type TicketTier } from '@mawsool/types';
+import { EQUITY_FLAG_POINTS, OUTCOME_INSTRUMENTS, TICKET_SOURCES, TICKET_TIERS, METRIC_PERIODS, type EquityDimension, type EquityResponse, type MetricDefinitionId, type MetricPeriod, type Session, type TicketSource, type TicketTier } from '@mawsool/types';
 import { isLocale } from '@mawsool/ui';
 import { BrandMark } from '@mawsool/ui/components';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { TIER_TARGET_DAYS } from '@mawsool/rules';
-import { DEFAULT_FILTERS, isSuppressed, loadDashboard, numberFormat, type Dashboard as DashboardData, type Filters } from '../lib/metrics';
+import { DEFAULT_FILTERS, decimalFormat, isSuppressed, loadDashboard, numberFormat, type Dashboard as DashboardData, type Filters } from '../lib/metrics';
+import { AdverseEvents } from './AdverseEvents';
+import { InfoPanel } from './InfoPanel';
 
 type Load = { k: 'loading' } | { k: 'failed' } | { k: 'ready'; data: DashboardData };
 
@@ -86,12 +88,12 @@ export function Dashboard({ session, signOut }: { session: Session; signOut: () 
           <button type="button" className="btn-primary" onClick={() => { setLoad({ k: 'loading' }); setReload((n) => n + 1); }}>{t('retry')}</button>
         </div>
       )}
-      {load.k === 'ready' && <Ready data={load.data} t={t} lang={lang} />}
+      {load.k === 'ready' && <Ready data={load.data} t={t} lang={lang} session={session} signOut={signOut} />}
     </main>
   );
 }
 
-function Ready({ data, t, lang }: { data: DashboardData; t: Translate; lang: 'ar' | 'en' }) {
+function Ready({ data, t, lang, session, signOut }: { data: DashboardData; t: Translate; lang: 'ar' | 'en'; session: Session; signOut: () => void }) {
   const format = numberFormat(lang).format;
   return (
     <>
@@ -104,17 +106,24 @@ function Ready({ data, t, lang }: { data: DashboardData; t: Translate; lang: 'ar
         <Timeliness data={data} t={t} format={format} />
         <Safety data={data} t={t} format={format} />
       </div>
+      <div className="flex flex-wrap gap-3.5">
+        <Outcomes data={data} t={t} lang={lang} format={format} />
+        <AdverseEvents session={session} signOut={signOut} lang={lang} />
+      </div>
     </>
   );
 }
 
-function Tile({ id, label, value, note }: { id: string; label: string; value: string | null; note: string | null }) {
+function Tile({ id, label, value, note }: { id: MetricDefinitionId; label: string; value: string | null; note: string | null }) {
   const t = useTranslations('dash');
   return (
     <div className="rounded-staff border border-border bg-surface px-[18px] py-4" data-tile={id}>
       <div className="text-[14px] text-muted">{label}</div>
       <div className="text-[36px] font-bold leading-[44px]" data-value>{value ?? <span className="text-[16px] font-normal text-muted" data-suppressed>{t('suppressed')}</span>}</div>
       <div className="text-[13px] text-muted">{note}</div>
+      <div className="mt-2">
+        <InfoPanel id={id} label={label} />
+      </div>
     </div>
   );
 }
@@ -148,6 +157,7 @@ function Funnel({ data, t, format }: { data: DashboardData; t: Translate; format
   return (
     <section aria-label={t('funnel.label')} className={`${card} flex min-w-0 flex-[1_1_520px] flex-col gap-3`} data-section="funnel">
       <h2 className="text-[17px] font-bold">{t('funnel.heading')}</h2>
+      <InfoPanel id="funnel" label={t('funnel.heading')} />
       {stages.map((stage, index) => {
         const count = stage.count;
         const width = typeof count === 'number' && top > 0 ? Math.max(2, Math.round((count / top) * 100)) : 0;
@@ -201,6 +211,7 @@ function Equity({ equity, t, format }: { equity: EquityResponse; t: Translate; f
           ))}
         </div>
       </div>
+      <InfoPanel id="equity" label={t('equity.heading')} />
       <div className="grid items-center gap-x-3 gap-y-2.5 text-[14px] [grid-template-columns:110px_1fr_minmax(76px,auto)]" data-equity-rows={dimension}>
         {rows.map((row) => {
           const cell = row.cell;
@@ -254,6 +265,7 @@ function Timeliness({ data, t, format }: { data: DashboardData; t: Translate; fo
   return (
     <section aria-label={t('timeliness.label')} className={`${card} flex min-w-0 flex-[1_1_420px] flex-col gap-3 overflow-x-auto`} data-section="timeliness">
       <h2 className="-mb-0.5 text-[17px] font-bold">{t('timeliness.heading')}</h2>
+      <InfoPanel id="timeliness" label={t('timeliness.heading')} />
       <table className="w-full border-collapse text-[14px]">
         <thead>
           <tr className="text-start text-[12px] uppercase tracking-[0.5px] text-muted">
@@ -288,6 +300,7 @@ function Timeliness({ data, t, format }: { data: DashboardData; t: Translate; fo
       <p className="t-small text-muted">{t('timeliness.basis')}</p>
 
       <h3 className="text-[15px] font-semibold">{t('timeliness.overdueHeading')}</h3>
+      <InfoPanel id="overdue" label={t('timeliness.overdueHeading')} />
       {isSuppressed(overdue) ? (
         <p className="t-small text-muted" data-overdue-suppressed>{t('suppressed')}</p>
       ) : (
@@ -332,6 +345,7 @@ function Safety({ data, t, format }: { data: DashboardData; t: Translate; format
   return (
     <section aria-label={t('safety.label')} className={`${card} flex min-w-0 flex-[1_1_420px] flex-col gap-2.5`} data-section="safety">
       <h2 className="text-[17px] font-bold">{t('safety.heading')}</h2>
+      <InfoPanel id="safety" label={t('safety.heading')} />
       <div className="grid grid-cols-3 gap-2.5">
         {stat('shown', t('safety.shown'), isSuppressed(crisis.shown) ? null : format(crisis.shown))}
         {stat('called', t('safety.called'), isSuppressed(crisis.calledALine) ? null : t('safety.of', { count: format(crisis.calledALine.count), of: format(crisis.calledALine.of) }))}
@@ -344,6 +358,59 @@ function Safety({ data, t, format }: { data: DashboardData; t: Translate; format
         </div>
       </div>
       <p className="t-small text-muted">{t('safety.note')}</p>
+    </section>
+  );
+}
+
+/**
+ * Symptom change among tickets whose person was re-measured at six weeks: the mean change in PHQ-9 and GAD-7 (the repeat total
+ * minus the referral total, so a fall is fewer symptoms), and the share of them with a reliable improvement or deterioration.
+ * Only totals the person shared are used. Every figure is as the API returned it: a number, or "Suppressed".
+ */
+function Outcomes({ data, t, lang, format }: { data: DashboardData; t: Translate; lang: 'ar' | 'en'; format: (value: number) => string }) {
+  const { outcomes } = data;
+  const decimal = decimalFormat(lang).format;
+  const value = (shown: string | null) => shown ?? <span className="text-[13px] font-normal text-muted" data-suppressed>{t('suppressed')}</span>;
+  return (
+    <section aria-label={t('outcomes.label')} className={`${card} flex min-w-0 flex-[1_1_420px] flex-col gap-3`} data-section="outcomes">
+      <h2 className="text-[17px] font-bold">{t('outcomes.heading')}</h2>
+      <InfoPanel id="outcomes" label={t('outcomes.heading')} />
+      <p className="t-small text-muted" data-outcomes-remeasured>
+        {isSuppressed(outcomes.remeasured) ? t('suppressed') : t('outcomes.remeasured', { count: format(outcomes.remeasured) })}
+      </p>
+      {OUTCOME_INSTRUMENTS.map((instrument) => {
+        const entry = outcomes.instruments.find((candidate) => candidate.instrument === instrument);
+        if (!entry) return null;
+        const improvement = entry.reliableImprovement;
+        const deterioration = entry.reliableDeterioration;
+        return (
+          <div key={instrument} className="flex flex-col gap-2 rounded-input bg-ground px-3 py-2.5" data-outcome={instrument}>
+            <div className="text-[14px] font-semibold">{t(`outcomes.instrument.${instrument}`)}</div>
+            <div className="grid grid-cols-3 gap-2.5">
+              <div data-outcome-stat="mean">
+                <div className="text-[12px] text-muted">{t('outcomes.mean')}</div>
+                <div className="text-[20px] font-bold" data-value>{value(isSuppressed(entry.meanChange) ? null : t('outcomes.points', { points: decimal(entry.meanChange) }))}</div>
+              </div>
+              <div data-outcome-stat="improved">
+                <div className="text-[12px] text-muted">{t('outcomes.improved')}</div>
+                <div className="text-[20px] font-bold" data-value>{value(isSuppressed(improvement) ? null : `${format(improvement.percent)}%`)}</div>
+                {!isSuppressed(improvement) && <div className="text-[12px] text-muted">{t('outcomes.of', { count: format(improvement.count), of: format(improvement.of) })}</div>}
+              </div>
+              <div data-outcome-stat="deteriorated">
+                <div className="text-[12px] text-muted">{t('outcomes.deteriorated')}</div>
+                <div className="text-[20px] font-bold" data-value>{value(isSuppressed(deterioration) ? null : `${format(deterioration.percent)}%`)}</div>
+                {!isSuppressed(deterioration) && <div className="text-[12px] text-muted">{t('outcomes.of', { count: format(deterioration.count), of: format(deterioration.of) })}</div>}
+              </div>
+            </div>
+            <div className="text-[12px] text-muted" data-outcome-coverage>
+              {isSuppressed(entry.included) ? t('suppressedShort') : t('outcomes.included', { count: format(entry.included) })}
+              {' · '}
+              {isSuppressed(entry.excluded) ? t('suppressedShort') : t('outcomes.excluded', { count: format(entry.excluded) })}
+            </div>
+          </div>
+        );
+      })}
+      <p className="t-small text-muted">{t('outcomes.basis', { phq9: format(outcomes.reliableChangePoints.phq9), gad7: format(outcomes.reliableChangePoints.gad7) })}</p>
     </section>
   );
 }

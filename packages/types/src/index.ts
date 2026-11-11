@@ -6,3 +6,4 @@ export * from './entities';
 export * from './contracts';
 export * from './metrics';
 export * from './adverse-events';
+export * from './metric-definitions';

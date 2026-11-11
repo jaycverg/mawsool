@@ -3,11 +3,13 @@ import {
   CrisisResponseSchema,
   EquityResponseSchema,
   FunnelResponseSchema,
+  OutcomesResponseSchema,
   TimelinessResponseSchema,
   type CrisisResponse,
   type EquityResponse,
   type FunnelResponse,
   type MetricPeriod,
+  type OutcomesResponse,
   type Session,
   type SuppressedValue,
   type TicketSource,
@@ -37,6 +39,7 @@ export interface Dashboard {
   timeliness: TimelinessResponse;
   crisis: CrisisResponse;
   equity: EquityResponse;
+  outcomes: OutcomesResponse;
 }
 
 export type DashboardResult = { status: 'ok'; data: Dashboard } | { status: 'unauthorized' } | { status: 'failed' };
@@ -53,13 +56,13 @@ function query(filters: Filters, withFunnelFilters: boolean): string {
   return `?${params.toString()}`;
 }
 
-/** Loads the four metric routes together. Any 401 is `unauthorized`; an answer that is missing or the wrong shape is `failed`. */
+/** Loads the five metric routes together. Any 401 is `unauthorized`; an answer that is missing or the wrong shape is `failed`. */
 export async function loadDashboard(session: Pick<Session, 'sessionToken'>, filters: Filters): Promise<DashboardResult> {
   // The equity section ignores the period filter: it is always the one period the API serves it for (see `EQUITY_PERIOD`).
   const call = (path: string, withFunnelFilters = false, period?: MetricPeriod) =>
     staffCall<unknown>({ fetch: window.fetch.bind(window), apiUrl: API_URL, session, path: `${path}${query(period ? { ...filters, period } : filters, withFunnelFilters)}` });
-  const [funnel, timeliness, crisis, equity] = await Promise.all([call('/metrics/funnel', true), call('/metrics/timeliness'), call('/metrics/crisis'), call('/metrics/equity', false, EQUITY_PERIOD)]);
-  const all = [funnel, timeliness, crisis, equity];
+  const [funnel, timeliness, crisis, equity, outcomes] = await Promise.all([call('/metrics/funnel', true), call('/metrics/timeliness'), call('/metrics/crisis'), call('/metrics/equity', false, EQUITY_PERIOD), call('/metrics/outcomes')]);
+  const all = [funnel, timeliness, crisis, equity, outcomes];
   if (all.some((result) => result.status === 'unauthorized')) return { status: 'unauthorized' };
   if (all.some((result) => result.status !== 'ok')) return { status: 'failed' };
   const parsed = {
@@ -67,12 +70,18 @@ export async function loadDashboard(session: Pick<Session, 'sessionToken'>, filt
     timeliness: timeliness.status === 'ok' ? TimelinessResponseSchema.safeParse(timeliness.body) : null,
     crisis: crisis.status === 'ok' ? CrisisResponseSchema.safeParse(crisis.body) : null,
     equity: equity.status === 'ok' ? EquityResponseSchema.safeParse(equity.body) : null,
+    outcomes: outcomes.status === 'ok' ? OutcomesResponseSchema.safeParse(outcomes.body) : null,
   };
-  if (!parsed.funnel?.success || !parsed.timeliness?.success || !parsed.crisis?.success || !parsed.equity?.success) return { status: 'failed' };
-  return { status: 'ok', data: { funnel: parsed.funnel.data, timeliness: parsed.timeliness.data, crisis: parsed.crisis.data, equity: parsed.equity.data } };
+  if (!parsed.funnel?.success || !parsed.timeliness?.success || !parsed.crisis?.success || !parsed.equity?.success || !parsed.outcomes?.success) return { status: 'failed' };
+  return { status: 'ok', data: { funnel: parsed.funnel.data, timeliness: parsed.timeliness.data, crisis: parsed.crisis.data, equity: parsed.equity.data, outcomes: parsed.outcomes.data } };
 }
 
 /** Whole numbers and Latin digits in both languages, like the boards (67%, 7 days). The API keeps its precision. */
 export function numberFormat(lang: 'ar' | 'en'): Intl.NumberFormat {
   return new Intl.NumberFormat(lang === 'ar' ? 'ar-AE-u-nu-latn' : 'en-GB', { maximumFractionDigits: 0 });
+}
+
+/** One decimal, for a mean change in points; a sign is shown for any change, and none for zero. */
+export function decimalFormat(lang: 'ar' | 'en'): Intl.NumberFormat {
+  return new Intl.NumberFormat(lang === 'ar' ? 'ar-AE-u-nu-latn' : 'en-GB', { maximumFractionDigits: 1, signDisplay: 'exceptZero' });
 }
