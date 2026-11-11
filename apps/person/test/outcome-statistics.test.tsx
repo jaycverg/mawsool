@@ -8,7 +8,7 @@ import { OutcomeStatisticsPanel, type StatisticsState } from '../components/Outc
 import { Totals } from '../components/RemeasureScreen';
 import { KEYS } from '../lib/keys';
 import { loadOutcomeStatistics, saveOutcomeStatistics, turnOffOutcomeStatistics } from '../lib/outcome-statistics';
-import { sendRemeasure } from '../lib/remeasure';
+import { finishRepeatCheck, sendRemeasure } from '../lib/remeasure';
 import { forgetRegistration } from '../lib/server';
 import ar from '../messages/ar.json';
 import en from '../messages/en.json';
@@ -17,7 +17,7 @@ import { memoryStorage } from './helpers/memory';
 const MESSAGES = { en, ar } as const;
 const TICKET_ID = '11111111-1111-4111-8111-111111111111';
 
-function server(reply: { status: number } | 'offline') {
+function server(reply: { status: number; body?: unknown } | 'offline') {
   const store = memoryStorage();
   forgetRegistration(store.storage);
   const calls: { method: string; path: string; body: unknown }[] = [];
@@ -26,7 +26,7 @@ function server(reply: { status: number } | 'offline') {
     if (path === '/persons') return new Response('{}', { status: 201 });
     calls.push({ method: String(init?.method), path, body: init?.body ? JSON.parse(String(init.body)) : undefined });
     if (reply === 'offline') throw new TypeError('network down');
-    return new Response(JSON.stringify({ optIn: false, state: 'closed', scoresShared: true, events: [] }), { status: reply.status });
+    return new Response(JSON.stringify(reply.body ?? { optIn: false, state: 'closed', scoresShared: true, events: [] }), { status: reply.status });
   }) as unknown as typeof fetch;
   return { store, calls, deps: { storage: store.storage, fetch: fetchFn, apiUrl: 'http://api.test', locale: 'en' as const, random: globalThis.crypto } };
 }
@@ -104,6 +104,90 @@ describe('what the repeat check sends', () => {
   });
 });
 
+describe('finishing the repeat check keeps the phone\'s note of the choice honest about what the server may hold', () => {
+  const SCORES = [{ instrument: 'phq9' as const, total: 7, band: 'mild', takenAt: '2026-12-21T09:00:00+04:00' }];
+  const noteOf = async (store: ReturnType<typeof memoryStorage>) => loadOutcomeStatistics(store.storage);
+  /** The same store with writes of the note refused, so the identity and everything else still save. */
+  const refusingNote = (store: ReturnType<typeof memoryStorage>) => ({ ...store.storage, set: (key: string, value: unknown) => (key === KEYS.outcomeStatistics ? Promise.reject(new Error('storage write failed')) : store.storage.set(key, value)) });
+
+  it('writes the note before a send that carries true, and keeps it when the reply is lost, since the server may have turned it on', async () => {
+    const { deps, store, calls } = server('offline');
+    expect(await finishRepeatCheck(deps, TICKET_ID, SCORES, true)).toBe('failed');
+    expect(calls).toHaveLength(1);
+    expect(await noteOf(store)).toBe(true);
+  });
+
+  it('keeps the note true when the server answers 200 with something that cannot be read', async () => {
+    const { deps, store } = server({ status: 200, body: { nope: true } });
+    expect(await finishRepeatCheck(deps, TICKET_ID, SCORES, true)).toBe('failed');
+    expect(await noteOf(store)).toBe(true);
+  });
+
+  it('keeps the note true when the server fails', async () => {
+    const { deps, store } = server({ status: 503 });
+    expect(await finishRepeatCheck(deps, TICKET_ID, SCORES, true)).toBe('failed');
+    expect(await noteOf(store)).toBe(true);
+  });
+
+  it('sends nothing, and says so, when the note cannot be written before a send that carries true', async () => {
+    const { deps, store, calls } = server({ status: 200 });
+    expect(await finishRepeatCheck({ ...deps, storage: refusingNote(store) }, TICKET_ID, SCORES, true)).toBe('note_failed');
+    expect(calls).toEqual([]);
+    expect(await noteOf(store)).toBe(false);
+  });
+
+  it('puts the previous value back when the server refuses (409) a send that carried true, since nothing changed there', async () => {
+    const off = server({ status: 409 });
+    expect(await finishRepeatCheck(off.deps, TICKET_ID, SCORES, true)).toBe('not_ready');
+    expect(await noteOf(off.store)).toBe(false);
+    const on = server({ status: 409 });
+    await saveOutcomeStatistics(on.store.storage, true);
+    expect(await finishRepeatCheck(on.deps, TICKET_ID, SCORES, true)).toBe('not_ready');
+    expect(await noteOf(on.store)).toBe(true);
+  });
+
+  it('keeps the note true when a send that carries true is confirmed', async () => {
+    const { deps, store } = server({ status: 200 });
+    expect(await finishRepeatCheck(deps, TICKET_ID, SCORES, true)).toBe('done');
+    expect(await noteOf(store)).toBe(true);
+  });
+
+  it('clears the note only on a confirmed send that carries false', async () => {
+    const { deps, store, calls } = server({ status: 200 });
+    await saveOutcomeStatistics(store.storage, true);
+    expect(await finishRepeatCheck(deps, TICKET_ID, SCORES, false)).toBe('done');
+    expect((calls[0]!.body as { statisticsOptIn: boolean }).statisticsOptIn).toBe(false);
+    expect(await noteOf(store)).toBe(false);
+  });
+
+  it.each([
+    ['the reply is lost', 'offline' as const],
+    ['the server answers something that cannot be read', { status: 200, body: { nope: true } }],
+    ['the server refuses', { status: 409 }],
+    ['the server fails', { status: 503 }],
+  ])('leaves the note as it was when a send that carries false gets no confirmation: %s', async (_name, reply) => {
+    const { deps, store } = server(reply);
+    await saveOutcomeStatistics(store.storage, true);
+    await finishRepeatCheck(deps, TICKET_ID, SCORES, false);
+    expect(await noteOf(store)).toBe(true);
+  });
+
+  it('leaves the note true, so Settings can still turn it off, when a confirmed send of false cannot clear it', async () => {
+    const { deps, store } = server({ status: 200 });
+    await saveOutcomeStatistics(store.storage, true);
+    expect(await finishRepeatCheck({ ...deps, storage: refusingNote(store) }, TICKET_ID, SCORES, false)).toBe('done');
+    expect(await noteOf(store)).toBe(true);
+  });
+
+  it('does not touch the note, and sends no choice, when the totals are not sent', async () => {
+    const { deps, store, calls } = server({ status: 200 });
+    await saveOutcomeStatistics(store.storage, true);
+    expect(await finishRepeatCheck(deps, TICKET_ID, [], undefined)).toBe('done');
+    expect(calls[0]!.body).toEqual({ scores: [] });
+    expect(await noteOf(store)).toBe(true);
+  });
+});
+
 describe('the box beside the totals', () => {
   const ticket = { consents: [{ id: 'c', element: 'ticket', recipient: 'x', grantedAt: '2026-10-01T08:00:00+04:00', revokedAt: null }] } as unknown as PersonTicketView;
   const screening = (instrument: 'phq9' | 'gad7'): Screening => ({ id: instrument, instrument, answers: [], total: 3, band: 'mild', item9Flag: false, takenAt: '2026-12-21T09:00:00+04:00' }) as Screening;
@@ -157,8 +241,9 @@ describe('the box beside the totals', () => {
   it.each(['en', 'ar'] as const)('says the totals count only in groups of 10 or more and that a clinic never sees the choice, in %s', (locale) => {
     const help = MESSAGES[locale].remeasure.statisticsHelp;
     expect(help).toContain('10');
-    expect(help).toContain(locale === 'en' ? 'never sees this choice' : 'هذا الاختيار أبدًا');
+    expect(help).toContain(locale === 'en' ? 'ever sees this choice' : 'هذا الاختيار أبدًا');
     expect(help).toContain(locale === 'en' ? 'anonymous group figures' : 'مجمّعة مجهولة');
+    expect(help, 'covers every referral, not only this one').toContain(locale === 'en' ? 'all your referrals' : 'جميع إحالاتك');
     if (locale === 'ar') expect(help).toMatch(/[؀-ۿ]/);
   });
 });
@@ -184,7 +269,8 @@ describe('Settings\' note on the choice', () => {
     expect(html.match(/<button/g)).toHaveLength(1);
     const body = MESSAGES[locale].settings.statisticsOnBody;
     expect(body).toContain('10');
-    expect(body).toContain(locale === 'en' ? 'never sees this choice' : 'هذا الاختيار أبدًا');
+    expect(body).toContain(locale === 'en' ? 'ever sees this choice' : 'هذا الاختيار أبدًا');
+    expect(body, 'covers every referral').toContain(locale === 'en' ? 'all your referrals' : 'جميع إحالاتك');
   });
 
   it.each(['en', 'ar'] as const)('says it was turned off, with no button, and says when turning it off failed with the button still there, in %s', (locale) => {
@@ -201,7 +287,7 @@ describe('Settings\' note on the choice', () => {
     expect(keys(ar.settings)).toEqual(keys(en.settings));
     expect(keys(ar.remeasure)).toEqual(keys(en.remeasure));
     expect(keys(en.settings)).toHaveLength(5);
-    expect(keys(en.remeasure)).toHaveLength(2);
+    expect(keys(en.remeasure)).toHaveLength(3);
     for (const text of [ar.settings.statisticsTitle, ar.settings.statisticsOnBody, ar.remeasure.statisticsLabel, ar.remeasure.statisticsHelp]) expect(text).toMatch(/[؀-ۿ]/);
   });
 });

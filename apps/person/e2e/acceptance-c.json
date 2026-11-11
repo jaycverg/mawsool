@@ -1,7 +1,7 @@
 [
   {
     "id": "demo-steps-1-to-12",
-    "sentence": "The whole demo script, steps 1 to 12, runs with the demo clock moved from the admin panel and no console error, and ends with Noura's ticket seen with no overdue event on it, a logged contact-confirmed crisis event for Rashid, and the Urdu row flagged 18 to 22 points below overall"
+    "sentence": "The whole demo script, steps 1 to 12, runs with the demo clock moved from the admin panel and no console error, and ends with Noura's ticket seen with no overdue event on it, a logged contact-confirmed crisis event for Rashid, and the Urdu row flagged 18 to 22 points below overall; at step 11, 28 days in, the funnel's re-measured stage is a figure (35) and the symptom-change tile shows numbers with either period filter"
   },
   {
     "id": "dashboard-funnel-formula-and-note",
@@ -37,7 +37,7 @@
   },
   {
     "id": "symptom-change-tile-shows-numbers-on-the-default-view-and-ignores-the-period-filter",
-    "sentence": "Straight after a reset, on the dashboard's default view, the symptom-change tile shows numbers and no Suppressed cell: the re-measured count, the mean change and the share who improved for both instruments, ten or more counted and ten or more excluded; choosing another period leaves the tile as it was, the page asks the API for the last 90 days each time, and the tile and its info panel say so"
+    "sentence": "The symptom-change tile shows numbers on the dashboard's default view straight after a reset: the re-measured count and, for both instruments, ten or more counted tickets, the mean change and the share who improved, while the share who deteriorated reads Suppressed in both (only four people stand behind it) and, straight after the reset, ten or more are excluded; choosing another period leaves the tile as it was, the page asks the API for the last 90 days each time, and the tile and its info panel say so"
   },
   {
     "id": "dashboard-shows-symptom-change-from-shared-totals-and-the-adverse-events-log",

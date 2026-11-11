@@ -115,6 +115,27 @@ async function dashboard(browser: Browser, locale: Locale): Promise<Page> {
 }
 
 /**
+ * The symptom-change tile shows numbers, not "Suppressed", where the seed means it to: the re-measured count, and for both
+ * instruments the counted tickets (ten or more), the mean change and the share who improved. The share who deteriorated reads
+ * Suppressed in both, by design: only four people stand behind it, and a count under ten is never shown. Nothing else in the tile
+ * is a suppressed cell but, once no ticket is left excluded (zero is under ten), the excluded count.
+ */
+async function expectTileShowsNumbers(dash: Page, when: string): Promise<void> {
+  const section = dash.locator('[data-section="outcomes"]');
+  await expect(section.locator('[data-outcomes-remeasured]'), `re-measured ${when}`).toHaveText(/\d/);
+  await expect(section.locator('[data-outcomes-remeasured] [data-suppressed]'), `re-measured ${when}`).toHaveCount(0);
+  for (const name of ['phq9', 'gad7']) {
+    const card = section.locator(`[data-outcome="${name}"]`);
+    await expect(card.locator('[data-outcome-stat="mean"] [data-value]'), `${name} mean ${when}`).toHaveText(/\d/);
+    await expect(card.locator('[data-outcome-stat="mean"] [data-suppressed]'), `${name} mean ${when}`).toHaveCount(0);
+    await expect(card.locator('[data-outcome-stat="improved"] [data-value]'), `${name} improved ${when}`).toHaveText(/\d%$/);
+    await expect(card.locator('[data-outcome-stat="improved"] [data-suppressed]'), `${name} improved ${when}`).toHaveCount(0);
+    await expect(card.locator('[data-outcome-stat="deteriorated"] [data-suppressed]'), `${name} deteriorated ${when}`).toHaveCount(1);
+    expect(numbersIn(await card.locator('[data-outcome-coverage]').innerText())[0]!, `${name} counted ${when}`).toBeGreaterThanOrEqual(10);
+  }
+}
+
+/**
  * The unfiltered dashboard stays readable: the funnel from the positive screen to seen, the four tier rows, the crisis
  * figures and the Urdu row are numbers, not "Suppressed" (a suppressed cell fails here, where a mere non-empty check would
  * accept the word), and the Urdu row is flagged.
@@ -320,9 +341,13 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     // The pitch view: the board's default "Last 90 days", 28 days into the demo, and then all time.
     await dash.locator('[data-filter="period"]').selectOption('90d');
     await expectReadable(dash, 'in the default view after the demo clock moved 28 days');
-    await expect(stageCount(dash, 'remeasured')).toBeVisible(); // shown or suppressed: no re-measured ticket is left in the last 90 days by then
+    // The 35 seeded re-measured tickets are still inside the last 90 days 28 days in, so the funnel's last stage is a figure and the
+    // symptom-change tile, which is always the last 90 days, shows numbers right where the pitch shows it.
+    await expect(stageCount(dash, 'remeasured').locator('[data-count]')).toHaveText('35');
+    await expectTileShowsNumbers(dash, 'in the default view after the demo clock moved 28 days');
     await dash.locator('[data-filter="period"]').selectOption('all');
     await expectReadable(dash, 'in all time after the demo clock moved 28 days');
+    await expectTileShowsNumbers(dash, 'with the period filter on all time after the demo clock moved 28 days');
 
     // Step 12: the equity view flags Urdu 18 to 22 points below the overall rate. It is served for one period only (the last 90
     // days), so it reads the same with the period filter on All time as on Last 90 days, and says so on the section.
@@ -896,6 +921,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
 
     // Numbers, not Suppressed, straight from the seed: the re-measured count, the mean change and the share who improved, for both instruments.
     const first = await tile();
+    await expectTileShowsNumbers(dash, 'straight after the reset');
     expect(first.remeasured).toBeGreaterThanOrEqual(10);
     for (const card of first.cards) {
       expect(card.suppressedMean, `${card.name} mean`).toBe(0);

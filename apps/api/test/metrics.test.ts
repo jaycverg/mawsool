@@ -623,6 +623,19 @@ describe('the seeded data against the metric definitions', () => {
         for (const tier of timeliness.tiers) expect(tier.cell, `${tier.tier} ${label}`).not.toHaveProperty('suppressed');
         const crisis = await get<CrisisResponse>(`/metrics/crisis?period=${period}`);
         for (const figure of ['shown', 'calledALine', 'contactConfirmed', 'medianMinutesToContact'] as const) expect(crisis[figure], `${figure} ${label}`).not.toHaveProperty('suppressed');
+        // The symptom-change tile is the same one period, and shows numbers at every position the demo's dashboard can be shown at: the
+        // re-measured count, and for both instruments the counted tickets, the mean change and the share who improved; the share who
+        // deteriorated is suppressed by design (four people), and the excluded count too once none is left (zero is under ten).
+        if (period === '90d') {
+          const outcomes = await get<OutcomesResponse>('/metrics/outcomes');
+          expect(typeof outcomes.remeasured, `symptom change re-measured ${label}`).toBe('number');
+          for (const entry of outcomes.instruments) {
+            expect(entry.included, `${entry.instrument} counted ${label}`).toBe(35);
+            expect(typeof entry.meanChange, `${entry.instrument} mean ${label}`).toBe('number');
+            expect(entry.reliableImprovement, `${entry.instrument} improved ${label}`).not.toHaveProperty('suppressed');
+            expect(entry.reliableDeterioration, `${entry.instrument} deteriorated ${label}`).toEqual({ suppressed: true });
+          }
+        }
         // Equity stays on its one period (the last 90 days) whatever period the rest of the dashboard is asked for.
         const equity = await get<EquityResponse>('/metrics/equity');
         expect(equity.period).toBe('90d');
@@ -642,13 +655,13 @@ describe('the seeded data against the metric definitions', () => {
     ctx.clock.set(SEED_ANCHOR);
     const outcomes = await get<OutcomesResponse>('/metrics/outcomes');
     expect(outcomes.period).toBe('90d');
-    // 47 seeded tickets reached re-measured; 36 of them shared both totals of both instruments and opted in, the other 11 are excluded.
-    expect(outcomes.remeasured).toBe(47);
+    // 82 seeded tickets reached re-measured: 47 older ones that shared nothing (excluded) and 35 whose person shared both totals of both instruments and opted in.
+    expect(outcomes.remeasured).toBe(82);
     const [phq9, gad7] = outcomes.instruments;
-    expect(phq9).toEqual({ instrument: 'phq9', included: 36, excluded: 11, meanChange: -2.4, reliableImprovement: { count: 15, of: 36, percent: 41.7 }, reliableDeterioration: { suppressed: true } });
-    expect(gad7).toEqual({ instrument: 'gad7', included: 36, excluded: 11, meanChange: -1.2, reliableImprovement: { count: 13, of: 36, percent: 36.1 }, reliableDeterioration: { suppressed: true } });
-    // The funnel's re-measured stage for the same 90 days is the same 47.
-    expect(counts(await get<FunnelResponse>('/metrics/funnel?period=90d')).remeasured).toBe(47);
+    expect(phq9).toEqual({ instrument: 'phq9', included: 35, excluded: 47, meanChange: -3.3, reliableImprovement: { count: 15, of: 35, percent: 42.9 }, reliableDeterioration: { suppressed: true } });
+    expect(gad7).toEqual({ instrument: 'gad7', included: 35, excluded: 47, meanChange: -1.8, reliableImprovement: { count: 13, of: 35, percent: 37.1 }, reliableDeterioration: { suppressed: true } });
+    // The funnel's re-measured stage for the same 90 days is the same 82.
+    expect(counts(await get<FunnelResponse>('/metrics/funnel?period=90d')).remeasured).toBe(82);
   });
 
   it('shows a funnel and a timeliness table from the seed with the equity opt-in buckets and the crisis events', async () => {

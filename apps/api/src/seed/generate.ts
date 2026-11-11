@@ -11,6 +11,7 @@ import {
   type Tier,
 } from '@mawsool/types';
 import type { schema } from '../db/client';
+import { startOfDubaiDay } from '../metrics/facts';
 import { sha256Hex } from '../security';
 import { INVITE_TTL_MS } from '../inbound/service';
 import {
@@ -23,7 +24,7 @@ import {
   SERVICE_NAMES_AR,
   STAFF,
 } from './fixtures';
-import { buildOutcomeShares } from './outcome-shares';
+import { LAST_DASHBOARD_POSITION_MS, SHARE_SEEN_AT_LEAST_DAYS_AGO, buildOutcomeShares } from './outcome-shares';
 import { createRng, type Rng } from './prng';
 
 /** The insert shape of a table, with its id required: every seeded row carries a deterministic id. */
@@ -317,8 +318,9 @@ function buildInvites(rng: Rng, anchorMs: number, tickets: SeedData['tickets'], 
  *
  * Contents: 2 facilities and 24 sample services (all but the 6 self-help ones tied to a facility), demo staff,
  * 500 tickets over 90 days with chains of rerouted tickets, 40 crisis events, and equity buckets for the
- * persons who opted in, and 36 re-measured tickets whose person shared both repeat totals and opted in to the anonymous
- * statistics (consent rows and a bundle each), so the symptom-change tile has numbers. Tickets come from every source. The loop-closed rate (a ticket reached `seen` or later)
+ * persons who opted in, and a repeat check for 35 of the `seen` tickets (the ticket reads `closed`) whose person shared both
+ * repeat totals and opted in to the anonymous statistics (consent rows and a bundle each), so the symptom-change tile has numbers
+ * for the whole of the demo's dashboard step. Tickets come from every source. The loop-closed rate (a ticket reached `seen` or later)
  * is planted at 46.7% for Urdu-language tickets against 70.0% for the rest.
  */
 export function generateSeed(anchor: Date = SEED_ANCHOR): SeedData {
@@ -523,19 +525,33 @@ export function generateSeed(anchor: Date = SEED_ANCHOR): SeedData {
   // Invites, drawn after everything above so the rows above stay exactly as they were.
   const inboundInvites = buildInvites(rng, anchorMs, tickets, persons);
 
-  // The re-measured tickets that share both repeat totals, drawn from a stream of their own so nothing above moves.
+  // A repeat check for the seen tickets the demo's symptom-change tile stands on, drawn from a stream of its own so nothing above
+  // moves: each gains `remeasured` and `closed` events and a stored bundle of both repeat totals, its person opts in to the
+  // statistics, and its ticket reads `closed`. They are parentless tickets the seed left `seen`, issued recently enough to stay in
+  // "the last 90 days" 28 days into the demo and seen long enough ago for the six weeks to have passed.
   const eventsOf = Map.groupBy(ticketEvents, (event) => event.ticketId);
-  const remeasuredTickets = tickets.flatMap((ticket) => {
+  const earliestIssued = startOfDubaiDay(new Date(anchorMs + LAST_DASHBOARD_POSITION_MS - HISTORY_DAYS * DAY)).getTime();
+  const latestSeen = anchorMs - SHARE_SEEN_AT_LEAST_DAYS_AGO * DAY;
+  const seenTickets = tickets.flatMap((ticket) => {
     const events = eventsOf.get(ticket.id) ?? [];
     const seen = events.find((event) => event.toState === 'seen');
-    const remeasured = events.find((event) => event.toState === 'remeasured');
-    return seen && remeasured
-      ? [{ ticketId: ticket.id, personId: ticket.personId, serviceId: ticket.serviceId, createdAt: ticket.createdAt!, seenAt: seen.at.getTime(), remeasuredAt: remeasured.at.getTime() }]
+    return ticket.parentTicketId === null && seen && events.at(-1)!.toState === 'seen' && ticket.createdAt!.getTime() >= earliestIssued && seen.at.getTime() <= latestSeen
+      ? [{ ticketId: ticket.id, personId: ticket.personId, serviceId: ticket.serviceId, createdAt: ticket.createdAt!, seenAt: seen.at.getTime() }]
       : [];
   });
-  const shares = buildOutcomeShares(SEED_NAME, remeasuredTickets);
+  const shares = buildOutcomeShares(SEED_NAME, anchorMs, seenTickets);
   const statisticsPersons = new Set(shares.map((share) => share.personId));
   for (const person of persons) if (statisticsPersons.has(person.id)) person.outcomeStatsOptIn = true;
+  const sharedTickets = new Map(shares.map((share) => [share.ticketId, share]));
+  for (const ticket of tickets) if (sharedTickets.has(ticket.id)) ticket.state = 'closed';
+  for (const share of shares) {
+    const seq = eventsOf.get(share.ticketId)!.length;
+    const at = (ms: number) => new Date(ms);
+    ticketEvents.push(
+      { id: share.eventIds.remeasured, ticketId: share.ticketId, seq: seq + 1, fromState: 'seen', toState: 'remeasured', actor: 'person', channel: 'app', reason: null, selfConfirmed: false, at: at(share.remeasuredAt) },
+      { id: share.eventIds.closed, ticketId: share.ticketId, seq: seq + 2, fromState: 'remeasured', toState: 'closed', actor: 'system', channel: 'sweep', reason: null, selfConfirmed: false, at: at(share.closedAt) },
+    );
+  }
   const consents: SeedData['consents'] = shares.flatMap((share) =>
     (['ticket', 'scores'] as const).map((element) => ({ id: share.consentIds[element], personId: share.personId, ticketId: share.ticketId, recipient: share.recipient, element, grantedAt: share.createdAt })),
   );

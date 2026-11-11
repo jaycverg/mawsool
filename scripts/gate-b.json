@@ -2076,7 +2076,7 @@
   },
   {
     "id": "outcome-statistics-choice-is-its-own-off-by-default-and-sent-with-the-totals",
-    "sentence": "Counting the totals sent to a clinic in anonymous statistics is a separate choice of the person, off by default (a new person, the repeat check's box and Settings all start with it off), offered next to the box that sends the totals and only usable with it, stored with the move in the same transaction as the repeat check or not at all (a refused, lost or too early request leaves it as it was), and left as it was by a request that does not carry it",
+    "sentence": "Counting the totals sent to a clinic in anonymous statistics is a separate choice of the person, off by default (a new person, the repeat check's box and Settings all start with it off), offered next to the box that sends the totals and disabled on that screen until it is ticked (the API itself takes the choice alone), covering every total the person sends their clinics and worded so in both languages, stored with the move in the same transaction as the repeat check or not at all (a refused, lost or too early request leaves it as it was), and left as it was by a request that does not carry it",
     "tests": [
       {
         "project": "apps/api",
@@ -2515,6 +2515,77 @@
       },
       {
         "file": "test/staff-links.test.ts"
+      }
+    ]
+  },
+  {
+    "id": "outcome-statistics-note-on-the-phone-never-hides-a-choice-the-server-may-hold",
+    "sentence": "The phone writes its note that the statistics choice may be on BEFORE a send that carries true, and sends nothing, telling the person, when the note cannot be written; the note stays true after a lost reply, an unreadable answer or a server failure, and goes back to its previous value only after a refusal (409); a send that carries false clears it only on a confirmed reply, and a note that cannot be cleared stays on so Settings can still turn it off; a send without the choice leaves it alone",
+    "tests": [
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "writes the note before a send that carries true, and keeps it when the reply is lost"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "keeps the note true when the server answers 200 with something that cannot be read"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "keeps the note true when the server fails"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "sends nothing, and says so, when the note cannot be written before a send that carries true"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "puts the previous value back when the server refuses (409) a send that carried true"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "keeps the note true when a send that carries true is confirmed"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "clears the note only on a confirmed send that carries false"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "leaves the note as it was when a send that carries false gets no confirmation: the reply is lost"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "leaves the note as it was when a send that carries false gets no confirmation: the server answers something that cannot be read"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "leaves the note as it was when a send that carries false gets no confirmation: the server refuses"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "leaves the note as it was when a send that carries false gets no confirmation: the server fails"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "leaves the note true, so Settings can still turn it off, when a confirmed send of false cannot clear it"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "does not touch the note, and sends no choice, when the totals are not sent"
       }
     ]
   }

@@ -6,7 +6,7 @@ The demo script (steps 1 to 12) runs in Arabic and in English against the real A
 
 ## Registered tests
 
-- `demo-steps-1-to-12`: The whole demo script, steps 1 to 12, runs with the demo clock moved from the admin panel and no console error, and ends with Noura's ticket seen with no overdue event on it, a logged contact-confirmed crisis event for Rashid, and the Urdu row flagged 18 to 22 points below overall
+- `demo-steps-1-to-12`: The whole demo script, steps 1 to 12, runs with the demo clock moved from the admin panel and no console error, and ends with Noura's ticket seen with no overdue event on it, a logged contact-confirmed crisis event for Rashid, and the Urdu row flagged 18 to 22 points below overall; at step 11, 28 days in, the funnel's re-measured stage is a figure (35) and the symptom-change tile shows numbers with either period filter
 - `dashboard-funnel-formula-and-note`: The positive-screen stage equals unclaimed unexpired invites plus parentless tickets plus crisis events, counted straight from the tables, and the tile shows its note
 - `dashboard-shows-suppressed-cells`: A funnel stage or equity group under 10 people shows as suppressed, with no number, bar, flag or rate
 - `admin-panel-controls-clock-and-reset`: The admin panel shows the crisis numbers' last_verified date, moves the demo clock by its three steps, resets to the seed and the real clock, and the API refuses the ops role the same controls
@@ -15,7 +15,7 @@ The demo script (steps 1 to 12) runs in Arabic and in English against the real A
 - `staff-apps-have-icons-and-log-no-console-error`: The clinician and ops apps declare an icon that loads, and their sign-in and home pages log no console error
 - `dashboard-toggle-and-rtl`: The ops dashboard has the Arabic and English toggle and runs right to left in Arabic
 - `dashboard-info-panels-define-every-tile-by-keyboard-and-touch`: Every tile and section of the ops dashboard has an info button that opens by Enter, Space and touch, is announced as a collapsed or expanded button, closes on Escape and returns the focus, and shows its definition, numerator, denominator, period and suppression note in the page's language, right to left in Arabic, in a 44 px target and with no sideways scroll at 390 px
-- `symptom-change-tile-shows-numbers-on-the-default-view-and-ignores-the-period-filter`: Straight after a reset, on the dashboard's default view, the symptom-change tile shows numbers and no Suppressed cell: the re-measured count, the mean change and the share who improved for both instruments, ten or more counted and ten or more excluded; choosing another period leaves the tile as it was, the page asks the API for the last 90 days each time, and the tile and its info panel say so
+- `symptom-change-tile-shows-numbers-on-the-default-view-and-ignores-the-period-filter`: The symptom-change tile shows numbers on the dashboard's default view straight after a reset: the re-measured count and, for both instruments, ten or more counted tickets, the mean change and the share who improved, while the share who deteriorated reads Suppressed in both (only four people stand behind it) and, straight after the reset, ten or more are excluded; choosing another period leaves the tile as it was, the page asks the API for the last 90 days each time, and the tile and its info panel say so
 - `dashboard-shows-symptom-change-from-shared-totals-and-the-adverse-events-log`: The dashboard shows the mean change and the shares with reliable improvement and deterioration among re-measured tickets from the totals people shared and chose to count in anonymous statistics (the threshold itself counts as reliable; tickets without both totals, or whose person did not opt in, are counted as excluded and move no figure), and its adverse events log records an event from the screen, offers only the legal status moves with their times, lists by status and severity, and holds no free text
 - `dashboard-holds-the-board-and-plan-tokens`: The ops dashboard holds the board's type, colours, radii, chart sizes and 44 px tap targets
 - `snapshot-ops-dashboard`: The ops dashboard matches the committed snapshot
@@ -141,6 +141,27 @@ async function dashboard(browser: Browser, locale: Locale): Promise<Page> {
   await page.goto(opsUrl(locale));
   await expect(page.locator('[data-funnel-stage="positive_screen"]')).toBeVisible();
   return page;
+}
+
+/**
+ * The symptom-change tile shows numbers, not "Suppressed", where the seed means it to: the re-measured count, and for both
+ * instruments the counted tickets (ten or more), the mean change and the share who improved. The share who deteriorated reads
+ * Suppressed in both, by design: only four people stand behind it, and a count under ten is never shown. Nothing else in the tile
+ * is a suppressed cell but, once no ticket is left excluded (zero is under ten), the excluded count.
+ */
+async function expectTileShowsNumbers(dash: Page, when: string): Promise<void> {
+  const section = dash.locator('[data-section="outcomes"]');
+  await expect(section.locator('[data-outcomes-remeasured]'), `re-measured ${when}`).toHaveText(/\d/);
+  await expect(section.locator('[data-outcomes-remeasured] [data-suppressed]'), `re-measured ${when}`).toHaveCount(0);
+  for (const name of ['phq9', 'gad7']) {
+    const card = section.locator(`[data-outcome="${name}"]`);
+    await expect(card.locator('[data-outcome-stat="mean"] [data-value]'), `${name} mean ${when}`).toHaveText(/\d/);
+    await expect(card.locator('[data-outcome-stat="mean"] [data-suppressed]'), `${name} mean ${when}`).toHaveCount(0);
+    await expect(card.locator('[data-outcome-stat="improved"] [data-value]'), `${name} improved ${when}`).toHaveText(/\d%$/);
+    await expect(card.locator('[data-outcome-stat="improved"] [data-suppressed]'), `${name} improved ${when}`).toHaveCount(0);
+    await expect(card.locator('[data-outcome-stat="deteriorated"] [data-suppressed]'), `${name} deteriorated ${when}`).toHaveCount(1);
+    expect(numbersIn(await card.locator('[data-outcome-coverage]').innerText())[0]!, `${name} counted ${when}`).toBeGreaterThanOrEqual(10);
+  }
 }
 
 /**
@@ -349,9 +370,13 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     // The pitch view: the board's default "Last 90 days", 28 days into the demo, and then all time.
     await dash.locator('[data-filter="period"]').selectOption('90d');
     await expectReadable(dash, 'in the default view after the demo clock moved 28 days');
-    await expect(stageCount(dash, 'remeasured')).toBeVisible(); // shown or suppressed: no re-measured ticket is left in the last 90 days by then
+    // The 35 seeded re-measured tickets are still inside the last 90 days 28 days in, so the funnel's last stage is a figure and the
+    // symptom-change tile, which is always the last 90 days, shows numbers right where the pitch shows it.
+    await expect(stageCount(dash, 'remeasured').locator('[data-count]')).toHaveText('35');
+    await expectTileShowsNumbers(dash, 'in the default view after the demo clock moved 28 days');
     await dash.locator('[data-filter="period"]').selectOption('all');
     await expectReadable(dash, 'in all time after the demo clock moved 28 days');
+    await expectTileShowsNumbers(dash, 'with the period filter on all time after the demo clock moved 28 days');
 
     // Step 12: the equity view flags Urdu 18 to 22 points below the overall rate. It is served for one period only (the last 90
     // days), so it reads the same with the period filter on All time as on Last 90 days, and says so on the section.
@@ -925,6 +950,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
 
     // Numbers, not Suppressed, straight from the seed: the re-measured count, the mean change and the share who improved, for both instruments.
     const first = await tile();
+    await expectTileShowsNumbers(dash, 'straight after the reset');
     expect(first.remeasured).toBeGreaterThanOrEqual(10);
     for (const card of first.cards) {
       expect(card.suppressedMean, `${card.name} mean`).toBe(0);

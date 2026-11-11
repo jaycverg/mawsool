@@ -4,7 +4,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { reliableChange, remeasureAvailableAt, SUPPRESSION_THRESHOLD } from '@mawsool/rules';
 import { BundleContentSchema, REGIONS, TICKET_SOURCES } from '@mawsool/types';
 import { generateSeed, LOOP_CLOSED_OTHER, LOOP_CLOSED_URDU, TICKET_COUNT, URDU_TICKET_COUNT } from '../src/seed/generate';
-import { SEED_OUTCOME_QUOTAS, SEED_OUTCOME_SHARES } from '../src/seed/outcome-shares';
+import { startOfDubaiDay } from '../src/metrics/facts';
+import { LAST_DASHBOARD_POSITION_MS, SEED_OUTCOME_QUOTAS, SEED_OUTCOME_SHARES } from '../src/seed/outcome-shares';
 import { bundleContext } from '../src/tickets/service';
 import { FACILITY_A_ID, FACILITY_B_ID, SEED_ANCHOR } from '../src/seed/fixtures';
 import { schema } from '../src/db/client';
@@ -106,8 +107,8 @@ describe('seeded re-measured tickets that share their totals and opted in to the
   const sharedIds = new Set(data.sharedBundles.map((bundle) => bundle.ticketId));
   const scoresOf = (ticketId: string) => data.sharedBundles.find((bundle) => bundle.ticketId === ticketId)!.content.scores!;
 
-  it('gives 36 of the 47 re-measured tickets a ticket consent, a scores consent and a bundle, and no other ticket any', () => {
-    expect(reachedRemeasured).toHaveLength(47);
+  it('gives 35 re-measured tickets a ticket consent, a scores consent and a bundle, and no other ticket any, on top of the 47 older re-measured ones that share nothing', () => {
+    expect(reachedRemeasured).toHaveLength(47 + SEED_OUTCOME_SHARES);
     expect(data.sharedBundles).toHaveLength(SEED_OUTCOME_SHARES);
     expect(sharedIds.size).toBe(SEED_OUTCOME_SHARES);
     for (const id of sharedIds) expect(reachedRemeasured.map((ticket) => ticket.id)).toContain(id);
@@ -115,6 +116,24 @@ describe('seeded re-measured tickets that share their totals and opted in to the
     expect(new Set(data.consents.map((consent) => consent.ticketId))).toEqual(sharedIds);
     for (const id of sharedIds) expect(data.consents.filter((consent) => consent.ticketId === id).map((consent) => consent.element).sort()).toEqual(['scores', 'ticket']);
     for (const consent of data.consents) expect(consent.revokedAt ?? null).toBeNull();
+  });
+
+  it('places each repeat check after the six weeks, before the seed\'s reference time and inside the window the dashboard still shows 28 days and 23 hours into the demo, and leaves the ticket closed', () => {
+    const windowStart = startOfDubaiDay(new Date(SEED_ANCHOR.getTime() + LAST_DASHBOARD_POSITION_MS - 90 * DAY)).getTime();
+    const ticketOf = new Map(data.tickets.map((ticket) => [ticket.id, ticket]));
+    for (const id of sharedIds) {
+      const ticket = ticketOf.get(id)!;
+      const events = eventsOf.get(id)!;
+      expect(ticket.parentTicketId, 'a root ticket').toBeNull();
+      expect(ticket.createdAt.getTime(), 'still in the last 90 days at +28 d 23 h').toBeGreaterThanOrEqual(windowStart);
+      expect(ticket.state).toBe('closed');
+      expect(events.map((event) => event.toState).slice(-3)).toEqual(['seen', 'remeasured', 'closed']);
+      const [seen, remeasured, closed] = events.slice(-3);
+      expect(remeasured!.at.getTime(), 'six weeks after seen').toBeGreaterThanOrEqual(remeasureAvailableAt(seen!.at).getTime());
+      expect(closed!.at.getTime()).toBeGreaterThan(remeasured!.at.getTime());
+      expect(closed!.at.getTime(), 'before the reference time').toBeLessThanOrEqual(SEED_ANCHOR.getTime());
+      expect([remeasured!.actor, closed!.actor]).toEqual(['person', 'system']);
+    }
   });
 
   it('opts in the people of those tickets and nobody else', () => {
