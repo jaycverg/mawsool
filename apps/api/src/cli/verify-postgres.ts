@@ -7,12 +7,13 @@
 //   6. "Delete everything" removes the invite a person claimed and keeps the ticket and its source;
 //   6b. a hand-off send and a stop for the same id racing over two connections leave no hand-off and no ledger row, whoever wins;
 //   6c. two presses of one no-login clinic link at once, over two connections, leave exactly one clinic move and one spent link;
+//   6d. two moves of one adverse event's status at once over two connections leave one unbroken history ending on the stored status;
 //   7. the demo's POST /demo/reset and one sweep (the +7 days step) leave the funnel and the Urdu row the dashboard reads
 //      equal to the ones PGlite gives for the same steps, with the Urdu row flagged 18 to 22 points below overall, and the
 //      step's stored clock offset (a bigint column) reads back as 7 days, also to an API started afterwards.
 // It works in a database of its own, created here and dropped at the end, so the dev data is never touched.
 import { randomUUID } from 'node:crypto';
-import type { EquityCell, EquityResponse, FunnelResponse } from '@mawsool/types';
+import type { EquityCell, EquityResponse, FunnelResponse, OutcomesResponse } from '@mawsool/types';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { readFileSync } from 'node:fs';
@@ -24,6 +25,7 @@ import { loadConfig } from '../config';
 import { connect, schema, type Db } from '../db/client';
 import { MIGRATIONS_FOLDER } from '../db/migrate';
 import { SWEEP_QUEUE, startJobs } from '../jobs';
+import { moveAdverseEvent, recordAdverseEvent } from '../adverse-events/service';
 import { actOnClinicLink, type ClinicLinkDeps } from '../clinic-links/service';
 import { acceptScreen, formatInviteCode } from '../inbound/service';
 import { readDemoOffset } from '../demo/clock-store';
@@ -46,6 +48,8 @@ const check = (ok: boolean, message: string) => {
 /** What the dashboard reads from a database: the funnel for all time and for the last 90 days, and the Urdu row of the equity view. */
 interface DemoFigures {
   funnel: FunnelResponse[];
+  /** The symptom-change figures: the seeded tickets that reached re-measured shared nothing, so none is included. */
+  outcomes: OutcomesResponse;
   urdu: EquityCell | null;
 }
 
@@ -69,7 +73,7 @@ async function demoFigures(database: Db): Promise<{ resetStatus: number; advance
     const figures = async (): Promise<DemoFigures> => {
       const equity = await read<EquityResponse>('/metrics/equity');
       const urdu = equity.dimensions.find((entry) => entry.dimension === 'language')?.rows.find((row) => row.value === 'ur')?.cell;
-      return { funnel: [await read<FunnelResponse>('/metrics/funnel?period=all'), await read<FunnelResponse>('/metrics/funnel?period=90d')], urdu: urdu && !('suppressed' in urdu) ? urdu : null };
+      return { funnel: [await read<FunnelResponse>('/metrics/funnel?period=all'), await read<FunnelResponse>('/metrics/funnel?period=90d')], outcomes: await read<OutcomesResponse>('/metrics/outcomes?period=all'), urdu: urdu && !('suppressed' in urdu) ? urdu : null };
     };
     const reset = await demo.app.inject({ method: 'POST', url: '/demo/reset', headers: admin });
     const afterReset = await figures();
@@ -239,6 +243,29 @@ try {
     }
     check(linkProblems === 0, `two presses of one clinic link at once, ${LINK_ROUNDS} times over two connections, left exactly one acknowledge by the clinic, one spent link and the other press refused as an invalid link`);
     await db.update(schema.facilities).set({ portalAccess: true }).where(eq(schema.facilities.id, FACILITY_A_ID));
+
+    // 6d. Two moves of one adverse event's status at once, over two connections: the update names the status it was read in and the
+    // history's (event, seq) pair is unique, so exactly one of two identical moves lands, the other is refused with nothing
+    // written, and a pair of different moves leaves a history that is one unbroken chain ending on the stored status.
+    const [opsUser] = await db.select({ id: schema.staffUsers.id }).from(schema.staffUsers).where(eq(schema.staffUsers.role, 'ops')).limit(1);
+    const actor = { staffUserId: opsUser!.id, role: 'ops' as const };
+    const eventDeps = (connection: Db) => ({ db: connection, clock: ctx.clock, securityClock: ctx.clock });
+    const EVENT_ROUNDS = 30;
+    let eventProblems = 0;
+    for (let round = 0; round < EVENT_ROUNDS; round += 1) {
+      const recorded = await recordAdverseEvent(eventDeps(db), actor, { type: 'wrong_routing', severity: 'low' });
+      if (recorded.kind !== 'recorded') throw new Error('could not record an adverse event');
+      const id = recorded.event.id;
+      const identical = round % 2 === 0;
+      const outcomes = await Promise.all([moveAdverseEvent(eventDeps(pools[0]!.db), actor, id, 'closed'), moveAdverseEvent(eventDeps(pools[1]!.db), actor, id, identical ? 'closed' : 'investigating')]);
+      const history = await db.select({ seq: schema.adverseEventHistory.seq, from: schema.adverseEventHistory.fromStatus, to: schema.adverseEventHistory.toStatus }).from(schema.adverseEventHistory).where(eq(schema.adverseEventHistory.eventId, id)).orderBy(schema.adverseEventHistory.seq);
+      const [row] = await db.select({ status: schema.adverseEvents.status }).from(schema.adverseEvents).where(eq(schema.adverseEvents.id, id));
+      const chained = history.every((entry, index) => entry.seq === index + 1 && entry.from === (index === 0 ? null : history[index - 1]!.to)) && history.at(-1)!.to === row!.status;
+      const moved = outcomes.filter((outcome) => outcome.kind === 'moved').length;
+      const ok = chained && (identical ? moved === 1 && history.length === 2 : moved >= 1 && history.length === moved + 1);
+      if (!ok) eventProblems += 1;
+    }
+    check(eventProblems === 0, `two moves of one adverse event at once, ${EVENT_ROUNDS} times over two connections, left an unbroken history that ends on the stored status, and one of two identical moves refused`);
   } finally {
     await ctx.app.close();
   }
@@ -258,6 +285,7 @@ try {
     check(urdu !== null && urdu.flagged && urdu.gapPoints <= -18 && urdu.gapPoints >= -22, `the Urdu row ${when === 'afterReset' ? 'after the reset' : 'after the sweep'} is flagged 18 to 22 points below overall (${urdu?.gapPoints ?? 'missing'})`);
     check(JSON.stringify(onPostgres[when].urdu) === JSON.stringify(onPglite[when].urdu), `the Urdu row ${when === 'afterReset' ? 'after the reset' : 'after the sweep'} is the same on Postgres and PGlite`);
     check(JSON.stringify(onPostgres[when].funnel) === JSON.stringify(onPglite[when].funnel), `the funnel ${when === 'afterReset' ? 'after the reset' : 'after the sweep'} is the same on Postgres and PGlite`);
+    check(JSON.stringify(onPostgres[when].outcomes) === JSON.stringify(onPglite[when].outcomes) && typeof onPostgres[when].outcomes.remeasured === 'number', `the symptom-change figures ${when === 'afterReset' ? 'after the reset' : 'after the sweep'} are the same on Postgres and PGlite, with the seeded re-measured tickets counted and excluded`);
     check(onPostgres[when].funnel.every((view) => typeof view.stages[0]?.count === 'number'), `the funnel's first stage is a figure, not a suppressed cell, ${when === 'afterReset' ? 'after the reset' : 'after the sweep'} on Postgres`);
   }
 } catch (error) {

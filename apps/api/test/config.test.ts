@@ -18,6 +18,7 @@ describe('loadConfig', () => {
       summaryModel: 'claude-sonnet-5-5',
       anthropicApiKey: undefined,
       demoMode: false,
+      notifierDriver: 'log',
     });
   });
 

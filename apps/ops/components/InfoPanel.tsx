@@ -26,7 +26,17 @@ export function InfoPanel({ id, label }: { id: MetricDefinitionId; label: string
   const buttonId = useId();
   const definition = definitionOf(id);
   return (
-    <div className="flex flex-col gap-1.5" data-info={id}>
+    <div
+      className="flex flex-col gap-1.5"
+      data-info={id}
+      onKeyDown={(event) => {
+        // Escape closes the panel from the button or from inside it, and the focus is on the button afterwards.
+        if (event.key !== 'Escape' || !open) return;
+        event.stopPropagation();
+        setOpen(false);
+        document.getElementById(buttonId)?.focus();
+      }}
+    >
       <button
         id={buttonId}
         type="button"
@@ -48,12 +58,6 @@ export function InfoPanel({ id, label }: { id: MetricDefinitionId; label: string
           role="region"
           aria-labelledby={buttonId}
           tabIndex={-1}
-          onKeyDown={(event) => {
-            if (event.key !== 'Escape') return;
-            event.stopPropagation();
-            setOpen(false);
-            document.getElementById(buttonId)?.focus();
-          }}
           className="flex flex-col gap-2 rounded-input bg-ground p-3 text-start text-[13px] leading-5"
           data-info-panel={id}
         >

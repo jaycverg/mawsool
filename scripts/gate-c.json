@@ -424,5 +424,255 @@
     "id": "seam-crisis-contact-to-crisis-figures",
     "sentence": "A crisis screen, a tapped number and a confirmed contact on a phone reach the dashboard's crisis figures, each one higher by one",
     "browser": "seam-crisis-contact-reaches-the-crisis-figures"
+  },
+  {
+    "id": "mw-704-symptom-change-uses-only-shared-totals-with-the-reliable-change-thresholds",
+    "sentence": "Among re-measured tickets the dashboard shows the mean change in PHQ-9 and GAD-7 (the repeat total minus the referral total) and the shares with reliable improvement and deterioration, with thresholds from the rules config (PHQ-9 6, GAD-7 4, the threshold itself counting as reliable); only totals the person shared are used, and a re-measured ticket without consent or without both totals is excluded and counted as excluded",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "works out the mean change and the two shares on a fixture"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "counts a change one point short of the threshold as no reliable change"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "uses the newest referral total and the newest repeat total"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "includes a ticket that shared both totals of an instrument"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "leaves out a ticket whose scores consent was never given"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "leaves out a ticket whose stored bundle cannot be read"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "counts only tickets that reached re-measured"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "puts a re-measured reroute in the period"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "counts the excluded tickets among the re-measured ones"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "is served to the ops role on its own route"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "writes no bundle read and leaves every stored bundle as it was"
+      },
+      {
+        "file": "test/access.test.ts"
+      }
+    ],
+    "browser": "dashboard-shows-symptom-change-from-shared-totals-and-the-adverse-events-log"
+  },
+  {
+    "id": "mw-704-symptom-change-is-suppressed-and-follows-the-funnel",
+    "sentence": "Every symptom-change figure goes through suppression: nothing under ten re-measured, included or excluded tickets is shown, a share needs its part, its whole and what is left over at ten, the parts that add up to others are hidden together, and every figure is hidden whenever the funnel hides its re-measured stage",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "shows nothing when fewer than ten tickets were re-measured"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "hides the included count, the mean and both shares when fewer than ten tickets have both totals"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "hides the included count and what depends on it when fewer than ten were excluded"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "hides a share whose remainder is under ten"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "hides a share whose own count is under ten"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "never lets the three parts of the included tickets be told apart"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "hides every figure whenever the funnel hides its re-measured stage"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "follows the funnel: the funnel hides its re-measured stage under ten journeys"
+      },
+      {
+        "file": "test/metrics-outcomes.test.ts",
+        "name": "answers for each period of the funnel"
+      }
+    ]
+  },
+  {
+    "id": "mw-706-adverse-events-are-coded-recorded-on-two-clocks-and-hold-no-person",
+    "sentence": "Ops and admin staff record adverse events as a coded type from a fixed list, a severity, the time it happened on the care clock and the time it was recorded on the wall clock, and optionally the pseudonymous ticket id; no person id, name, phone, score, answer or free text is accepted or stored, and nothing in the log links to a person, a ticket or a crisis event",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/adverse-events.test.ts",
+        "name": "records a coded type, a severity, a time and an optional pseudonymous ticket id"
+      },
+      {
+        "file": "test/adverse-events.test.ts",
+        "name": "lets an admin record too"
+      },
+      {
+        "file": "test/adverse-events.test.ts",
+        "name": "takes the time it happened from the care clock"
+      },
+      {
+        "file": "test/adverse-events.test.ts",
+        "name": "refuses an event that happened after"
+      },
+      {
+        "file": "test/adverse-events.test.ts",
+        "name": "accepts an event that happened at exactly"
+      },
+      {
+        "file": "test/adverse-events.test.ts",
+        "name": "refuses a type, severity or ticket id outside the fixed lists"
+      },
+      {
+        "file": "test/adverse-events.test.ts",
+        "name": "stores nothing that could be tied to a person"
+      },
+      {
+        "file": "test/adverse-events.test.ts",
+        "name": "has no foreign key to a person"
+      },
+      {
+        "file": "test/adverse-events.test.ts",
+        "name": "returns no person field, no free text"
+      },
+      {
+        "file": "test/erase-reach.test.ts",
+        "name": "has a reviewed fate and a proof for each person-linked table"
+      }
+    ]
+  },
+  {
+    "id": "mw-706-adverse-events-move-only-along-legal-statuses",
+    "sentence": "An adverse event moves open to investigating to closed, or open straight to closed, every other move is a 409 that changes nothing, every move is recorded with its time, and two moves at once leave one winner (on real Postgres in gate:postgres)",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/adverse-events.test.ts",
+        "name": "allows open to investigating, investigating to closed, and open straight to closed"
+      },
+      {
+        "file": "test/adverse-events.test.ts",
+        "name": "answers 409 for every other move"
+      },
+      {
+        "file": "test/adverse-events.test.ts",
+        "name": "answers 404 for an event that does not exist"
+      },
+      {
+        "file": "test/adverse-events.test.ts",
+        "name": "lets one of two moves from the same status win"
+      }
+    ]
+  },
+  {
+    "id": "mw-706-adverse-events-are-listed-by-status-and-severity-for-ops-and-admin-alone",
+    "sentence": "The log is listed by status and severity on the ops dashboard, in both languages, and every route refuses a person, a clinician, the crisis line, an inbound caller and a clinic link",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/adverse-events.test.ts",
+        "name": "lists by status and by severity"
+      },
+      {
+        "file": "test/adverse-events.test.ts",
+        "name": "is readable by an admin as well as ops"
+      },
+      {
+        "file": "test/adverse-events.test.ts",
+        "name": "refuses every other principal on every route"
+      },
+      {
+        "file": "test/adverse-events.test.ts",
+        "name": "refuses a route that declares alsoAdmin"
+      },
+      {
+        "file": "test/access.test.ts"
+      },
+      {
+        "file": "test/route-registry.test.ts"
+      }
+    ],
+    "browser": "dashboard-shows-symptom-change-from-shared-totals-and-the-adverse-events-log"
+  },
+  {
+    "id": "mw-707-every-tile-has-a-definition-the-server-computes",
+    "sentence": "Each dashboard tile and section, existing and new, has a definition in both languages kept in one source; a test fails when a tile has no definition, when a definition has no wording, or when it names a numerator or denominator the metric route does not return, and docs/metric-definitions.md is generated from it and checked",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/metric-definitions.test.ts",
+        "name": "finds the tiles and sections on the dashboard"
+      },
+      {
+        "file": "test/metric-definitions.test.ts",
+        "name": "has a definition for each tile and section"
+      },
+      {
+        "file": "test/metric-definitions.test.ts",
+        "name": "puts an info panel on each section"
+      },
+      {
+        "file": "test/metric-definitions.test.ts",
+        "name": "is written in both languages for every definition"
+      },
+      {
+        "file": "test/metric-definitions.test.ts",
+        "name": "has the same keys in English and Arabic"
+      },
+      {
+        "file": "test/metric-definitions.test.ts",
+        "name": "names only fields that the metric route"
+      },
+      {
+        "file": "test/metric-definitions.test.ts",
+        "name": "fails for a field the response does not hold"
+      },
+      {
+        "file": "test/metric-definitions.test.ts",
+        "name": "returns each named field"
+      },
+      {
+        "file": "test/metric-definitions.test.ts",
+        "name": "is the file generated from the definitions"
+      },
+      {
+        "file": "test/metric-definitions.test.ts",
+        "name": "cannot be rendered for a definition with no wording"
+      }
+    ]
+  },
+  {
+    "id": "mw-707-info-panels-open-by-keyboard-and-touch-and-work-right-to-left",
+    "sentence": "Every info panel opens by keyboard and touch, is announced as a collapsed or expanded button, closes on Escape and works right to left",
+    "browser": "dashboard-info-panels-define-every-tile-by-keyboard-and-touch"
   }
 ]
