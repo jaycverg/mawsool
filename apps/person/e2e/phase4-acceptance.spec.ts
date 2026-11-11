@@ -1212,8 +1212,9 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect(Math.abs(trajectory.y - conditions.y)).toBeLessThan(2);
     expect(Math.abs(trajectory.x - conditions.x)).toBeGreaterThan(100);
     // The instrument's name stays on one line in the narrow column: "(GAD-7)" is never broken after its hyphen.
-    const nameBoxes = await panel.locator('[data-trajectory="gad7"] .whitespace-nowrap').evaluate((el) => el.getClientRects().length);
-    expect(nameBoxes).toBe(1);
+    // (Arabic text with a Latin name inside it is several boxes on one line, so the test counts the lines, not the boxes.)
+    const nameLines = await panel.locator('[data-trajectory="gad7"] .whitespace-nowrap').evaluate((el) => new Set([...el.getClientRects()].map((box) => Math.round(box.top))).size);
+    expect(nameLines).toBe(1);
     const labs = panel.locator('[data-section="labs"]');
     await expect(labs.locator('[data-mock-label]')).toHaveText(cmsg(locale, 'detail.labsMock'));
     expect(cmsg('en', 'detail.labsMock')).toBe('Sample — would come from Malaffi');

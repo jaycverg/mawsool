@@ -372,7 +372,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(note).toHaveText(omsg(locale, 'dash.funnel.note'));
     // The loop-closed tile reads the equity figures, which are always the last 90 days, so its note says so and does not move
     // with the period filter (the board's 30-day rate is not the 90-day one the tile shows).
-    const tileNote = dash.locator('[data-tile="loop-closed"] > div').last();
+    const tileNote = dash.locator('[data-tile="loop-closed"] > div').nth(2);
     const template = omsg(locale, 'dash.tiles.loopClosedOf', { count: '@@', of: '##' });
     const wording = new RegExp(`^${template.split(/@@|##/).map((piece) => piece.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\d,.]+')}$`);
     await expect(tileNote).toHaveText(wording);
@@ -616,8 +616,9 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     const countLine = parseFloat(String((await computed(dash, '[data-equity-row="ur"] > span:last-child', ['line-height']))['line-height']));
     expect(countColumn!.height, 'the count stays on one line').toBeLessThanOrEqual(countLine + 1);
     for (const tile of ['within-target', 'loop-closed']) {
-      const note = dash.locator(`[data-tile="${tile}"] > div`).last();
-      const lineHeight = parseFloat(String((await computed(dash, `[data-tile="${tile}"] > div:last-child`, ['line-height']))['line-height']));
+      // The tile's note is its third block, under the label and the figure; the info button follows it.
+      const note = dash.locator(`[data-tile="${tile}"] > div:nth-child(3)`);
+      const lineHeight = parseFloat(String((await computed(dash, `[data-tile="${tile}"] > div:nth-child(3)`, ['line-height']))['line-height']));
       expect((await note.boundingBox())!.height, `the ${tile} tile note fits one line`).toBeLessThanOrEqual(lineHeight + 1);
     }
     // The flag note: the board's 18px warning triangle, and only the word "Flag:" in bold.
@@ -827,7 +828,15 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
       await expect(panel.locator('[data-info-part="suppression"]')).toContainText(omsg(locale, `defs.suppression.${definition.suppression}`));
       // Right to left in Arabic: the panel's text starts at the right edge.
       expect(await panel.evaluate((element) => getComputedStyle(element).direction)).toBe(locale === 'ar' ? 'rtl' : 'ltr');
-      expect(await panel.evaluate((element) => getComputedStyle(element).textAlign)).toBe(locale === 'ar' ? 'right' : 'left');
+      expect(await panel.evaluate((element) => getComputedStyle(element).textAlign), 'the text starts at the reading edge, by logical alignment').toBe('start');
+      const edge = await panel.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const range = element.ownerDocument.createRange();
+        range.selectNodeContents(element.querySelector('dt')!);
+        const text = range.getBoundingClientRect();
+        return { startGap: element.ownerDocument.dir === 'rtl' ? box.right - text.right : text.left - box.left };
+      });
+      expect(edge.startGap, 'the first label sits at the start edge of the panel').toBeLessThan(24);
       await dash.keyboard.press('Escape');
       await expect(panel, `${id} closes on Escape`).toHaveCount(0);
       await expect(dash.locator(`[data-info="${id}"] button`).first(), `${id} gets the focus back`).toBeFocused();
