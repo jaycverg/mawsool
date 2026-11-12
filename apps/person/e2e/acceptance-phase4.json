@@ -125,7 +125,7 @@
   },
   {
     "id": "clinic-link-page-takes-its-credential-out-of-the-address-and-the-history-and-still-works",
-    "sentence": "Once a clinic link has loaded, the address bar and the tab's history hold the page's path and no ticket id or token; the page still makes its move from the credential it kept in memory; and a reload, which has no credential, shows the missing-link answer and nothing about the ticket"
+    "sentence": "Once a clinic link has loaded, the address bar and the tab's history hold the page's path and no ticket id or token, and a second link pasted into the same tab leaves no trace of its own either and shows the second ticket; the page still makes its move from the credential it kept in memory; and a reload, which has no credential, shows the missing-link answer and nothing about the ticket"
   },
   {
     "id": "clinic-link-page-is-honest-about-an-unconfirmed-answer-and-a-next-step-that-failed",

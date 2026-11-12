@@ -1833,7 +1833,7 @@
   },
   {
     "id": "mw-606-clinic-link-page-takes-its-credential-out-of-the-address-and-history",
-    "sentence": "Once a clinic link has loaded, the page takes the ticket id and the token out of the address bar and the history entry it opened in, keeping the path and query, and keeps the credential only in memory, so a reload has none",
+    "sentence": "Once a clinic link has loaded, and again for a second link pasted into the same tab, the page takes the ticket id and the token out of the address bar and the history entry it opened in, keeping the path and query, and keeps the credential only in memory, so a reload has none",
     "project": "apps/clinician",
     "tests": [
       {
