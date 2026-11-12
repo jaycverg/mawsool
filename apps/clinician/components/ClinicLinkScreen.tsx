@@ -3,7 +3,7 @@
 import type { ClinicLinkActResult, ClinicLinkMove, ClinicLinkTicket } from '@mawsool/types';
 import { formatDate, isLocale } from '@mawsool/ui';
 import { useLocale, useTranslations } from 'next-intl';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { actOnLink, credentialFromFragment, dropFragment, openLink, type LinkCredential } from '../lib/clinic-link';
 import { API_URL, displayCode } from '../lib/queue';
 
@@ -23,6 +23,7 @@ const NEXT_LINK_MESSAGE = { issued: 'freshLink', not_needed: 'noFreshLink', fail
  * deadline) and offers the moves the clinic may make. It never shows a score, a note, a summary or anything the person shared.
  * Nothing here is kept: the credential lives in this page's memory, and a move spends the link. Once read, the fragment is taken out of
  * the address bar and the history, so it is not left in the browser's history or in a copied address; a reload then asks for the link again.
+ * The same holds for a link pasted into this tab afterwards (a change of the fragment alone): it is read, removed and opened in place of the last.
  */
 export function ClinicLinkScreen() {
   const t = useTranslations('clinicLink');
@@ -33,6 +34,21 @@ export function ClinicLinkScreen() {
 
   // Read once: the fragment is removed below, and a development double-run of the effect must not find it gone.
   const read = useRef<{ credential: LinkCredential | null } | null>(null);
+  // Which opening of a link is the current one: an answer, or a move's result, for a link the page has since left is dropped.
+  const generation = useRef(0);
+
+  /** Opens the ticket a credential names. Whatever was showing is replaced, and a late answer for an earlier credential is ignored. */
+  const load = useCallback((credential: LinkCredential) => {
+    generation.current += 1;
+    const mine = generation.current;
+    setScreen({ k: 'loading' });
+    void openLink(window.fetch.bind(window), API_URL, credential).then((result) => {
+      if (generation.current !== mine) return;
+      if (result.status === 'ok') setScreen({ k: 'ready', credential, ticket: result.body, busy: false, note: null });
+      else if (result.status === 'conflict') setScreen({ k: 'refused', why: 'failed' });
+      else setScreen({ k: 'refused', why: result.status });
+    });
+  }, []);
 
   useEffect(() => {
     if (read.current === null) {
@@ -40,24 +56,35 @@ export function ClinicLinkScreen() {
       if (read.current.credential) dropFragment(window);
     }
     const { credential } = read.current;
-    if (!credential) return setScreen({ k: 'missing' });
-    let active = true;
-    void openLink(window.fetch.bind(window), API_URL, credential).then((result) => {
-      if (!active) return;
-      if (result.status === 'ok') setScreen({ k: 'ready', credential, ticket: result.body, busy: false, note: null });
-      else if (result.status === 'conflict') setScreen({ k: 'refused', why: 'failed' });
-      else setScreen({ k: 'refused', why: result.status });
-    });
-    return () => {
-      active = false;
+    if (credential) load(credential);
+    else setScreen({ k: 'missing' });
+
+    // A link pasted into the address bar of this same tab only changes the fragment: the page is not reloaded, so it is read and
+    // taken out of the address and history here as well, and the new ticket replaces the old.
+    const onHashChange = () => {
+      if (window.location.hash === '') return;
+      const next = credentialFromFragment(window.location.hash);
+      dropFragment(window);
+      if (next) load(next);
+      else {
+        generation.current += 1;
+        setScreen({ k: 'missing' });
+      }
     };
-  }, []);
+    window.addEventListener('hashchange', onHashChange);
+    return () => {
+      window.removeEventListener('hashchange', onHashChange);
+      generation.current += 1;
+    };
+  }, [load]);
 
   async function act(move: ClinicLinkMove) {
     if (screen.k !== 'ready' || screen.busy) return;
     const { credential, ticket } = screen;
+    const mine = generation.current;
     setScreen({ ...screen, busy: true, note: null });
     const result = await actOnLink(window.fetch.bind(window), API_URL, credential, move);
+    if (generation.current !== mine) return;
     if (result.status === 'ok') return setScreen({ k: 'done', move, nextLink: result.body.nextLink });
     if (result.status === 'invalid' || result.status === 'not_found' || result.status === 'withdrawn') return setScreen({ k: 'refused', why: result.status });
     setScreen({ k: 'ready', credential, ticket, busy: false, note: result.status === 'conflict' ? 'conflict' : 'failed' });

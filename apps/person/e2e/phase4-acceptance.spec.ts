@@ -1366,11 +1366,30 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
         expect(url).not.toContain(ticket.id);
       }
 
-      // The page still works from the credential it kept in memory: the move goes through, and the history stays clean.
+      // A second link pasted into the same tab only changes the fragment (the page is not reloaded): that credential leaves the
+      // address and the history as well, and the page shows the second ticket in place of the first.
+      const second = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A) });
+      const secondLink = (await loggedClinicLink(second.shortCode))!;
+      const secondToken = secondLink.split('.').at(-1)!;
+      expect(secondToken).not.toBe(token);
+      await page.evaluate((fragment) => {
+        window.location.hash = fragment;
+      }, secondLink.slice(secondLink.indexOf('#')));
+      await expect(page.locator('[data-link-state="ready"] [data-code]')).toHaveText(`${second.shortCode.slice(0, 2)}-${second.shortCode.slice(2)}`);
+      expect(page.url()).toBe(clean);
+      expect(await page.evaluate(() => window.location.hash)).toBe('');
+      for (const url of await historyUrls()) {
+        for (const credential of [token, secondToken, ticket.id, second.id]) expect(url).not.toContain(credential);
+      }
+
+      // The page still works from the credential it kept in memory: the move goes through for the second ticket, and the history stays clean.
       await page.locator('[data-move="acknowledged"]').click();
       await expect(page.locator('[data-link-state="done"][data-move-made="acknowledged"]')).toBeVisible();
-      expect((await stored(ticket.id)).events.map((event) => event.toState)).toEqual(['issued', 'acknowledged']);
-      for (const url of await historyUrls()) expect(url).not.toContain(token);
+      expect((await stored(second.id)).events.map((event) => event.toState)).toEqual(['issued', 'acknowledged']);
+      expect((await stored(ticket.id)).events.map((event) => event.toState)).toEqual(['issued']);
+      for (const url of await historyUrls()) {
+        for (const credential of [token, secondToken, ticket.id, second.id]) expect(url).not.toContain(credential);
+      }
 
       // A reload has no credential left to read, and says so instead of showing anything about the ticket.
       await page.reload();
