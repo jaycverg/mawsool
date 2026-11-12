@@ -19,8 +19,9 @@ Dropped from the request line, compared with the default:
 Also changed:
 
 - Fastify's own 404 writes "Route GET:/the/typed/address not found" to the log. The API now answers an unmatched route itself with the same reply and writes nothing but the request line.
-- An error is logged as its type, message and stack only. The default copies every own property of the error, and a database error carries the offending values in `detail` and `parameters`.
+- An error is logged as its type, message and the stack's frame lines only. The default copies every own property of the error, and a database error carries the offending values in `detail` and `parameters`.
+- A failed query is logged as the fixed message `database query failed` and its SQLSTATE (`code`, for example `42P01`), never as the message the database layer gives it. drizzle rethrows every failed query as `Failed query: <sql>` followed by `params: <the bound values>`, and those values are the ids and hashes the query was bound to (a hand-off, a person, a crisis event, a ticket, a token's hash); the same text is the first line of the error's stack, so the stack is cut to its `at ...` frames for every error. The error's `cause` is read for the SQLSTATE and never logged. This covers the request error handler, the clinic-link and staff sign-in delivery failures and the job queue's errors, which all log through the same serializer. `request-log.test.ts` drops a table under a real route on PGlite and reads the raw log lines.
 
 The serializers replace any a caller passes (`privateRequestLogger`), so the guarantee cannot be configured away. Credentials never travel in a URL: the clinic link and the staff sign-in send theirs in a body (the clinic link) or in the clinician app's page address (the staff sign-in link, which the API only issues). The notifier still writes the link it issues on purpose, as the mock delivery (`messaging.md`); that line is not a request line.
 
-Not covered: the logs of whatever sits in front of the API (a proxy, a platform), which see the real URL.
+Not covered: the logs of whatever sits in front of the API (a proxy, a platform), which see the real URL; and the message of an error that is not a database error (it is logged as written, so code that throws with a value in its message would log the value).
