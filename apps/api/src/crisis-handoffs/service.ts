@@ -41,6 +41,7 @@ function liveHandoffConsent() {
   );
 }
 
+/** Reads a stored note. A note stored before the band and the time were dropped parses too, and is returned without them. */
 function view(cipher: Cipher, row: HandoffRow): CrisisHandoffView {
   const content = CrisisHandoffContentSchema.parse(JSON.parse(cipher.decrypt(row.contentCiphertext, crisisHandoffContext(row.id))));
   return { id: row.id, receivedAt: row.createdAt.toISOString(), contactMadeAt: row.contactMadeAt?.toISOString() ?? null, ...content };

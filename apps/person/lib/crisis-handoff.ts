@@ -1,4 +1,4 @@
-import { type CrisisHandoffReceipt, type CrisisTrigger, type Locale, type PhoneNumber, type Screening, type ScoreEntry } from '@mawsool/types';
+import { type CrisisHandoffReceipt, type CrisisTrigger, type HandoffScore, type Locale, type PhoneNumber, type Screening } from '@mawsool/types';
 import type { StorageAdapter } from '@mawsool/ui';
 import { z } from 'zod';
 import type { NewId, Now } from './clock';
@@ -70,13 +70,16 @@ function changeHandoffs(storage: StorageAdapter, change: (records: HandoffRecord
 export interface HandoffPreview {
   language: Locale;
   trigger: CrisisTrigger;
-  scores: ScoreEntry[];
+  scores: HandoffScore[];
   callbackNumber: PhoneNumber | null;
 }
 
-/** The totals of the latest finished check-ins (never item answers), the language, why the screen opened and the number if one was typed. */
+/**
+ * The totals of the latest finished check-ins (an instrument and a total each: never an item answer, a band or the time it was taken,
+ * none of which the crisis line's console shows), the language, why the screen opened and the number if one was typed.
+ */
 export function buildHandoffPreview(input: { screenings: readonly Screening[]; language: Locale; trigger: CrisisTrigger; callback: PhoneNumber | null }): HandoffPreview {
-  return { language: input.language, trigger: input.trigger, scores: buildContent(input.screenings, {}, EMPTY_SHARING).scores ?? [], callbackNumber: input.callback };
+  return { language: input.language, trigger: input.trigger, scores: (buildContent(input.screenings, {}, EMPTY_SHARING).scores ?? []).map(({ instrument, total }) => ({ instrument, total })), callbackNumber: input.callback };
 }
 
 /** How long the hand-off waits on the phone's own store for one step before it gives up. The crisis screen never waits on this. */

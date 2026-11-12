@@ -108,7 +108,7 @@ export function handoffBody(crisisEventId: string, overrides: Record<string, unk
     consented: true,
     language: 'en',
     trigger: 'phq9_item9',
-    scores: [{ instrument: 'phq9', total: 14, band: 'moderate', takenAt: '2026-11-01T08:00:00+04:00' }],
+    scores: [{ instrument: 'phq9', total: 14 }],
     callbackNumber: CALLBACK,
     ...overrides,
   };

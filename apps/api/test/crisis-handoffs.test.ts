@@ -130,8 +130,34 @@ describe('the optional hand-off to the mock crisis line', () => {
     const list = await consoleGet('/crisis-handoffs');
     expect(list.statusCode).toBe(200);
     const item = list.json().items.find((entry: { id: string }) => entry.id === receipt.handoffId);
-    expect(item).toMatchObject({ language: 'en', trigger: 'phq9_item9', callbackNumber: CALLBACK, contactMadeAt: null, scores: [{ instrument: 'phq9', total: 14 }] });
+    expect(item).toMatchObject({ language: 'en', trigger: 'phq9_item9', callbackNumber: CALLBACK, contactMadeAt: null });
+    expect(item.scores).toEqual([{ instrument: 'phq9', total: 14 }]);
     expect(Object.keys(item).sort()).toEqual(['callbackNumber', 'contactMadeAt', 'id', 'language', 'receivedAt', 'scores', 'trigger']);
+  });
+
+  it('stores a total as an instrument and a total only: a band and a time sent by an older copy of the app are dropped, not stored and not shown', async () => {
+    const OLD_SCORES = [{ instrument: 'phq9', total: 14, band: 'moderate', takenAt: '2026-11-01T08:00:00+04:00' }, { instrument: 'gad7', total: 9, band: 'mild', takenAt: '2026-11-01T08:05:00+04:00' }];
+    const { receipt } = await handedOff({ scores: OLD_SCORES });
+    const [row] = await testDb.db.select().from(schema.crisisHandoffs).where(eq(schema.crisisHandoffs.id, receipt.handoffId));
+    const stored = JSON.parse(cipher.decrypt(row!.contentCiphertext, crisisHandoffContext(row!.id)));
+    expect(stored.scores).toEqual([{ instrument: 'phq9', total: 14 }, { instrument: 'gad7', total: 9 }]);
+    const read = await consoleGet(`/crisis-handoffs/${receipt.handoffId}`);
+    expect(read.json().scores).toEqual([{ instrument: 'phq9', total: 14 }, { instrument: 'gad7', total: 9 }]);
+    expect(read.body).not.toMatch(/moderate|mild|takenAt|2026-11-01T08/);
+  });
+
+  it('still reads a note stored before the band and the time were dropped, and shows it without them', async () => {
+    const { receipt } = await handedOff();
+    const [row] = await testDb.db.select().from(schema.crisisHandoffs).where(eq(schema.crisisHandoffs.id, receipt.handoffId));
+    const old = { language: 'en', trigger: 'phq9_item9', scores: [{ instrument: 'phq9', total: 21, band: 'severe', takenAt: '2026-10-30T09:00:00+04:00' }], callbackNumber: CALLBACK };
+    await testDb.db.update(schema.crisisHandoffs).set({ contentCiphertext: cipher.encrypt(JSON.stringify(old), crisisHandoffContext(row!.id)) }).where(eq(schema.crisisHandoffs.id, row!.id));
+    for (const url of [`/crisis-handoffs/${receipt.handoffId}`, '/crisis-handoffs']) {
+      const read = await consoleGet(url);
+      expect(read.statusCode, url).toBe(200);
+      const item = url.endsWith('s') ? read.json().items.find((entry: { id: string }) => entry.id === receipt.handoffId) : read.json();
+      expect(item.scores, url).toEqual([{ instrument: 'phq9', total: 21 }]);
+      expect(read.body, url).not.toMatch(/severe|takenAt|2026-10-30/);
+    }
   });
 
   it('deletes the row on revoke: the raw row and its ledger row are gone, and the console read is 404', async () => {
