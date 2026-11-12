@@ -23,8 +23,6 @@ export type CallResult<T> =
       status: number | null;
       /** The API's error code on a refusal, when it sent one. */
       error?: string | null;
-      /** Set when the request was sent and no answer came before the call's own time limit, so the server may still have acted on it. */
-      timedOut?: true;
     };
 
 const registered = new WeakMap<StorageAdapter, string>();
@@ -100,8 +98,8 @@ async function callOnce<T>(deps: ServerDeps, method: 'GET' | 'POST' | 'PUT' | 'D
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(10_000),
     });
-  } catch (error) {
-    return { ok: false, reason: 'offline', status: null, ...((error as { name?: unknown } | null)?.name === 'TimeoutError' ? { timedOut: true as const } : {}) };
+  } catch {
+    return { ok: false, reason: 'offline', status: null };
   }
   if (response.status >= 500) return { ok: false, reason: 'offline', status: response.status };
   let parsed: unknown = null;

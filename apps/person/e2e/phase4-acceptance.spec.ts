@@ -1181,7 +1181,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await page.locator('[data-handoff-offer]').click();
     await page.locator('[data-handoff-consent]').check();
     await page.locator('[data-handoff-send]').click();
-    await expect(page.locator('[data-handoff-failure="offline"]')).toHaveText(msg(locale, 'crisis.handoffOffline'));
+    await expect(page.locator('[data-handoff-failure="unconfirmed"]')).toHaveText(msg(locale, 'crisis.handoffNotConfirmed'));
     // The numbers, the block and the choices are as they were.
     for (const number of ['800725462', '998', '999']) await expect(page.locator(`a[href="tel:${number}"]`)).toBeVisible();
     expect(await storedHandoffs()).toHaveLength(before);

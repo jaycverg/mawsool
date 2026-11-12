@@ -1,4 +1,4 @@
-import { type BrowserContext, type Page, type Request } from '@playwright/test';
+import { type BrowserContext, type Page, type Request, type Route } from '@playwright/test';
 import { expect, test, type ConsoleGuard } from './fixtures';
 import acceptance from './acceptance-phase3.json';
 import {
@@ -136,6 +136,17 @@ const SEEN_AT_MS = Date.parse('2026-10-01T10:00:00+04:00');
 const SIX_WEEKS_MS = 42 * DAY_MS;
 /** The moment the repeat check opens for the ticket the stub serves: the exact value every start link must carry as `since`. */
 const OPENS_MS = SEEN_AT_MS + SIX_WEEKS_MS;
+
+/**
+ * Makes the real server hold the statistics choice for the person whose request this is, as the send would have if the ticket were
+ * real (the ticket is a stub, so the real route would not know it). The server's own state, not a faked answer, is then what the
+ * phone's later reads of its choices see.
+ */
+async function serverCountsTheChoice(route: Route): Promise<void> {
+  const authorization = route.request().headers().authorization;
+  const response = await fetch(`${API}/me/outcome-statistics`, { method: 'PUT', headers: { authorization: authorization!, 'content-type': 'application/json' }, body: JSON.stringify({ optIn: true }) });
+  expect(response.ok).toBe(true);
+}
 
 /**
  * A ticket the clinic saw on 1 October, as the API serves it, for the screens that depend on a date six weeks on: the API's
@@ -1961,9 +1972,11 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
 
     // Turn it on where the totals are sent.
     const id = await stubSeenTicket(page, locale);
-    await page.route(`${API}/me/tickets/${id}/remeasure`, (route) => route.fulfill({ json: { state: 'closed', scoresShared: true, events: [] } }));
-    // The send is stubbed, so the real server never held the choice: this answer stands in for a server that counted it, which is what Settings must then show.
-    await page.route(`${API}/me/opt-ins`, (route) => route.fulfill({ json: { equityOptIn: false, outcomeStatsOptIn: true } }));
+    // The ticket is a stub, so the send is answered here; the real server is told the choice the way a send it received would have told it.
+    await page.route(`${API}/me/tickets/${id}/remeasure`, async (route) => {
+      await serverCountsTheChoice(route);
+      await route.fulfill({ json: { state: 'closed', scoresShared: true, events: [] } });
+    });
     await context.clock.setFixedTime(new Date(SEEN_AT_MS + SIX_WEEKS_MS));
     await page.goto(`/${locale}/ticket/?id=${id}`);
     await takeRepeatCheck(page, locale, id);
@@ -2092,9 +2105,11 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await visitOnline(page, locale);
     const id = await stubSeenTicket(page, locale);
     consoleGuard.allow({ url: `${API}/me/tickets/${id}/remeasure`, expect: 'net::ERR_FAILED', reason: 'the test drops the reply of the send on purpose: the server may have counted the totals, so the phone must keep the choice it can turn off' });
-    await page.route(`${API}/me/tickets/${id}/remeasure`, (route) => route.abort());
-    // The reply was lost, not the request: the server counted the choice, so its answer to the phone's read says it is on.
-    await page.route(`${API}/me/opt-ins`, (route) => route.fulfill({ json: { equityOptIn: false, outcomeStatsOptIn: true } }));
+    // The request arrives and the reply is lost: the real server holds the choice, and the phone cannot know.
+    await page.route(`${API}/me/tickets/${id}/remeasure`, async (route) => {
+      await serverCountsTheChoice(route);
+      await route.abort();
+    });
     await context.clock.setFixedTime(new Date(SEEN_AT_MS + SIX_WEEKS_MS));
     await page.goto(`/${locale}/ticket/?id=${id}`);
     await takeRepeatCheck(page, locale, id);

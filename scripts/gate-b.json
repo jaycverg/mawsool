@@ -3066,15 +3066,106 @@
   },
   {
     "id": "a-lost-statistics-reply-keeps-the-settings-turn-off",
-    "sentence": "When the reply to a repeat check sent with the statistics choice never arrives, the phone keeps its note that the choice may be on and Settings still shows the statistics panel with its turn-off",
+    "sentence": "When the reply to a repeat check sent with the statistics choice never arrives but the server did take the choice, the phone keeps its note that the choice may be on and Settings, which asks the real server, still shows the statistics panel with its turn-off; and a read of the server's choices that overlaps a send never leaves the choice on at the server and off on the phone",
     "project": "apps/person",
     "tests": [
       {
         "file": "test/outcome-statistics.test.tsx",
         "name": "writes the note before a send that carries true, and keeps it when the reply is lost"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "keeps the statistics note when the read is answered off while the send that turns it on is still on its way, and after it ends"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "keeps the equity note when the read began before a send that has already finished by the time the read is answered"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "turns the note off for a choice cleared at the server after the send that set it has ended"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "does not let a mark left behind by a tab that closed mid-send block the idle limit for ever"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "brackets a send with a start and an end mark whatever way it ends"
       }
     ],
     "browser": "statistics-note-lost-reply-keeps-the-settings-turn-off-visible"
+  },
+  {
+    "id": "a-choice-only-the-phone-remembers-is-checked-with-the-server-before-it-is-sent",
+    "sentence": "A group-totals or statistics choice that is sent as on only because the phone's stored note says so (the person did not tick the box on this screen) is sent only after the server confirms it holds the choice: with the server off and the daily read not run nothing on is sent, the note is turned off and the screen unticks the box and says why in both languages; when the server cannot be asked or answers something unusable nothing on is sent either; a box the person ticked on the screen is sent as before; a send the phone cannot mark is not made",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "sends no true, tells the screen, and turns the note off when the server has the choice off and the daily read has not run"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "sends no true when the server cannot be reached, and leaves the note as it was"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "sends no true when the server answers something that is not the two choices, and leaves the note as it was"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "sends the true, with the buckets, when the server confirms it holds the choice"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "sends the true as it always did, without asking, when the person ticked the group-totals box on this screen"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "sends the off, without asking, when the box was unticked and the phone held a note, and nothing when there is no note"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "reports a server that cannot be reached or refuses, and does not send when it cannot mark the send"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "sends nothing, and turns the note off, when the server has the choice off and the daily read has not run"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "sends nothing when the server cannot be reached, and leaves the note as it was"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "sends nothing when the server answers something that is not the two choices, and leaves the note as it was"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "sends the true when the server confirms it holds the choice"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "sends the true as it always did, without asking, when the person ticked the statistics box on this screen"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "asks about nothing when the choice sent is off or left out, whatever its source"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "does not make the send when it cannot mark it"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "says, in en, why the choice was unticked and not sent, in the words of the other notes on the screen"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "says, in ar, why the choice was unticked and not sent, in the words of the other notes on the screen"
+      }
+    ]
   },
   {
     "id": "the-reminder-notifier-is-mounted-once-by-the-layout-and-a-tap-reopens-the-app",

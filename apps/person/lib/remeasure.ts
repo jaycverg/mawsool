@@ -2,6 +2,7 @@ import { isCompleteScreening, remeasureAvailableAt } from '@mawsool/rules';
 import { RemeasureResultSchema, type PersonTicketView, type RemeasureRequest, type Screening } from '@mawsool/types';
 import type { StorageAdapter } from '@mawsool/ui';
 import { saveOutcomeStatistics } from './outcome-statistics';
+import { confirmStoredChoice, withChoiceSend } from './server-choices';
 import { loadScreenings } from './screening-store';
 import { callServer, type ServerDeps } from './server';
 
@@ -88,31 +89,56 @@ export async function sendRemeasure(server: ServerDeps, ticketId: string, scores
 /**
  * - everything `RemeasureSent` says, and
  * - `note_failed`: the phone could not write its note that the statistics choice may be on at the server, so nothing was sent
- *   (a send that could turn the choice on without a note of it would leave Settings with no way to turn it off).
+ *   (a send that could turn the choice on without a note of it would leave Settings with no way to turn it off);
+ * - `choice_cleared` / `choice_unread`: the statistics box was ticked only by the phone's stored note, and the server was asked first
+ *   (`confirmStoredChoice`): it does not hold the choice, or could not be asked. Nothing was sent, the note is off if the server said so,
+ *   and the screen unticks the box and says why; ticking it again is the person's choice.
  */
-export type RepeatCheckSent = RemeasureSent | 'note_failed';
+export type RepeatCheckSent = RemeasureSent | 'note_failed' | 'choice_cleared' | 'choice_unread';
+
+/**
+ * Where a statistics `true` comes from. `ticked`: the person ticked the box on this screen. `noted`: only the phone's stored note stands
+ * behind it (the box was pre-ticked from the note), so the server is asked before it is sent.
+ */
+export interface FinishOptions {
+  statisticsSource: 'ticked' | 'noted';
+  now?: () => Date;
+}
 
 /**
  * Finishes the repeat check, keeping the phone's note of the statistics choice honest about what the server may hold, the way the
  * phone notes `serverMayHoldPhone` before it sends a number. The note means "may be on at the server".
  *
+ *  - A `true` that only the stored note stands behind is sent only after the server confirms it holds the choice; otherwise nothing is
+ *    sent (`choice_cleared` / `choice_unread`). A `true` the person ticked on this screen goes as it always did.
  *  - A send that carries `true` writes the note `true` BEFORE it is made, and a note that cannot be written stops the send
  *    (`note_failed`). The note then stays `true` whatever follows: a lost reply or an answer that cannot be read may still have
  *    turned it on. A refused send (409) leaves it `true` too: another tab's send may have turned it on.
  *  - A send that carries `false` clears the note only on a confirmed `done`; a lost reply leaves it as it was, and so does a note
  *    that cannot be cleared (the choice then still shows in Settings, where it can be turned off again).
  *  - A send with no choice (`undefined`, the totals were not sent) leaves the note alone.
+ *  - A send with a choice is bracketed by `withChoiceSend`, so a read of the server's choices that overlaps it cannot turn the note off
+ *    from an answer given before the server took the choice; a send that cannot be marked is not made (`note_failed`).
  */
-export async function finishRepeatCheck(server: ServerDeps, ticketId: string, scores: RemeasureRequest['scores'], statisticsOptIn: boolean | undefined): Promise<RepeatCheckSent> {
+export async function finishRepeatCheck(server: ServerDeps, ticketId: string, scores: RemeasureRequest['scores'], statisticsOptIn: boolean | undefined, options: FinishOptions): Promise<RepeatCheckSent> {
   if (statisticsOptIn === undefined) return sendRemeasure(server, ticketId, scores);
-  if (statisticsOptIn) {
-    try {
-      await saveOutcomeStatistics(server.storage, true);
-    } catch {
-      return 'note_failed';
-    }
+  const now = options.now ?? (() => new Date());
+  if (statisticsOptIn && options.statisticsSource === 'noted') {
+    const confirmed = await confirmStoredChoice(server, 'statistics', now);
+    if (confirmed === 'cleared') return 'choice_cleared';
+    if (confirmed === 'unread') return 'choice_unread';
   }
-  const outcome = await sendRemeasure(server, ticketId, scores, statisticsOptIn);
-  if (outcome === 'done' && !statisticsOptIn) await saveOutcomeStatistics(server.storage, false).catch(() => undefined);
-  return outcome;
+  const sent = await withChoiceSend(server.storage, 'statistics', now, async (): Promise<RepeatCheckSent> => {
+    if (statisticsOptIn) {
+      try {
+        await saveOutcomeStatistics(server.storage, true);
+      } catch {
+        return 'note_failed';
+      }
+    }
+    const outcome = await sendRemeasure(server, ticketId, scores, statisticsOptIn);
+    if (outcome === 'done' && !statisticsOptIn) await saveOutcomeStatistics(server.storage, false).catch(() => undefined);
+    return outcome;
+  });
+  return sent.started ? sent.value : 'note_failed';
 }

@@ -291,14 +291,20 @@ describe('learning that the server switched a choice off', () => {
     expect(await takeClearedNote(p.storage)).toBeNull();
   });
 
-  it('gives no note when the phone reached the server recently and still disagrees with it, since six months of idleness is then not the reason', async () => {
+  it('gives no note when the phone reached the server recently and still disagrees with it, or has never recorded a reach, since six months of idleness is then not the reason', async () => {
     const recent = phone({ statistics: true, serverStatistics: false, lastReached: NOT_QUITE_IDLE_DAY });
     expect(await keepSeenToday(recent.deps)).toBe('turned_off');
     expect(await loadOutcomeStatistics(recent.storage)).toBe(false);
     expect(await takeClearedNote(recent.storage)).toBeNull();
-    const unknown = phone({ statistics: true, serverStatistics: false });
-    expect(await keepSeenToday(unknown.deps)).toBe('turned_off');
-    expect(await takeClearedNote(unknown.storage)).toEqual({ equity: false, statistics: true });
+    // A phone that never reached the server (a statistics send that failed before it got there) has no evidence of idleness either.
+    const never = phone({ statistics: true, serverStatistics: false });
+    expect(await keepSeenToday(never.deps)).toBe('turned_off');
+    expect(await loadOutcomeStatistics(never.storage)).toBe(false);
+    expect(await takeClearedNote(never.storage)).toBeNull();
+    // At the limit the note is given.
+    const idle = phone({ statistics: true, serverStatistics: false, lastReached: IDLE_DAY });
+    expect(await keepSeenToday(idle.deps)).toBe('turned_off');
+    expect(await takeClearedNote(idle.storage)).toEqual({ equity: false, statistics: true });
   });
 
   it('keeps the note of an earlier turn-off that Settings has not shown yet when a later read turns off the other choice', async () => {
