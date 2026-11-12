@@ -1432,9 +1432,11 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     const bodies: Record<string, unknown>[] = [];
     const reads: string[] = [];
     const inFlight = new Set<Request>();
+    /** Reads this test answered itself (the failed ones), which are settled whether or not the browser ever reports their end. */
+    const answered = new WeakSet<Request>();
     page.on('request', (request) => {
       if (request.url() === `${API}/me/opt-ins`) {
-        inFlight.add(request);
+        if (!answered.has(request)) inFlight.add(request);
         reads.push(request.method());
       }
     });
@@ -1444,10 +1446,23 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     // the phone then still holds a note that the real server (which was never told, the send below is stubbed) does not.
     consoleGuard.allow({ url: `${API}/me/opt-ins`, expect: 503, reason: 'the test fails the phone read of its choices on purpose, so the phone still holds an out-of-date note when the screen asks the server' });
     let failReads = true;
-    await page.route(`${API}/me/opt-ins`, (route) => (failReads ? route.fulfill({ status: 503, json: { error: 'unavailable', message: 'down' } }) : route.continue()));
+    await page.route(`${API}/me/opt-ins`, async (route) => {
+      if (!failReads) return route.continue();
+      // A page that navigates away just as its read starts (every page load makes one here) takes the request with it: the browser then reports neither a
+      // response nor a failure, so the read would stay in `inFlight` for ever. The failed answer is settled here, the moment it has been given.
+      try {
+        await route.fulfill({ status: 503, json: { error: 'unavailable', message: 'down' } });
+      } finally {
+        answered.add(route.request());
+        inFlight.delete(route.request());
+      }
+    });
     await visitOnline(page, locale);
     const id = await stubSeenTicket(page, locale);
+    /** How many reads of the choices had been made when each send arrived: a read made for the send came before it. */
+    const readsAtSend: number[] = [];
     await page.route(`${API}/me/tickets/${id}/remeasure`, async (route) => {
+      readsAtSend.push(reads.length);
       bodies.push(route.request().postDataJSON() as Record<string, unknown>);
       await route.fulfill({ json: { state: 'closed', scoresShared: true, events: [] } });
     });
@@ -1458,6 +1473,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     };
     const finish = page.locator('[data-control="finish-remeasure"]');
     const box = page.locator('[data-control="count-in-statistics"]');
+    const readsEnded = () => expect.poll(() => [...inFlight].map((request) => request.url())).toEqual([]);
 
     // A first repeat check in which the person ticks both boxes: the phone notes the choice (the stubbed send never tells the real server).
     await toTotals();
@@ -1472,7 +1488,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await toTotals();
     await page.locator('[data-control="share-totals"]').check();
     await expect(box).toBeChecked();
-    await expect.poll(() => [...inFlight].map((request) => request.url())).toEqual([]);
+    await readsEnded();
     failReads = false;
     await finish.click();
     const note = page.locator('[data-choice-note="cleared"]');
@@ -1493,14 +1509,14 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await toTotals();
     await page.locator('[data-control="share-totals"]').check();
     await expect(box).not.toBeChecked();
-    await expect.poll(() => [...inFlight].map((request) => request.url())).toEqual([]);
+    await readsEnded();
     const readsBefore = reads.length;
     await box.check();
     await finish.click();
     await expect(page).toHaveURL(ticketUrl(locale));
     expect(bodies).toHaveLength(1);
     expect(bodies[0]).toMatchObject({ statisticsOptIn: true });
-    expect(reads.length, 'ticked on the screen: no read of the server was made for it').toBe(readsBefore);
+    expect(readsAtSend.at(-1), 'ticked on the screen: no read of the server was made for it before the send went out').toBe(readsBefore);
   },
 
   async 'a-background-read-that-gets-401-registers-nothing-and-records-no-day'({ page, locale, consoleGuard }) {
