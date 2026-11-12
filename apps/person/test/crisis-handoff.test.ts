@@ -231,6 +231,47 @@ describe('sending the hand-off', () => {
     expect(await sendHandoff({ ...online.deps, isOnline: () => true }, input())).toBe('sent');
   });
 
+  describe('a retry after an attempt that could not be confirmed', () => {
+    /** A first attempt whose reply was lost, so the server may hold the note, and its record. */
+    async function afterAnUnconfirmedAttempt() {
+      const s = setup('lost-reply');
+      expect(await sendHandoff(s.deps, input())).toBe('unconfirmed');
+      const first = (await loadHandoff(s.store.storage))!;
+      expect(first.state).toBe('sending');
+      return { s, first };
+    }
+
+    it('says unconfirmed and keeps the record, Stop included, when the phone has since forgotten its registration and cannot make a new one', async () => {
+      const { s, first } = await afterAnUnconfirmedAttempt();
+      forgetRegistration(s.store.storage);
+      s.serverDeps.fetch = (async () => new Response('{}', { status: 503 })) as unknown as typeof fetch;
+      expect(await sendHandoff(s.deps, input())).toBe('unconfirmed');
+      expect(await loadHandoffs(s.store.storage)).toEqual([first]);
+    });
+
+    it('says unconfirmed and keeps the record when the browser reports no network on the retry, and sends nothing', async () => {
+      const { s, first } = await afterAnUnconfirmedAttempt();
+      const posted = posts(s.calls).length;
+      expect(await sendHandoff({ ...s.deps, isOnline: () => false }, input())).toBe('unconfirmed');
+      expect(posts(s.calls)).toHaveLength(posted);
+      expect(await loadHandoffs(s.store.storage)).toEqual([first]);
+    });
+
+    it('says unconfirmed and keeps the record when the crisis queue cannot be flushed on the retry', async () => {
+      const { s, first } = await afterAnUnconfirmedAttempt();
+      s.flushFn.mockResolvedValueOnce({ outcome: 'offline', sent: 0, rejected: 0 });
+      expect(await sendHandoff(s.deps, input())).toBe('unconfirmed');
+      expect(await loadHandoffs(s.store.storage)).toEqual([first]);
+    });
+
+    it('still says offline for a first attempt at each of those exits (nothing predates it)', async () => {
+      const first = setup();
+      expect(await sendHandoff({ ...first.deps, isOnline: () => false }, input())).toBe('offline');
+      const flush = setup('created', 'offline');
+      expect(await sendHandoff(flush.deps, input())).toBe('offline');
+    });
+  });
+
   it('keeps the outcomes where nothing was sent for certain: stopped, refused, not ready, could not prepare, invalid number', async () => {
     expect(await sendHandoff(setup('stopped').deps, input())).toBe('stopped');
     expect(await sendHandoff(setup('rejected').deps, input())).toBe('rejected');

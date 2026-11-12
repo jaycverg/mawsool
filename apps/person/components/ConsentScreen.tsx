@@ -4,7 +4,7 @@ import { redact, wordCount } from '@mawsool/consent';
 import { AGE_BANDS, CARE_LANGUAGES, GENDERS, REGIONS, SUMMARY_WORD_LIMIT, SummaryDraftSchema, type BundleContent, type ConsentElement, type Demographics, type Preferences, type Screening, type Service } from '@mawsool/types';
 import { isLocale } from '@mawsool/ui';
 import { useLocale, useTranslations } from 'next-intl';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { API_URL } from '../lib/api';
 import { deviceFetch } from '../lib/net';
 import { deviceNow } from '../lib/clock';
@@ -347,6 +347,11 @@ function Shell({ lang, t, children }: { lang: 'ar' | 'en'; t: Translate; childre
 
 function EquityPanel({ t, to, value, note, onChange }: { t: Translate; to: Translate; value: { on: boolean; buckets: Partial<Demographics> }; note: 'cleared' | 'unread' | null; onChange: (next: { on: boolean; buckets: Partial<Demographics> }) => void }) {
   const set = (key: keyof Demographics, entry: string) => onChange({ ...value, buckets: { ...value.buckets, [key]: entry === '' ? null : entry } });
+  // The person pressed Send at the foot of the screen and this panel is higher up: when its note appears it is brought into view, since it says the referral has not gone.
+  const noteRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (note !== null) noteRef.current?.scrollIntoView({ block: 'center' });
+  }, [note]);
   const fields = [
     { key: 'ageBand', label: t('ageBand'), values: AGE_BANDS, text: (v: string) => t(`ageBands.${v}`) },
     { key: 'gender', label: t('gender'), values: GENDERS, text: (v: string) => t(`genders.${v}`) },
@@ -361,7 +366,7 @@ function EquityPanel({ t, to, value, note, onChange }: { t: Translate; to: Trans
         <input type="checkbox" id="equity-on" className="size-6 accent-accent" checked={value.on} onChange={(event) => onChange({ ...value, on: event.target.checked })} />
         {t('equityToggle')}
       </label>
-      {note !== null && <p role="alert" className="t-small text-danger" data-equity-note={note}>{t(note === 'cleared' ? 'equityCleared' : 'equityUnread')}</p>}
+      {note !== null && <p ref={noteRef} role="alert" className="t-small text-danger" data-equity-note={note}>{t(note === 'cleared' ? 'equityCleared' : 'equityUnread')}</p>}
       {value.on &&
         fields.map((field) => (
           <div key={field.key} className="flex flex-col gap-1">

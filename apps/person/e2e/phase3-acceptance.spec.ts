@@ -1362,6 +1362,145 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect(await person()).toMatchObject({ equityOptIn: false, ageBand: null });
   },
 
+  async 'consent-screen-sends-no-group-totals-true-the-server-has-off-and-says-the-referral-has-not-gone'({ page, locale }) {
+    const puts: Record<string, unknown>[] = [];
+    const referrals: string[] = [];
+    const inFlight = new Set<Request>();
+    page.on('request', (request) => {
+      if (request.url().startsWith(API)) inFlight.add(request);
+      if (request.url() === `${API}/me/equity` && request.method() === 'PUT') puts.push(JSON.parse(request.postData() ?? '{}'));
+      if (request.url() === `${API}/tickets` && request.method() === 'POST') referrals.push(request.url());
+    });
+    page.on('response', (response) => inFlight.delete(response.request()));
+    page.on('requestfailed', (request) => inFlight.delete(request));
+    const settled = () => expect.poll(() => [...inFlight].map((request) => `${request.method()} ${request.url()}`)).toEqual([]);
+    await toConsent(page, locale);
+    await page.locator('#equity-on').check();
+    await page.locator('#equity-ageBand').selectOption('25_34');
+    await send(page, locale);
+    await expect(page).toHaveURL(ticketUrl(locale));
+    const { ticket } = await stored(ticketIdOf(page));
+    const person = async () => (await (await fetch(`${INSPECT}/persons/${ticket.personId}`)).json()) as { equityOptIn: boolean };
+    await expect(page.locator('[data-screen="ticket"] [data-ticket]')).toBeVisible();
+    await waitForStored(page, 'server:last-seen-sent');
+    await settled();
+    await page.goto('about:blank');
+    await settled();
+
+    // The server then switches the choice off (the idle limit), while the phone, which has not heard, still notes it on and pre-ticks the box.
+    expect((await fetch(`${INSPECT}/e2e/last-seen/${ticket.personId}?daysAgo=180`, { method: 'POST' })).ok).toBe(true);
+    expect(((await (await fetch(`${INSPECT}/e2e/sweep`, { method: 'POST' })).json()) as { optInsCleared: number }).optInsCleared).toBeGreaterThanOrEqual(1);
+    expect((await person()).equityOptIn).toBe(false);
+    puts.length = 0;
+    referrals.length = 0;
+    const toTheConsentScreen = async () => {
+      await page.goto(`/${locale}/options/`);
+      await page.locator('[data-tier][data-lead] button').click();
+      await expect(page).toHaveURL(consentUrl(locale));
+    };
+    await toTheConsentScreen();
+    await expect(page.locator('#equity-on')).toBeChecked();
+
+    // Send: the phone asks the server first, finds it off, sends no `true` and not the referral either, unticks the box, and says so where the person can see it.
+    await send(page, locale);
+    const note = page.locator('[data-equity-note="cleared"]');
+    await expect(note).toHaveText(msg(locale, 'consent.equityCleared'));
+    await expect(note).toBeInViewport({ ratio: 1 });
+    await expect(page.locator('#equity-on')).not.toBeChecked();
+    await expect(page).toHaveURL(consentUrl(locale));
+    expect(puts, 'no group-totals request left the phone').toEqual([]);
+    expect(referrals, 'the referral was not sent either').toEqual([]);
+    expect((await person()).equityOptIn).toBe(false);
+
+    // Send again with the box still unticked: the referral goes, and no choice with it.
+    await send(page, locale);
+    await expect(page).toHaveURL(ticketUrl(locale));
+    expect(referrals).toHaveLength(1);
+    expect(puts).toEqual([]);
+    expect((await person()).equityOptIn).toBe(false);
+
+    // A box the person ticks on the screen is theirs: the `true` goes.
+    await toTheConsentScreen();
+    await expect(page.locator('#equity-on')).not.toBeChecked();
+    await page.locator('#equity-on').check();
+    await page.locator('#equity-ageBand').selectOption('35_44');
+    await send(page, locale);
+    await expect.poll(() => puts).toEqual([{ optIn: true, buckets: { ageBand: '35_44', gender: null, language: null, region: null } }]);
+  },
+
+  async 'repeat-check-sends-no-statistics-true-the-server-has-off-and-says-so-above-finish'({ page, context, locale, consoleGuard }) {
+    const bodies: Record<string, unknown>[] = [];
+    const reads: string[] = [];
+    const inFlight = new Set<Request>();
+    page.on('request', (request) => {
+      if (request.url().startsWith(API)) inFlight.add(request);
+      if (request.url() === `${API}/me/opt-ins`) reads.push(request.method());
+    });
+    page.on('response', (response) => inFlight.delete(response.request()));
+    page.on('requestfailed', (request) => inFlight.delete(request));
+    // The phone's own read of its choices fails until the test lets it through, as it would for an app opened offline or after a failed daily read:
+    // the phone then still holds a note that the real server (which was never told, the send below is stubbed) does not.
+    consoleGuard.allow({ url: `${API}/me/opt-ins`, expect: 503, reason: 'the test fails the phone read of its choices on purpose, so the phone still holds an out-of-date note when the screen asks the server' });
+    let failReads = true;
+    await page.route(`${API}/me/opt-ins`, (route) => (failReads ? route.fulfill({ status: 503, json: { error: 'unavailable', message: 'down' } }) : route.continue()));
+    await visitOnline(page, locale);
+    const id = await stubSeenTicket(page, locale);
+    await page.route(`${API}/me/tickets/${id}/remeasure`, async (route) => {
+      bodies.push(route.request().postDataJSON() as Record<string, unknown>);
+      await route.fulfill({ json: { state: 'closed', scoresShared: true, events: [] } });
+    });
+    await context.clock.setFixedTime(new Date(SEEN_AT_MS + SIX_WEEKS_MS));
+    const toTotals = async () => {
+      await page.goto(`/${locale}/ticket/?id=${id}`);
+      await takeRepeatCheck(page, locale, id);
+    };
+    const finish = page.locator('[data-control="finish-remeasure"]');
+    const box = page.locator('[data-control="count-in-statistics"]');
+
+    // A first repeat check in which the person ticks both boxes: the phone notes the choice (the stubbed send never tells the real server).
+    await toTotals();
+    await page.locator('[data-control="share-totals"]').check();
+    await box.check();
+    await finish.click();
+    await expect(page).toHaveURL(ticketUrl(locale));
+    expect(bodies.at(-1)).toMatchObject({ statisticsOptIn: true });
+
+    // A second one: the box starts ticked from the phone's note alone. Finish asks the server (let through now), which has it off.
+    bodies.length = 0;
+    await toTotals();
+    await page.locator('[data-control="share-totals"]').check();
+    await expect(box).toBeChecked();
+    await expect.poll(() => [...inFlight].map((request) => request.url())).toEqual([]);
+    failReads = false;
+    await finish.click();
+    const note = page.locator('[data-choice-note="cleared"]');
+    await expect(note).toHaveText(msg(locale, 'remeasure.choiceCleared'));
+    await expect(note).toBeInViewport({ ratio: 1 });
+    await expect(finish).toBeInViewport({ ratio: 1 });
+    await expect(box).not.toBeChecked();
+    expect(bodies, 'nothing was sent').toEqual([]);
+
+    // Finish again with the box still unticked: the totals go and no choice with them.
+    await finish.click();
+    await expect(page).toHaveURL(ticketUrl(locale));
+    expect(bodies).toHaveLength(1);
+    expect(Object.keys(bodies[0]!).sort()).toEqual(['scores']);
+
+    // A box the person ticks on the screen is theirs: the `true` goes, without the phone asking first.
+    bodies.length = 0;
+    await toTotals();
+    await page.locator('[data-control="share-totals"]').check();
+    await expect(box).not.toBeChecked();
+    await expect.poll(() => [...inFlight].map((request) => request.url())).toEqual([]);
+    const readsBefore = reads.length;
+    await box.check();
+    await finish.click();
+    await expect(page).toHaveURL(ticketUrl(locale));
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toMatchObject({ statisticsOptIn: true });
+    expect(reads.length, 'ticked on the screen: no read of the server was made for it').toBe(readsBefore);
+  },
+
   async 'a-background-read-that-gets-401-registers-nothing-and-records-no-day'({ page, locale, consoleGuard }) {
     /** Every request for the phone's two choices. A read that registered the phone again after the 401 would ask a second time. */
     const reads: string[] = [];

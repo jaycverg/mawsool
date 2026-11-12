@@ -108,6 +108,14 @@
     "sentence": "After the server has switched the equity choice off for a phone silent for the idle limit, opening Settings online shows the choice off with no panel for it and says once, in the page's language, that it was turned off because the phone was not used for 6 months; the next visit says nothing about it, the consent screen starts with the choice unticked, and the phone made no equity request on the way"
   },
   {
+    "id": "consent-screen-sends-no-group-totals-true-the-server-has-off-and-says-the-referral-has-not-gone",
+    "sentence": "When the phone's note still has the group-totals choice on but the server has it off, the consent screen's box starts ticked; pressing Send asks the server, sends no group-totals request and no referral, unticks the box and shows, in view, that the choice is already off and the referral has not been sent; pressing Send again sends the referral and no choice; a box the person ticks on the screen sends the choice, in Arabic and English"
+  },
+  {
+    "id": "repeat-check-sends-no-statistics-true-the-server-has-off-and-says-so-above-finish",
+    "sentence": "When the phone's note still has the statistics choice on but the server has it off, the repeat check's box starts ticked; pressing Finish asks the server, sends nothing, unticks the box and shows, in view above Finish, that the choice is already off; pressing Finish again sends the totals with no choice; a box the person ticks on the screen sends the choice without the phone asking first, in Arabic and English"
+  },
+  {
     "id": "a-background-read-that-gets-401-registers-nothing-and-records-no-day",
     "sentence": "When the phone's background read of its two choices is answered 401, the phone does not register itself again and ask a second time, keeps no note of having reached the server, and changes nothing else on the phone"
   },

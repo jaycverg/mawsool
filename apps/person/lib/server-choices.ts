@@ -59,9 +59,11 @@ function changeMark(storage: StorageAdapter, choice: Choice, change: (mark: Send
  * start mark cannot be written nothing is run (`started: false`): a send that cannot be marked could be undone by a read that
  * is answered a moment before it. The end mark is written however the send ends; if it cannot be, the start mark times out.
  */
-export async function withChoiceSend<T>(storage: StorageAdapter, choice: Choice, now: () => Date, send: () => Promise<T>): Promise<{ started: true; value: T } | { started: false }> {
+export async function withChoiceSend<T>(storage: StorageAdapter, choice: Choice, send: () => Promise<T>): Promise<{ started: true; value: T } | { started: false }> {
   try {
-    await changeMark(storage, choice, (mark) => ({ gen: mark.gen + 1, pendingSince: now().getTime() }));
+    // The wall clock, always: the screens' clocks can be the demo's care clock, and a mark stamped on one clock and read on another could
+    // stay pending for ever or look abandoned while its send is live.
+    await changeMark(storage, choice, (mark) => ({ gen: mark.gen + 1, pendingSince: Date.now() }));
   } catch {
     return { started: false };
   }
@@ -73,9 +75,9 @@ export async function withChoiceSend<T>(storage: StorageAdapter, choice: Choice,
 }
 
 /** True when `choice` has had a send start, end or still under way since `before` was read: the answer of a read begun then is not to be trusted for it. */
-function sendSince(marks: SendMarks, before: SendMarks, choice: Choice, now: Date): boolean {
+function sendSince(marks: SendMarks, before: SendMarks, choice: Choice): boolean {
   const mark = marks[choice];
-  const pending = mark.pendingSince !== null && now.getTime() - mark.pendingSince < PENDING_MS;
+  const pending = mark.pendingSince !== null && Date.now() - mark.pendingSince < PENDING_MS;
   return mark.gen !== before[choice].gen || pending;
 }
 
@@ -103,8 +105,8 @@ function idleLimitReached(lastReached: string, now: Date): boolean {
 export function reconcileChoices(storage: StorageAdapter, server: OptIns, context: { lastReached: string | null; now: Date; before: SendMarks }): Promise<ClearedNote> {
   return withStoreLock(storage, async () => {
     const marks = await readSendMarks(storage);
-    const equity = !server.equityOptIn && !sendSince(marks, context.before, 'equity', context.now) && (await loadEquity(storage)).optIn;
-    const statistics = !server.outcomeStatsOptIn && !sendSince(marks, context.before, 'statistics', context.now) && (await loadOutcomeStatistics(storage));
+    const equity = !server.equityOptIn && !sendSince(marks, context.before, 'equity') && (await loadEquity(storage)).optIn;
+    const statistics = !server.outcomeStatsOptIn && !sendSince(marks, context.before, 'statistics') && (await loadOutcomeStatistics(storage));
     if (equity) await saveEquity(storage, { optIn: false, buckets: {} });
     if (statistics) await saveOutcomeStatistics(storage, false);
     if ((equity || statistics) && context.lastReached !== null && idleLimitReached(context.lastReached, context.now)) {
@@ -208,7 +210,7 @@ export async function sendEquityChoice(server: ServerDeps, input: { on: boolean;
     const confirmed = await confirmStoredChoice(server, 'equity', input.now);
     if (confirmed !== 'confirmed') return confirmed;
   }
-  const sent = await withChoiceSend(server.storage, 'equity', input.now, async (): Promise<EquitySend> => {
+  const sent = await withChoiceSend(server.storage, 'equity', async (): Promise<EquitySend> => {
     await markServerFootprint(server.storage, input.now);
     const saved = await callServer(server, 'PUT', '/me/equity', input.on ? { optIn: true, buckets: input.buckets } : { optIn: false });
     if (!saved.ok) return saved.reason === 'offline' ? 'offline' : 'rejected';

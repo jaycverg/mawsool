@@ -128,7 +128,7 @@ export async function finishRepeatCheck(server: ServerDeps, ticketId: string, sc
     if (confirmed === 'cleared') return 'choice_cleared';
     if (confirmed === 'unread') return 'choice_unread';
   }
-  const sent = await withChoiceSend(server.storage, 'statistics', now, async (): Promise<RepeatCheckSent> => {
+  const sent = await withChoiceSend(server.storage, 'statistics', async (): Promise<RepeatCheckSent> => {
     if (statisticsOptIn) {
       try {
         await saveOutcomeStatistics(server.storage, true);

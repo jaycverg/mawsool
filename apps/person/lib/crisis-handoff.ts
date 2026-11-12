@@ -96,7 +96,8 @@ export interface HandoffPatience {
 /**
  * - `sent`: the server holds the hand-off and the consent is recorded.
  * - `offline`: nothing left the phone: the browser reports no network, the crisis queue could not be flushed, or the phone could not
- *   register or hold no credential. The screen says nothing was sent and stays as it is.
+ *   register or hold no credential. The screen says nothing was sent and stays as it is. Only for a first attempt: a retry that finds an
+ *   earlier attempt's record says `unconfirmed` at those exits and keeps the record, since the earlier attempt may have arrived.
  * - `unconfirmed`: the request was issued and the phone has no answer to go by (no answer in time, a dropped connection, a server error, the
  *   call's own time limit), so the server may well hold the note. The `sending` record stays, so the person can stop it and a retry reuses
  *   its id. The screen says the phone could not confirm it arrived, never that nothing was sent.
@@ -142,10 +143,16 @@ export async function sendHandoff(deps: SendDeps, input: { crisisEventId: string
   if (typed !== '' && !callback) return 'invalid_number';
   const preview = buildHandoffPreview({ screenings: input.screenings, language: input.language, trigger: input.trigger, callback });
 
-  // The browser says there is no network: nothing is written or sent, and the words that say nothing was sent are true.
-  if (deps.isOnline && !deps.isOnline()) return 'offline';
+  // A retry reuses an earlier attempt's record, and that attempt may have reached the server. "Nothing was sent" is then never true of the note, so the
+  // exits below that mean nothing left the phone this time say `unconfirmed` and keep the record (Stop stays); only a first attempt says `offline`.
+  const prior = await within<HandoffRecord | null | typeof TIMED_OUT>(loadHandoffs(storage).then((records) => handoffFor(records, input.crisisEventId), () => null), storeMs, TIMED_OUT);
+  if (prior === TIMED_OUT) return 'failed';
+  const nothingLeft: SendOutcome = prior === null ? 'offline' : 'unconfirmed';
+
+  // The browser says there is no network: nothing is written or sent this time.
+  if (deps.isOnline && !deps.isOnline()) return nothingLeft;
   const flushed = await within(deps.flush().catch(() => null), networkMs, null);
-  if (flushed === null || flushed.outcome === 'offline' || flushed.outcome === 'conflict') return 'offline';
+  if (flushed === null || flushed.outcome === 'offline' || flushed.outcome === 'conflict') return nothingLeft;
 
   const record = await within(recordBeforeSend(deps, input.crisisEventId), storeMs, null);
   if (record === null) return 'failed';
@@ -157,8 +164,10 @@ export async function sendHandoff(deps: SendDeps, input: { crisisEventId: string
     // Once the request was issued, a dropped connection, a server error or a call that ran out of time all leave it unknown whether the note
     // arrived: the same outcome as no answer in time, so the screen never says "nothing was sent" for them. The record stays to stop from.
     if (sent.reason === 'offline') return 'unconfirmed';
-    // A refusal, or a phone that could not register or has no credential, means nothing was stored, so the record has nothing to stop. If the
-    // store will not take the change, the record stays and a stop finds the server has none.
+    // A phone that could not register or has no credential sent nothing this time; a refusal means nothing was stored. Either way a record made by
+    // THIS attempt has nothing to stop, but one that predates it is kept (an earlier attempt may have arrived). If the store will not take the change,
+    // the record stays and a stop finds the server has none.
+    if (sent.reason === 'not_registered' && prior !== null) return 'unconfirmed';
     await within(changeHandoffs(storage, (records) => records.filter((other) => other.handoffId !== record.handoffId)).catch(() => undefined), storeMs, undefined);
     if (sent.reason === 'not_registered') return 'offline';
     if (sent.status === 409 && sent.error === 'handoff_stopped') return 'stopped';

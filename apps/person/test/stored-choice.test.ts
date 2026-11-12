@@ -1,6 +1,6 @@
 import type { Demographics } from '@mawsool/types';
 import { createDeviceIdentity } from '@mawsool/ui';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { KEYS } from '../lib/keys';
 import { loadOutcomeStatistics } from '../lib/outcome-statistics';
 import { finishRepeatCheck } from '../lib/remeasure';
@@ -194,6 +194,14 @@ describe('the statistics choice the phone only remembers is checked with the ser
 describe('a read of the server’s choices that overlaps a send cannot turn the note off from an answer given before the server took the choice', () => {
   /** The context a daily read gives: it knows the phone reached the server long ago, which is what lets the note be written. */
   const READ = { lastReached: IDLE_DAY, now: NOW };
+  // The marks carry the wall clock's time, so the cases hold it still at a known moment.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   it('keeps the statistics note when the read is answered off while the send that turns it on is still on its way, and after it ends', async () => {
     const w = world({ statistics: true });
@@ -241,11 +249,66 @@ describe('a read of the server’s choices that overlaps a send cannot turn the 
     expect(await loadOutcomeStatistics(w.storage)).toBe(false);
   });
 
+  it('keeps the statistics note when a read STARTS after the send has begun and is answered off while the send is still on its way', async () => {
+    const w = world({ statistics: true });
+    w.hold.post = deferred();
+    const send = finishRepeatCheck(w.server, TICKET_ID, SCORES, true, { statisticsSource: 'ticked', now });
+    await vi.waitFor(() => expect(w.calls.some((call) => call.path.endsWith('/remeasure'))).toBe(true));
+    // The read's own snapshot of the marks already holds the send's start, so only the pending mark can tell it the answer is not to be trusted.
+    expect(await learnServerChoices(w.server, READ)).toBe('unchanged');
+    expect(await loadOutcomeStatistics(w.storage)).toBe(true);
+    w.hold.post.release();
+    expect(await send).toBe('done');
+    expect(w.state.server.outcomeStatsOptIn).toBe(true);
+    expect(await loadOutcomeStatistics(w.storage), 'on at the server and on in Settings, where it can be turned off').toBe(true);
+  });
+
+  it('keeps the equity note when a read STARTS after the send has begun and is answered off while the send is still on its way', async () => {
+    const w = world({ equity: true });
+    w.hold.put = deferred();
+    const send = sendEquityChoice(w.server, equityInput(true));
+    await vi.waitFor(() => expect(w.calls.some((call) => call.path === '/me/equity')).toBe(true));
+    expect(await learnServerChoices(w.server, READ)).toBe('unchanged');
+    expect((await loadEquity(w.storage)).optIn).toBe(true);
+    w.hold.put.release();
+    expect(await send).toBe('saved');
+    expect(w.state.server.equityOptIn).toBe(true);
+    expect((await loadEquity(w.storage)).optIn).toBe(true);
+  });
+
+  describe('the marks are stamped and compared on the wall clock, whatever clock the caller keeps', () => {
+    const DEMO_NOW = () => new Date(NOW.getTime() + 400 * 86_400_000);
+
+    it('lets a mark abandoned mid-send time out even though the send was made on a care clock far ahead of the wall clock', async () => {
+      const w = world({ equity: true });
+      w.hold.put = deferred();
+      const send = sendEquityChoice(w.server, equityInput(true, { now: DEMO_NOW }));
+      await vi.waitFor(() => expect(w.calls.some((call) => call.path === '/me/equity')).toBe(true));
+      vi.setSystemTime(new Date(NOW.getTime() + 3 * 60_000));
+      expect(await learnServerChoices(w.server, { lastReached: IDLE_DAY, now: new Date(NOW.getTime() + 3 * 60_000) })).toBe('turned_off');
+      expect((await loadEquity(w.storage)).optIn).toBe(false);
+      w.hold.put.release();
+      await send;
+    });
+
+    it('keeps a live mark pending when the read is made on a care clock far ahead of the wall clock', async () => {
+      const w = world({ equity: true });
+      w.hold.put = deferred();
+      const send = sendEquityChoice(w.server, equityInput(true));
+      await vi.waitFor(() => expect(w.calls.some((call) => call.path === '/me/equity')).toBe(true));
+      vi.setSystemTime(new Date(NOW.getTime() + 30_000));
+      expect(await learnServerChoices(w.server, { lastReached: IDLE_DAY, now: DEMO_NOW() })).toBe('unchanged');
+      expect((await loadEquity(w.storage)).optIn).toBe(true);
+      w.hold.put.release();
+      expect(await send).toBe('saved');
+    });
+  });
+
   it('brackets a send with a start and an end mark whatever way it ends, and marks only the choice it can turn on', async () => {
     const w = world();
-    await expect(withChoiceSend(w.storage, 'equity', now, async () => { throw new Error('boom'); })).rejects.toThrow('boom');
+    await expect(withChoiceSend(w.storage, 'equity', async () => { throw new Error('boom'); })).rejects.toThrow('boom');
     expect(await readSendMarks(w.storage)).toEqual({ equity: { gen: 2, pendingSince: null }, statistics: { gen: 0, pendingSince: null } });
-    const during = await withChoiceSend(w.storage, 'statistics', now, async () => (await readSendMarks(w.storage)).statistics);
+    const during = await withChoiceSend(w.storage, 'statistics', async () => (await readSendMarks(w.storage)).statistics);
     expect(during).toEqual({ started: true, value: { gen: 1, pendingSince: NOW.getTime() } });
   });
 });
@@ -253,10 +316,18 @@ describe('a read of the server’s choices that overlaps a send cannot turn the 
 describe('the words for a choice that was unticked and not sent', () => {
   it.each(['en', 'ar'] as const)('says, in %s, why the choice was unticked and not sent, in the words of the other notes on the screen', (locale) => {
     const messages = locale === 'en' ? en : ar;
-    const notes = [messages.consent.equityCleared, messages.consent.equityUnread, messages.remeasure.choiceCleared, messages.remeasure.choiceUnread];
+    const referralNotes = [messages.consent.equityCleared, messages.consent.equityUnread];
+    for (const note of referralNotes) {
+      expect(note, 'says the referral has not been sent yet').toContain(locale === 'en' ? 'Your referral has not been sent yet' : 'لم تُرسل إحالتك بعد');
+      expect(note, 'says to tick the box again and press the send button by its own name').toContain(locale === 'en' ? `then press ${messages.consent.send}.` : `ثم اضغط «${messages.consent.send}».`);
+    }
+    const notes = [...referralNotes, messages.remeasure.choiceCleared, messages.remeasure.choiceUnread];
+    for (const note of [messages.remeasure.choiceCleared, messages.remeasure.choiceUnread]) {
+      expect(note, 'says nothing was sent and the box is unticked').toContain(locale === 'en' ? 'nothing was sent' : 'لم يُرسل شيء');
+      expect(note, 'says the person can tick it again and press Finish').toContain(locale === 'en' ? `then press ${messages.remeasure.finish}.` : `ثم اضغط «${messages.remeasure.finish}».`);
+    }
     for (const note of notes) {
-      expect(note, 'says nothing was sent and the box is unticked').toContain(locale === 'en' ? 'nothing' : 'لم يُرسل');
-      expect(note, 'says the person can tick it again').toMatch(locale === 'en' ? /Tick it again/ : /حدّده من جديد/);
+      expect(note, 'says the box is unticked').toContain(locale === 'en' ? 'unticked' : 'أُلغي تحديد المربع');
       expect(note, 'no clinical words').not.toMatch(locale === 'en' ? /\b(score|band|depress|anxi|PHQ|GAD|crisis|diagnos)/i : /(درجة|اكتئاب|قلق|أزمة|تشخيص)/);
     }
     expect(messages.consent.equityCleared).not.toBe(messages.consent.equityUnread);
