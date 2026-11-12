@@ -137,7 +137,7 @@
   },
   {
     "id": "reminder-notifier-shows-a-due-reminder-as-a-notification-when-the-app-opens",
-    "sentence": "With notifications allowed and reminders on, opening the app shows nothing while no reminder is due, and once one is due the notifier the layout mounts shows it through the service worker's registration, in the reminder words alone"
+    "sentence": "With notifications allowed and reminders on, opening the app shows nothing while no reminder is due, and once one is due the notifier the layout mounts shows it through the notification adapter, in the reminder words alone"
   },
   {
     "id": "reminder-number-is-optional-stored-apart-and-deleted-with-the-reminders",
