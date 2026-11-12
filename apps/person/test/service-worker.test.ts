@@ -19,7 +19,7 @@ const MANIFEST = {
 };
 
 /** Runs the worker, with the build list injected the way the build does, against a fake worker scope. */
-function load(options: { network?: (request: RequestLike) => Promise<unknown>; manifest?: typeof MANIFEST | null } = {}) {
+function load(options: { network?: (request: RequestLike) => Promise<unknown>; manifest?: typeof MANIFEST | null; windows?: { focus: () => Promise<unknown>; url: string }[] } = {}) {
   const handlers: Record<string, Handler> = {};
   const stores = new Map<string, Map<string, unknown>>();
   const key = (request: RequestLike) => (typeof request === 'string' ? abs(request) : request.url!);
@@ -51,7 +51,11 @@ function load(options: { network?: (request: RequestLike) => Promise<unknown>; m
     location: { origin: ORIGIN },
     addEventListener: (type: string, handler: Handler) => void (handlers[type] = handler),
     skipWaiting: vi.fn(async () => undefined),
-    clients: { claim: vi.fn(async () => undefined) },
+    clients: {
+      claim: vi.fn(async () => undefined),
+      matchAll: vi.fn(async (_query: unknown) => options.windows ?? []),
+      openWindow: vi.fn(async (_url: string) => ({})),
+    },
   };
   const fetch = vi.fn(options.network ?? (async () => ({ ok: true, clone: () => ({}) })));
   const source = options.manifest === null ? SOURCE : injectPrecache(SOURCE, options.manifest ?? MANIFEST);
@@ -199,5 +203,45 @@ describe('with the network up', () => {
     handlers['fetch']!({ request: { method: 'POST', url: abs('/x'), mode: 'cors' }, respondWith });
     handlers['fetch']!({ request: { method: 'GET', url: 'http://localhost:4000/services', mode: 'cors' }, respondWith });
     expect(respondWith).not.toHaveBeenCalled();
+  });
+});
+
+describe('tapping a reminder notification', () => {
+  /** Fires the worker's `notificationclick` handler and waits for the work it asked to keep alive. */
+  async function tap(scope: ReturnType<typeof load>) {
+    const notification = { close: vi.fn() };
+    let kept: Promise<unknown> | undefined;
+    scope.handlers['notificationclick']!({ notification, waitUntil: (work: Promise<unknown>) => (kept = work) });
+    await kept;
+    return notification;
+  }
+
+  it('closes the notification and opens the app at its root when no window of it is open', async () => {
+    const scope = load();
+    const notification = await tap(scope);
+    expect(notification.close).toHaveBeenCalledTimes(1);
+    expect(scope.self.clients.matchAll).toHaveBeenCalledWith({ type: 'window', includeUncontrolled: true });
+    expect(scope.self.clients.openWindow).toHaveBeenCalledTimes(1);
+    expect(scope.self.clients.openWindow).toHaveBeenCalledWith('/');
+  });
+
+  it('brings the first open window of the app forward instead of opening another', async () => {
+    const first = { url: abs('/en/settings/'), focus: vi.fn(async () => undefined) };
+    const second = { url: abs('/ar/'), focus: vi.fn(async () => undefined) };
+    const scope = load({ windows: [first, second] });
+    const notification = await tap(scope);
+    expect(notification.close).toHaveBeenCalledTimes(1);
+    expect(first.focus).toHaveBeenCalledTimes(1);
+    expect(second.focus).not.toHaveBeenCalled();
+    expect(scope.self.clients.openWindow).not.toHaveBeenCalled();
+  });
+
+  it('keeps the worker alive until the window is focused or opened, and opens a page the app really has', async () => {
+    let focused = false;
+    const scope = load({ windows: [{ url: abs('/en/'), focus: vi.fn(async () => { await Promise.resolve(); focused = true; }) }] });
+    await tap(scope);
+    expect(focused).toBe(true);
+    // The root it opens is one of the pages the build precaches, so a closed app opens even with the network down.
+    expect(MANIFEST.urls).toContain('/');
   });
 });

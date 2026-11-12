@@ -586,10 +586,6 @@
       },
       {
         "file": "test/metrics-outcomes.test.ts",
-        "name": "starts the window where the funnel's last 90 days start"
-      },
-      {
-        "file": "test/metrics-outcomes.test.ts",
         "name": "is tied to the funnel's re-measured stage for the same 90 days"
       },
       {

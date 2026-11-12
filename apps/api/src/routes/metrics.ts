@@ -1,10 +1,10 @@
-import { CrisisResponseSchema, EquityQuerySchema, EquityResponseSchema, FunnelQuerySchema, FunnelResponseSchema, OutcomesQuerySchema, OutcomesResponseSchema, PeriodQuerySchema, TimelinessResponseSchema } from '@mawsool/types';
+import { CrisisResponseSchema, EQUITY_PERIOD, EquityQuerySchema, EquityResponseSchema, FunnelQuerySchema, FunnelResponseSchema, OutcomesQuerySchema, OutcomesResponseSchema, PeriodQuerySchema, TimelinessResponseSchema } from '@mawsool/types';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Clock } from '../clock';
 import type { Cipher } from '../crypto';
 import type { Db } from '../db/client';
-import { loadCrisisFacts, loadOpenInvites, loadTicketFacts, onePeriodStart, periodStart } from '../metrics/facts';
+import { loadCrisisFacts, loadOpenInvites, loadTicketFacts, periodStart } from '../metrics/facts';
 import { buildCrisis } from '../metrics/crisis';
 import { buildEquity } from '../metrics/equity';
 import { buildFunnel, crisisHiddenInFunnel, journeysOf, remeasuredHiddenInFunnel } from '../metrics/funnel';
@@ -54,7 +54,7 @@ export function registerMetricsRoutes(app: FastifyInstance, deps: MetricsRouteDe
   // group's results. It hides everything when the funnel hides its re-measured stage for that same 90-day window.
   typed.get('/metrics/outcomes', { config: { access: 'ops' }, schema: { querystring: OutcomesQuerySchema, response: { 200: OutcomesResponseSchema } } }, async () => {
     const now = deps.clock.now();
-    const since = onePeriodStart(now);
+    const since = periodStart(EQUITY_PERIOD, now);
     const [tickets, openInvites, crisis] = await Promise.all([loadTicketFacts(deps.db), loadOpenInvites(deps.db, now), loadCrisisFacts(deps.db)]);
     const hides = remeasuredHiddenInFunnel({ journeys: journeysOf(tickets), openInvites, crisis, since });
     return buildOutcomes(await loadOutcomeFacts(deps.db, deps.cipher, tickets), since, hides);

@@ -3,7 +3,7 @@ import { EQUITY_PERIOD, METRIC_PERIODS, type FunnelResponse, type OutcomesRespon
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { schema } from '../src/db/client';
-import { loadTicketFacts, onePeriodStart, periodStart } from '../src/metrics/facts';
+import { loadTicketFacts, periodStart } from '../src/metrics/facts';
 import { sha256Hex } from '../src/security';
 import { journeysOf, remeasuredHiddenInFunnel } from '../src/metrics/funnel';
 import { hiddenCells, pinnedCells } from '../src/metrics/protect';
@@ -45,7 +45,7 @@ const SUPPRESSED = { suppressed: true };
 /** Issued 70 days before the test clock, inside the last 90 days; seen two days later; so the repeat check opened 44 days after that, well before now. */
 const ISSUED = new Date(TEST_START.getTime() - 70 * DAY);
 /** Where the one period the figures are served for begins at the test clock. */
-const SINCE = onePeriodStart(TEST_START);
+const SINCE = periodStart(EQUITY_PERIOD, TEST_START);
 const SEEN_AT = new Date(ISSUED.getTime() + 2 * DAY);
 const OPENS = remeasureAvailableAt(SEEN_AT);
 
@@ -355,12 +355,6 @@ describe('the one period the figures are served for', () => {
     const numbers = (value: unknown): number[] => (typeof value === 'number' ? [value] : value && typeof value === 'object' ? Object.values(value).flatMap(numbers) : []);
     expect(numbers(response), 'no all-time count in the answer').not.toContain(18);
     expect((await factsOf()).length - (response.remeasured as number)).toBe(6);
-  });
-
-  it('starts the window where the funnel\'s last 90 days start', () => {
-    for (const now of [TEST_START, new Date('2026-03-01T22:30:00Z'), new Date('2026-06-15T03:00:00Z')]) {
-      expect(onePeriodStart(now)).toEqual(periodStart(EQUITY_PERIOD, now));
-    }
   });
 });
 

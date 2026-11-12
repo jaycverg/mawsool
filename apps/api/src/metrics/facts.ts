@@ -15,18 +15,11 @@ export function startOfDubaiDay(at: Date): Date {
  * Where a period begins, counted back from the Dubai day the clock is on, or null for all time. Whole days, so "the
  * last 90 days" always contains the whole of its first day.
  */
+export function periodStart(period: Exclude<MetricPeriod, 'all'>, now: Date): Date;
+export function periodStart(period: MetricPeriod, now: Date): Date | null;
 export function periodStart(period: MetricPeriod, now: Date): Date | null {
   if (period === 'all') return null;
   return daysBack(period === '90d' ? 90 : 30, now);
-}
-
-/**
- * Where the one period the equity view and the symptom-change figures are served for (`EQUITY_PERIOD`, the last 90 days)
- * begins: the same moment `periodStart('90d', now)` gives, so the funnel asked for 90 days and these figures stand on the same
- * tickets.
- */
-export function onePeriodStart(now: Date): Date {
-  return daysBack(90, now);
 }
 
 function daysBack(days: number, now: Date): Date {
