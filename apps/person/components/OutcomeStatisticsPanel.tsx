@@ -16,6 +16,7 @@ export function OutcomeStatisticsPanel({ on, state, onTurnOff }: { on: boolean; 
     <section className="flex flex-col gap-2.5 rounded-card border border-border bg-surface p-5" data-panel="statistics">
       <h2 className="text-[16px] font-semibold">{t('statisticsTitle')}</h2>
       {on && <p className="t-body text-muted">{t('statisticsOnBody')}</p>}
+      {on && <p className="t-small text-muted" data-idle-note>{t('optInIdleNote')}</p>}
       {on && (
         <button type="button" className="tap rounded-pill border-[1.5px] border-accent px-4 font-semibold text-accent" disabled={state === 'working'} onClick={onTurnOff} data-control="turn-off-statistics">
           {t('statisticsOptOut')}

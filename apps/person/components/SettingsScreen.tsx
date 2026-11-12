@@ -302,6 +302,7 @@ export function SettingsScreen() {
           <section className="flex flex-col gap-2.5 rounded-card border border-border bg-surface p-5" data-panel="equity">
             <h2 className="text-[16px] font-semibold">{t('equityTitle')}</h2>
             <p className="t-body text-muted">{t(equityOn ? 'equityOnBody' : 'equityOffBody')}</p>
+            {equityOn && <p className="t-small text-muted" data-idle-note>{t('optInIdleNote')}</p>}
             {equityOn && (
               <button type="button" className="tap rounded-pill border-[1.5px] border-accent px-4 font-semibold text-accent" disabled={equityState === 'working'} onClick={() => void optOut()}>
                 {t('equityOptOut')}
