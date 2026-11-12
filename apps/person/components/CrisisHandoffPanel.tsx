@@ -2,11 +2,11 @@
 
 import type { CrisisTrigger, Locale, Screening } from '@mawsool/types';
 import { useTranslations } from 'next-intl';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { API_URL } from '../lib/api';
 import { deviceFetch } from '../lib/net';
 import { deviceNow } from '../lib/clock';
-import { buildHandoffPreview, handoffFor, loadHandoffs, offerState, sendHandoff, stopHandoff, type HandoffRecord, type SendOutcome } from '../lib/crisis-handoff';
+import { buildHandoffPreview, handoffFor, offerState, reloadHandoffs, sendHandoff, stopHandoff, type HandoffRecord, type SendOutcome } from '../lib/crisis-handoff';
 import { flushOutbox } from '../lib/crisis-outbox';
 import { parsePhone } from '../lib/reminders';
 import { loadScreenings } from '../lib/screening-store';
@@ -57,7 +57,13 @@ export function CrisisHandoffPanel({ device, lang, mode, open }: { device: Devic
   const [agreed, setAgreed] = useState(false);
   const [phase, setPhase] = useState<Phase>('idle');
 
-  const reload = () => loadHandoffs(device.storage).then(setRecords, () => setRecords([]));
+  // The list last read is kept when a later read fails or stalls: dropping it would hide Stop and make the next retry look like a first attempt.
+  const lastRead = useRef<readonly HandoffRecord[]>([]);
+  const show = (list: readonly HandoffRecord[]) => {
+    lastRead.current = list;
+    setRecords([...list]);
+  };
+  const reload = () => reloadHandoffs(device.storage, lastRead.current).then(show);
   useEffect(() => {
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps

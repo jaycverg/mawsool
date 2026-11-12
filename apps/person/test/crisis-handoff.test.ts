@@ -3,7 +3,7 @@ import type { Screening } from '@mawsool/types';
 import { describe, expect, it, vi } from 'vitest';
 import type { StorageAdapter } from '@mawsool/ui';
 import { createCrisisStore, isCrisisMark, type CrisisMark } from '../lib/crisis';
-import { buildHandoffPreview, handoffFor, handoffOffer, loadHandoffs, offerState, sendHandoff, stopHandoff, type HandoffRecord } from '../lib/crisis-handoff';
+import { buildHandoffPreview, handoffFor, handoffOffer, loadHandoffs, offerState, reloadHandoffs, sendHandoff, stopHandoff, type HandoffRecord } from '../lib/crisis-handoff';
 import type { FlushResult } from '../lib/crisis-outbox';
 import { deleteDeviceData } from '../lib/device-data';
 import { forgetRegistration, hasServerFootprint } from '../lib/server';
@@ -549,6 +549,67 @@ describe('stopping the hand-off', () => {
     await deleteDeviceData(s.store.storage);
     expect(await loadHandoff(s.store.storage)).toBeNull();
     expect(s.store.data.size).toBe(0);
+  });
+});
+
+describe('the records a screen keeps when a re-read of the store fails', () => {
+  const held = (): HandoffRecord => ({ handoffId: '22222222-2222-4222-8222-222222222222', crisisEventId: EVENT_ID, state: 'sending', startedAt: '2026-11-01T04:00:00.000Z' });
+  /** Makes every later read of the hand-off records throw or never answer, and returns what puts the real read back. */
+  function breakHandoffReads(storage: StorageAdapter, how: 'throw' | 'hang'): () => void {
+    const get = storage.get.bind(storage);
+    storage.get = ((key: string) => (key === 'crisis:handoff' ? (how === 'hang' ? never() : Promise.reject(new Error('storage read failed'))) : get(key))) as typeof storage.get;
+    return () => {
+      storage.get = get as typeof storage.get;
+    };
+  }
+
+  it('keeps the list last read when the read fails', async () => {
+    const s = setup();
+    const previous = [held()];
+    breakHandoffReads(s.store.storage, 'throw');
+    expect(await reloadHandoffs(s.store.storage, previous)).toEqual(previous);
+  });
+
+  it('keeps the list last read when the read does not answer in time, and does not wait longer than the store patience', async () => {
+    const s = setup();
+    const previous = [held()];
+    breakHandoffReads(s.store.storage, 'hang');
+    expect(await reloadHandoffs(s.store.storage, previous, QUICK.storeMs)).toEqual(previous);
+  });
+
+  it('shows the new list when the read answers, an empty one included', async () => {
+    const s = setup();
+    const stale = [held()];
+    expect(await reloadHandoffs(s.store.storage, stale), 'nothing stored: the stale list is replaced by the real, empty one').toEqual([]);
+    const stored = { ...held(), handoffId: '44444444-4444-4444-8444-444444444444' };
+    await s.store.storage.set('crisis:handoff', [stored]);
+    expect(await reloadHandoffs(s.store.storage, stale)).toEqual([stored]);
+  });
+
+  it('keeps Stop and the earlier attempt known through every press of a retry while the store keeps failing, so no press says nothing was sent', async () => {
+    const s = setup('lost-reply');
+    /** One press as the panel makes it: the screen's list says whether an earlier record is held, and the list is re-read after the send. */
+    async function press(list: readonly HandoffRecord[], deps: typeof s.deps & { isOnline?: () => boolean }) {
+      const outcome = await sendHandoff({ ...deps, patience: QUICK }, input({ earlierRecordHeld: handoffFor(list, EVENT_ID) !== null }));
+      return { outcome, list: await reloadHandoffs(s.store.storage, list, QUICK.storeMs) };
+    }
+    const firstPress = await press([], s.deps);
+    expect(firstPress.outcome).toBe('unconfirmed');
+    expect(s.server.stored, 'the server did get the note').toBe(true);
+    expect(firstPress.list).toHaveLength(1);
+    const first = firstPress.list[0]!;
+    const posted = posts(s.calls).length;
+
+    const restore = breakHandoffReads(s.store.storage, 'throw');
+    const second = await press(firstPress.list, { ...s.deps, isOnline: () => false });
+    const third = await press(second.list, { ...s.deps, isOnline: () => false });
+    const thirdOnline = await press(third.list, s.deps);
+    expect([second.outcome, third.outcome, thirdOnline.outcome]).toEqual(['unconfirmed', 'unconfirmed', 'unconfirmed']);
+    expect(thirdOnline.list, 'the screen still holds the record, so Stop is still offered').toEqual([first]);
+    expect(posts(s.calls), 'none of those presses sent a request').toHaveLength(posted);
+
+    restore();
+    expect(await loadHandoffs(s.store.storage), 'the store still holds the record the server has a note for').toEqual([first]);
   });
 });
 
