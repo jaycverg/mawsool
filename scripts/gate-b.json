@@ -2705,12 +2705,22 @@
       {
         "project": "apps/person",
         "file": "test/outcome-statistics.test.tsx",
-        "name": "says it is on, in its own words, with one button that turns it off"
+        "name": "says it is on, in its own words, with one button that turns it off, in en"
       },
       {
         "project": "apps/person",
         "file": "test/outcome-statistics.test.tsx",
-        "name": "says nothing about turning itself off while the choice is off or just turned off"
+        "name": "says it is on, in its own words, with one button that turns it off, in ar"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "says nothing about turning itself off while the choice is off or just turned off, in en"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "says nothing about turning itself off while the choice is off or just turned off, in ar"
       }
     ],
     "browser": "settings-turns-off-anonymous-statistics-and-shows-nothing-while-it-is-off"
@@ -2722,7 +2732,11 @@
     "tests": [
       {
         "file": "test/outcome-statistics.test.tsx",
-        "name": "says the totals count only in groups of 10 or more and that a clinic never sees the choice"
+        "name": "says the totals count only in groups of 10 or more and that a clinic never sees the choice, in en"
+      },
+      {
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "says the totals count only in groups of 10 or more and that a clinic never sees the choice, in ar"
       },
       {
         "file": "test/outcome-statistics.test.tsx",
@@ -2817,7 +2831,11 @@
     "tests": [
       {
         "file": "test/outcome-statistics.test.tsx",
-        "name": "tells the person nothing was sent when the phone could not keep its note of the choice"
+        "name": "tells the person nothing was sent when the phone could not keep its note of the choice, in en"
+      },
+      {
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "tells the person nothing was sent when the phone could not keep its note of the choice, in ar"
       }
     ],
     "browser": "statistics-note-refused-write-sends-nothing-shows-the-message-and-keeps-finish-in-view"
