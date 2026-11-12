@@ -1782,7 +1782,7 @@
   },
   {
     "id": "mw-606-clinic-link-is-logged-hashed-one-use-short-lived-and-bound",
-    "sentence": "A ticket at a facility without the portal gets a one-time link that is logged and not sent, stored as a hash, valid for 48 hours on the wall clock, spent by its one move (two presses move the ticket once), and bound to its ticket and facility; a used, expired, tampered or wrong-ticket link is the same refusal and writes nothing",
+    "sentence": "A ticket at a facility without the portal gets a one-time link that is logged and not sent, stored as a hash, valid on the wall clock for as long as the ticket's hand-off window (7 or 14 days), spent by its one move (two presses move the ticket once), and bound to its ticket and facility; a used, expired, tampered or wrong-ticket link is the same refusal and writes nothing",
     "project": "apps/api",
     "tests": [
       {
@@ -1807,6 +1807,14 @@
       },
       {
         "file": "test/clinic-links.test.ts",
+        "name": "lasts as long as the ticket's hand-off window"
+      },
+      {
+        "file": "test/clinic-links.test.ts",
+        "name": "gives the next link, made after a move that leaves another, the same window from the moment it is made"
+      },
+      {
+        "file": "test/clinic-links.test.ts",
         "name": "is refused alike when the token was tampered with"
       },
       {
@@ -1815,12 +1823,27 @@
       },
       {
         "file": "test/clinic-links.test.ts",
-        "name": "expires on the wall clock: a care clock step of seven days"
+        "name": "expires on the wall clock: a care clock step of three weeks"
       }
     ],
     "delegated": {
       "gate": "gate:phase4",
       "id": "no-login-clinic-link-acknowledges-and-marks-seen-one-ticket-and-is-refused-a-second-time"
+    }
+  },
+  {
+    "id": "mw-606-clinic-link-page-takes-its-credential-out-of-the-address-and-history",
+    "sentence": "Once a clinic link has loaded, the page takes the ticket id and the token out of the address bar and the history entry it opened in, keeping the path and query, and keeps the credential only in memory, so a reload has none",
+    "project": "apps/clinician",
+    "tests": [
+      {
+        "file": "test/clinic-link.test.ts",
+        "name": "replaces the history entry with the same path and query and no fragment"
+      }
+    ],
+    "delegated": {
+      "gate": "gate:phase4",
+      "id": "clinic-link-page-takes-its-credential-out-of-the-address-and-the-history-and-still-works"
     }
   },
   {

@@ -1294,8 +1294,8 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
       expect(afterAck.map((event) => [event.toState, event.actor])).toEqual([['issued', 'person'], ['acknowledged', 'clinic']]);
       expect((afterAck.at(-1) as unknown as { channel: string }).channel).toBe('link');
 
-      // The same link again: refused like any bad link, nothing moves.
-      await page.reload();
+      // The same link again: refused like any bad link, nothing moves. (The page took the fragment out of the address, so the link is opened afresh.)
+      await open(link.replace('/en/', `/${locale}/`));
       await expect(page.locator('[data-link-state="invalid"]')).toHaveText(cmsg(locale, 'clinicLink.refused.invalid'));
       await expect(page.locator('[data-code]')).toHaveCount(0);
       expect((await stored(ticket.id)).events).toHaveLength(2);
@@ -1330,6 +1330,50 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
       await expect(page.locator('[data-link-state="withdrawn"]')).toHaveText(cmsg(locale, 'clinicLink.refused.withdrawn'));
       await expect(page.locator('[data-code]')).toHaveCount(0);
       await expect(page.locator('[data-move]')).toHaveCount(0);
+      await visitor.close();
+    } finally {
+      expect((await portal(true)).status).toBe(200);
+    }
+  },
+
+  async 'clinic-link-page-takes-its-credential-out-of-the-address-and-the-history-and-still-works'({ context, locale }) {
+    const admin = bearer(await staffSession(ADMIN_USER));
+    const portal = (portalAccess: boolean) => call('PUT', `/facilities/${FACILITY_A}/portal-access`, { headers: admin, body: { portalAccess } });
+    expect((await portal(false)).status).toBe(200);
+    try {
+      const person = await newPerson();
+      const ticket = await makeTicket(person, { serviceId: await serviceAt(FACILITY_A) });
+      const link = (await loggedClinicLink(ticket.shortCode))!;
+      const token = link.split('.').at(-1)!;
+      const visitor = await context.browser()!.newContext();
+      const page = await visitor.newPage();
+      const session = await visitor.newCDPSession(page);
+      /** The address of every entry in the tab's history, as the browser keeps them. */
+      const historyUrls = async () => ((await session.send('Page.getNavigationHistory')).entries as { url: string }[]).map((entry) => entry.url);
+
+      await page.goto(link.replace('/en/', `/${locale}/`));
+      await expect(page.locator('[data-link-state="ready"]')).toBeVisible();
+      // The address bar and the history entry the page opened in hold the path and nothing after it.
+      const clean = `${CLINIC}/${locale}/clinic-link/`;
+      expect(page.url()).toBe(clean);
+      expect(await page.evaluate(() => window.location.hash)).toBe('');
+      const urls = await historyUrls();
+      expect(urls.at(-1)).toBe(clean);
+      for (const url of urls) {
+        expect(url).not.toContain(token);
+        expect(url).not.toContain(ticket.id);
+      }
+
+      // The page still works from the credential it kept in memory: the move goes through, and the history stays clean.
+      await page.locator('[data-move="acknowledged"]').click();
+      await expect(page.locator('[data-link-state="done"][data-move-made="acknowledged"]')).toBeVisible();
+      expect((await stored(ticket.id)).events.map((event) => event.toState)).toEqual(['issued', 'acknowledged']);
+      for (const url of await historyUrls()) expect(url).not.toContain(token);
+
+      // A reload has no credential left to read, and says so instead of showing anything about the ticket.
+      await page.reload();
+      await expect(page.locator('[data-link-state="missing"]')).toHaveText(cmsg(locale, 'clinicLink.missing'));
+      await expect(page.locator('[data-code]')).toHaveCount(0);
       await visitor.close();
     } finally {
       expect((await portal(true)).status).toBe(200);

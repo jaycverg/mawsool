@@ -124,6 +124,10 @@
     "sentence": "A clinic without portal access is given a logged one-time link; opened with no sign-in it shows only the ticket code, tier, state and deadline under a mock-channel label, Acknowledge moves the ticket once as the clinic and logs a fresh link, the used, tampered or wrong-ticket link is refused alike, the fresh link marks seen, and a ticket whose person ended the share answers as withdrawn; the token is only ever in a request body"
   },
   {
+    "id": "clinic-link-page-takes-its-credential-out-of-the-address-and-the-history-and-still-works",
+    "sentence": "Once a clinic link has loaded, the address bar and the tab's history hold the page's path and no ticket id or token; the page still makes its move from the credential it kept in memory; and a reload, which has no credential, shows the missing-link answer and nothing about the ticket"
+  },
+  {
     "id": "clinic-link-page-is-honest-about-an-unconfirmed-answer-and-a-next-step-that-failed",
     "sentence": "When the answer to a clinic link's move never arrives the page says it could not confirm it and to open the link again (never that the link was not used); when the move was recorded but the next link could not be made it says so and to contact the service, never that nothing more is asked of the clinic"
   }

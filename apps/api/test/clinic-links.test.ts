@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import { computeDeadline } from '@mawsool/rules';
 import { ClinicLinkActResultSchema, ClinicLinkTicketSchema } from '@mawsool/types';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { CLINIC_LINK_KEEP_MS, CLINIC_LINK_TTL_MS } from '../src/clinic-links/service';
+import { CLINIC_LINK_KEEP_MS, clinicLinkLifetimeMs, handoffWindowDaysOf } from '../src/clinic-links/service';
 import { schema } from '../src/db/client';
 import { FACILITY_A_ID, FACILITY_B_ID } from '../src/seed/fixtures';
 import { runSeed } from '../src/seed/run';
@@ -15,6 +16,9 @@ import { CONDITION, FREE_TEXT, issue, registerPerson, serviceAt, ticketRequest, 
 
 const SUMMARY = 'SUMMARY-MARKER-6612';
 const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+/** What the default test ticket (a 14-day hand-off window) gets. */
+const FOURTEEN_DAYS = clinicLinkLifetimeMs(14);
 
 describe('the no-login clinic channel', () => {
   let testDb: TestDb;
@@ -69,10 +73,40 @@ describe('the no-login clinic channel', () => {
       const [row, ...rest] = await linkRows(ticket.id);
       expect(rest).toEqual([]);
       expect(row).toMatchObject({ tokenHash: sha256Hex(credential.token), facilityId: FACILITY_A_ID, createdAt: TEST_START, usedAt: null });
-      expect(row!.expiresAt.getTime() - row!.createdAt.getTime()).toBe(CLINIC_LINK_TTL_MS);
-      expect(CLINIC_LINK_TTL_MS).toBe(48 * HOUR);
+      expect(row!.expiresAt.getTime() - row!.createdAt.getTime()).toBe(FOURTEEN_DAYS);
       expect(JSON.stringify(row)).not.toContain(credential.token);
       expect(message.expiresAt).toEqual(row!.expiresAt);
+    });
+
+    it('lasts as long as the ticket\'s hand-off window: 7 days for a 7-day window and 14 days for a 14-day one, on the wall clock from issue', async () => {
+      for (const windowDays of [7, 14]) {
+        const ticket = await issue(ctx, person, ticketRequest(gpA, { windowDays }));
+        const [row] = await linkRows(ticket.id);
+        expect(row!.expiresAt.getTime() - row!.createdAt.getTime(), `${windowDays}-day window`).toBe(windowDays * DAY);
+        expect(ctx.notifier.clinicLinks.at(-1)!.expiresAt).toEqual(row!.expiresAt);
+      }
+    });
+
+    it('gives the next link, made after a move that leaves another, the same window from the moment it is made', async () => {
+      const { ticket, credential } = await ticketWithLink();
+      ctx.clock.advance(3 * DAY);
+      expect((await act(credential, 'acknowledged')).statusCode).toBe(200);
+      const [spent, next] = (await linkRows(ticket.id)).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      expect(spent!.usedAt).not.toBeNull();
+      expect(next!.createdAt.getTime() - spent!.createdAt.getTime()).toBe(3 * DAY);
+      expect(next!.expiresAt.getTime() - next!.createdAt.getTime()).toBe(FOURTEEN_DAYS);
+      ctx.clock.set(TEST_START);
+    });
+
+    it('reads a ticket\'s window from its dates: the whole days to the deadline, the largest allowed window that fits, and the fallback for a ticket that fits none', () => {
+      const created = new Date('2026-11-01T08:00:00+04:00');
+      expect(handoffWindowDaysOf({ createdAt: created, deadlineAt: computeDeadline(created, 7) })).toBe(7);
+      expect(handoffWindowDaysOf({ createdAt: created, deadlineAt: computeDeadline(created, 14) })).toBe(14);
+      const lateEvening = new Date('2026-11-01T23:30:00+04:00');
+      expect(handoffWindowDaysOf({ createdAt: lateEvening, deadlineAt: computeDeadline(lateEvening, 7) })).toBe(7);
+      const earlyMorning = new Date('2026-11-01T00:05:00+04:00');
+      expect(handoffWindowDaysOf({ createdAt: earlyMorning, deadlineAt: computeDeadline(earlyMorning, 14) })).toBe(14);
+      expect(handoffWindowDaysOf({ createdAt: created, deadlineAt: new Date(created.getTime() + 2 * DAY) })).toBe(14);
     });
 
     it('makes no link for a ticket at a facility that has the portal', async () => {
@@ -260,9 +294,9 @@ describe('the no-login clinic channel', () => {
       await expectRefused(credential, ticket.id);
     });
 
-    it('is refused alike when it expired, 48 hours after it was made on the wall clock', async () => {
+    it('is refused alike when it expired, a window\'s length after it was made on the wall clock', async () => {
       const { ticket, credential } = await ticketWithLink();
-      ctx.clock.advance(CLINIC_LINK_TTL_MS - 1000);
+      ctx.clock.advance(FOURTEEN_DAYS - 1000);
       expect((await open(credential)).statusCode).toBe(200);
       ctx.clock.advance(1000);
       await expectRefused(credential, ticket.id);
@@ -299,7 +333,7 @@ describe('the no-login clinic channel', () => {
     it('is 404 when it is addressed to another facility than the link was made for, and nothing is spent or written', async () => {
       const ticket = await issue(ctx, person, ticketRequest(gpA));
       const token = randomToken();
-      await testDb.db.insert(schema.clinicLinks).values({ tokenHash: sha256Hex(token), ticketId: ticket.id, facilityId: FACILITY_B_ID, createdAt: ctx.clock.now(), expiresAt: new Date(ctx.clock.now().getTime() + CLINIC_LINK_TTL_MS) });
+      await testDb.db.insert(schema.clinicLinks).values({ tokenHash: sha256Hex(token), ticketId: ticket.id, facilityId: FACILITY_B_ID, createdAt: ctx.clock.now(), expiresAt: new Date(ctx.clock.now().getTime() + FOURTEEN_DAYS) });
       const before = (await events(ticket.id)).length;
       for (const res of [await open({ ticketId: ticket.id, token }), await act({ ticketId: ticket.id, token }, 'seen')]) {
         expect(res.statusCode).toBe(404);
@@ -345,7 +379,7 @@ describe('the no-login clinic channel', () => {
       const spent = await ticketWithLink();
       await act(spent.credential, 'seen');
       const expired = await ticketWithLink();
-      ctx.clock.advance(CLINIC_LINK_TTL_MS + CLINIC_LINK_KEEP_MS + HOUR);
+      ctx.clock.advance(FOURTEEN_DAYS + CLINIC_LINK_KEEP_MS + HOUR);
       const live = await ticketWithLink();
       const swept = await sweep(testDb.db, ctx.clock);
       expect(swept.linksDeleted).toBeGreaterThanOrEqual(2);
@@ -371,24 +405,25 @@ describe('the no-login clinic channel on the demo clock', () => {
     await testDb.close();
   });
 
-  it('expires on the wall clock: a care clock step of seven days neither ends a link nor keeps an expired one, and the event is stamped on the care clock', async () => {
+  it('expires on the wall clock: a care clock step of three weeks, longer than the link\'s whole life, neither ends it nor keeps an expired one, and the event is stamped on the care clock', async () => {
     const admin = { authorization: `Bearer ${await signIn(ctx, 'admin@demo.mawsool.test')}` };
     await ctx.app.inject({ method: 'PUT', url: `/facilities/${FACILITY_A_ID}/portal-access`, headers: admin, payload: { portalAccess: false } });
     const person = await registerPerson(ctx);
     const ticket = await issue(ctx, person, ticketRequest(await serviceAt(testDb.db, 'A', 'gp')));
     const credential = ctx.notifier.lastClinicCredential();
-    const advanced = await ctx.app.inject({ method: 'POST', url: '/demo/clock/advance', headers: admin, payload: { by: '7d' } });
+    const advanced = await ctx.app.inject({ method: 'POST', url: '/demo/clock/advance', headers: admin, payload: { by: '3w' } });
     expect(advanced.statusCode).toBe(200);
+    expect(ctx.app.careClock.now().getTime() - ctx.clock.now().getTime()).toBeGreaterThan(FOURTEEN_DAYS);
     const opened = await ctx.app.inject({ method: 'POST', url: '/clinic-link/open', payload: credential });
     expect(opened.statusCode).toBe(200);
-    // The ticket is a week older on the care clock, and the clinic's move is stamped there.
+    // The ticket is three weeks older on the care clock, and the clinic's move is stamped there.
     const done = await ctx.app.inject({ method: 'POST', url: '/clinic-link/act', payload: { ...credential, to: 'seen' } });
     expect(done.statusCode).toBe(200);
     const [seen] = await testDb.db.select().from(schema.ticketEvents).where(and(eq(schema.ticketEvents.ticketId, ticket.id), eq(schema.ticketEvents.toState, 'seen')));
     expect(seen!.at).toEqual(ctx.app.careClock.now());
-    expect(seen!.at.getTime() - TEST_START.getTime()).toBe(7 * 24 * HOUR);
+    expect(seen!.at.getTime() - TEST_START.getTime()).toBe(21 * DAY);
     const [row] = await testDb.db.select().from(schema.clinicLinks).where(eq(schema.clinicLinks.ticketId, ticket.id));
     expect(row!.usedAt).toEqual(TEST_START);
-    expect(row!.expiresAt.getTime() - row!.createdAt.getTime()).toBe(CLINIC_LINK_TTL_MS);
+    expect(row!.expiresAt.getTime() - row!.createdAt.getTime()).toBe(FOURTEEN_DAYS);
   });
 });

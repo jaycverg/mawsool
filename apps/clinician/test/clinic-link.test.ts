@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { actOnLink, credentialFromFragment, openLink } from '../lib/clinic-link';
+import { actOnLink, credentialFromFragment, dropFragment, openLink } from '../lib/clinic-link';
 import ar from '../messages/ar.json';
 import en from '../messages/en.json';
 
@@ -80,5 +80,31 @@ describe('the clinic link page’s words', () => {
     for (const group of ['refused', 'note'] as const) expect(Object.keys(ar.clinicLink[group]).sort()).toEqual(Object.keys(en.clinicLink[group]).sort());
     expect(en.clinicLink.mock).toMatch(/^Sample channel/);
     expect(ar.clinicLink.mock).toContain('قناة تجريبية');
+  });
+});
+
+describe('taking the credential out of the address', () => {
+  /** A window whose history keeps every entry, as a browser does, so the test can look at what is left in it. */
+  function fakeWindow(address: string) {
+    const url = new URL(address);
+    const entries = [{ url: address, state: { page: 1 } }];
+    const win = {
+      location: { get pathname() { return url.pathname; }, get search() { return url.search; } },
+      history: {
+        get state() { return entries.at(-1)!.state; },
+        replaceState(state: unknown, _title: string, next: string) {
+          entries[entries.length - 1] = { url: new URL(next, url).href, state: state as { page: number } };
+        },
+      },
+    };
+    return { win, entries };
+  }
+
+  it('replaces the history entry with the same path and query and no fragment, and keeps its state', () => {
+    const { win, entries } = fakeWindow(`https://clinic.test/en/clinic-link/?lang=en#${ID}.${TOKEN}`);
+    dropFragment(win);
+    expect(entries).toEqual([{ url: 'https://clinic.test/en/clinic-link/?lang=en', state: { page: 1 } }]);
+    expect(JSON.stringify(entries)).not.toContain(TOKEN);
+    expect(JSON.stringify(entries)).not.toContain(ID);
   });
 });
