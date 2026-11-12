@@ -3,8 +3,8 @@
 import type { ClinicLinkActResult, ClinicLinkMove, ClinicLinkTicket } from '@mawsool/types';
 import { formatDate, isLocale } from '@mawsool/ui';
 import { useLocale, useTranslations } from 'next-intl';
-import { useEffect, useState } from 'react';
-import { actOnLink, credentialFromFragment, openLink, type LinkCredential } from '../lib/clinic-link';
+import { useEffect, useRef, useState } from 'react';
+import { actOnLink, credentialFromFragment, dropFragment, openLink, type LinkCredential } from '../lib/clinic-link';
 import { API_URL, displayCode } from '../lib/queue';
 
 type Screen =
@@ -21,7 +21,8 @@ const NEXT_LINK_MESSAGE = { issued: 'freshLink', not_needed: 'noFreshLink', fail
  * The page a clinic's no-login link opens (a mock channel: the link is logged by the API, not sent). It reads the ticket id and the
  * one-time token from the address's fragment, shows only what is needed to act on that one ticket (its code, tier, state and
  * deadline) and offers the moves the clinic may make. It never shows a score, a note, a summary or anything the person shared.
- * Nothing here is kept: the credential lives in this page's memory, and a move spends the link.
+ * Nothing here is kept: the credential lives in this page's memory, and a move spends the link. Once read, the fragment is taken out of
+ * the address bar and the history, so it is not left in the browser's history or in a copied address; a reload then asks for the link again.
  */
 export function ClinicLinkScreen() {
   const t = useTranslations('clinicLink');
@@ -30,8 +31,15 @@ export function ClinicLinkScreen() {
   const lang = isLocale(locale) ? locale : 'en';
   const [screen, setScreen] = useState<Screen>({ k: 'loading' });
 
+  // Read once: the fragment is removed below, and a development double-run of the effect must not find it gone.
+  const read = useRef<{ credential: LinkCredential | null } | null>(null);
+
   useEffect(() => {
-    const credential = credentialFromFragment(window.location.hash);
+    if (read.current === null) {
+      read.current = { credential: credentialFromFragment(window.location.hash) };
+      if (read.current.credential) dropFragment(window);
+    }
+    const { credential } = read.current;
     if (!credential) return setScreen({ k: 'missing' });
     let active = true;
     void openLink(window.fetch.bind(window), API_URL, credential).then((result) => {

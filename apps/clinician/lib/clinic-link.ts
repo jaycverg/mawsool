@@ -20,6 +20,15 @@ export function credentialFromFragment(hash: string): LinkCredential | null {
 }
 
 /**
+ * Takes the fragment (the credential) out of the address bar and out of the history entry the page opened in, keeping the path and
+ * the query. It replaces the entry instead of adding one, so going back never leads to an address that holds the token, and
+ * the page reloaded afterwards has no credential. Call it once the credential has been read into the page's memory.
+ */
+export function dropFragment(win: { location: Pick<Location, 'pathname' | 'search'>; history: Pick<History, 'state' | 'replaceState'> }): void {
+  win.history.replaceState(win.history.state, '', `${win.location.pathname}${win.location.search}`);
+}
+
+/**
  * How a call to the clinic-link routes ended. `invalid` is one outcome for every link that is not live (used, expired, tampered,
  * for another ticket), as the API answers them alike; the page cannot tell them apart and does not try.
  */

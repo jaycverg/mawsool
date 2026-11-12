@@ -1,3 +1,4 @@
+import { FALLBACK_HANDOFF_WINDOW_DAYS, HANDOFF_WINDOWS_DAYS } from '@mawsool/rules';
 import type { ClinicLinkMove, ClinicLinkTicket } from '@mawsool/types';
 import { and, eq, inArray, isNotNull, isNull, lt, or, gt } from 'drizzle-orm';
 import type { Clock } from '../clock';
@@ -9,8 +10,26 @@ import { STAFF_LINK_LOCALE, clinicLink } from '../staff-links';
 import { appendEvent, lastEvent, type Executor } from '../tickets/events';
 import { evaluate } from '../tickets/transitions';
 
-/** A clinic link works for 48 hours, on the wall clock: a demo clock jump neither ends it early nor keeps it alive. */
-export const CLINIC_LINK_TTL_MS = 48 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The hand-off window of a ticket, in days. The window is not stored, but the deadline is the end of the Dubai day that many days
+ * after the issue day, so the whole days between the two instants are the window; the largest allowed window that fits is
+ * returned, and the fallback window for a ticket whose dates fit none.
+ */
+export function handoffWindowDaysOf(ticket: { createdAt: Date; deadlineAt: Date }): number {
+  const wholeDays = Math.floor((ticket.deadlineAt.getTime() - ticket.createdAt.getTime()) / DAY_MS);
+  return HANDOFF_WINDOWS_DAYS.filter((days) => days <= wholeDays).at(-1) ?? FALLBACK_HANDOFF_WINDOW_DAYS;
+}
+
+/**
+ * How long a clinic link works: as long as the hand-off window it serves (7 or 14 days), counted on the wall clock from the moment
+ * it is made. A demo clock jump neither ends it early nor keeps it alive. A clinic that has until the ticket's deadline to answer
+ * is not left without a way to do it.
+ */
+export function clinicLinkLifetimeMs(windowDays: number): number {
+  return windowDays * DAY_MS;
+}
 
 /** How long a spent or expired link row is kept before the sweep deletes it. */
 export const CLINIC_LINK_KEEP_MS = 24 * 60 * 60 * 1000;
@@ -55,7 +74,7 @@ export async function issueClinicLink(deps: ClinicLinkDeps, ticketId: string): P
     if (!row || row.facility.portalAccess || linkMovesFrom(row.ticket.state).length === 0) return 'not_needed';
     const now = deps.securityClock.now();
     const token = randomToken();
-    const expiresAt = new Date(now.getTime() + CLINIC_LINK_TTL_MS);
+    const expiresAt = new Date(now.getTime() + clinicLinkLifetimeMs(handoffWindowDaysOf(row.ticket)));
     await deps.db.insert(schema.clinicLinks).values({ tokenHash: sha256Hex(token), ticketId, facilityId: row.facility.id, createdAt: now, expiresAt });
     await deps.notifier.send({ template: 'clinic_link', locale: STAFF_LINK_LOCALE, facility: row.facility.name, ticketCode: row.ticket.shortCode, link: clinicLink(deps.clinicianAppUrl, ticketId, token), expiresAt });
     return 'issued';

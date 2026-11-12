@@ -413,7 +413,7 @@ export const revokedHandoffs = pgTable('revoked_handoffs', {
 /**
  * The no-login clinic channel: one signed, one-time link to acknowledge or mark seen one ticket, for a facility without the
  * portal. Only the SHA-256 of the token is stored (the token is logged, not sent). The link is bound to a ticket and to the
- * facility that ticket is addressed to, expires 48 hours after it was made on the wall clock, and is spent by the one
+ * facility that ticket is addressed to, expires, on the wall clock, as many days after it was made as the ticket's hand-off window (7 or 14), and is spent by the one
  * transition it fires, in the same transaction. It holds no person and no data: the ticket row it points to is the only tie.
  */
 export const clinicLinks = pgTable(
