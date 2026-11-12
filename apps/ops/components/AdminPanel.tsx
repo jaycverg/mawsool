@@ -158,7 +158,11 @@ export function AdminPanel({ session, signOut }: { session: Session; signOut: ()
                 <td className="border-b border-[#E6ECEA] px-1.5 py-2.5"><span className="t-code" dir="ltr">{line.number}</span></td>
                 <td className="border-b border-[#E6ECEA] px-1.5 py-2.5"><span dir="ltr">{line.label}</span> · {t(`crisis.role.${line.role}`)}</td>
                 <td className="border-b border-[#E6ECEA] px-1.5 py-2.5" data-last-verified={line.last_verified ?? ''}>{line.last_verified ?? t('crisis.never')}</td>
-                <td className="border-b border-[#E6ECEA] px-1.5 py-2.5 text-muted" lang="en" dir="ltr">{line.note}</td>
+                <td className="border-b border-[#E6ECEA] px-1.5 py-2.5 text-muted">
+                  {/* The source notes are written in English only, in the rules config. On the Arabic page they say so instead of passing for Arabic. */}
+                  {lang !== 'en' && <span className="t-small block font-semibold" data-english-only>{t('crisis.englishOnly')}</span>}
+                  <span lang="en" dir="ltr" className="block" data-source-note>{line.note}</span>
+                </td>
               </tr>
             ))}
           </tbody>

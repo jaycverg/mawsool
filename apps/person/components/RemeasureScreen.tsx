@@ -187,7 +187,8 @@ export function Totals({ check, ticket, bandNames, names, share, setShare, stati
               <span className="t-small text-muted">{t('shareHelp')}</span>
             </span>
           </label>
-          <label className={`flex min-h-tap items-start gap-3 rounded-staff border border-border bg-surface p-3.5 text-[15px] ${share ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
+          {/* Unavailable while the totals are not sent. It reads as disabled by its flat ground, dashed edge and muted title, never by fading the text: faded, the help fell to 2.8:1. */}
+          <label className={`flex min-h-tap items-start gap-3 rounded-staff border p-3.5 text-[15px] ${share ? 'cursor-pointer border-border bg-surface' : 'cursor-not-allowed border-dashed border-border bg-ground'}`} data-disabled={share ? undefined : ''}>
             <input
               type="checkbox"
               checked={share && statistics}
@@ -197,7 +198,7 @@ export function Totals({ check, ticket, bandNames, names, share, setShare, stati
               data-control="count-in-statistics"
             />
             <span className="flex flex-col gap-1">
-              <span className="font-semibold">{t('statisticsLabel')}</span>
+              <span className={`font-semibold ${share ? '' : 'text-muted'}`}>{t('statisticsLabel')}</span>
               <span className="t-small text-muted">{t('statisticsHelp')}</span>
             </span>
           </label>
@@ -209,9 +210,12 @@ export function Totals({ check, ticket, bandNames, names, share, setShare, stati
       {send === 'failed' && <p role="alert" className="t-body text-danger">{t('failed')}</p>}
       {send === 'not_ready' && <p role="alert" className="t-body text-danger">{t('conflict')}</p>}
       {send === 'note_failed' && <p role="alert" className="t-body text-danger" data-note-failed>{t('statisticsNoteFailed')}</p>}
-      <button type="button" className="btn-primary" disabled={send === 'sending'} onClick={onFinish} data-control="finish-remeasure">
-        {send === 'sending' ? t('sending') : t('finish')}
-      </button>
+      {/* Finish stays at the foot of the screen, so a longer text above it (a note that failed, the help under a choice) never pushes it out of view. */}
+      <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex flex-col border-t border-border bg-ground px-4 pb-4 pt-3" data-finish-bar>
+        <button type="button" className="btn-primary" disabled={send === 'sending'} onClick={onFinish} data-control="finish-remeasure">
+          {send === 'sending' ? t('sending') : t('finish')}
+        </button>
+      </div>
     </>
   );
 }
