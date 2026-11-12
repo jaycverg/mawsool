@@ -4,6 +4,7 @@ import {
   bigint,
   boolean,
   check,
+  date,
   index,
   integer,
   pgEnum,
@@ -123,6 +124,11 @@ export const persons = pgTable(
     language: careLanguageEnum('language'),
     region: regionEnum('region'),
     createdAt: at('created_at').notNull(),
+    /**
+     * The last UTC day (wall clock, a date with no time) a request authenticated as this person, written at most once a day.
+     * The sweep clears the opt-ins of a person not seen for `OPT_IN_IDLE_LIMIT_DAYS`. Null for a seeded person, who has no device.
+     */
+    lastSeenOn: date('last_seen_on', { mode: 'string' }),
   },
   (t) => [
     check(

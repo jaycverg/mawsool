@@ -270,7 +270,7 @@ export async function eraseEverything(deps: ConsentDeps, personId: string, unsee
   await deleteClinicLinksOf(db, personId);
   await db
     .update(schema.persons)
-    .set({ equityOptIn: false, outcomeStatsOptIn: false, ageBand: null, gender: null, language: null, region: null })
+    .set({ equityOptIn: false, outcomeStatsOptIn: false, ageBand: null, gender: null, language: null, region: null, lastSeenOn: null })
     .where(eq(schema.persons.id, personId));
   return { ticketsWithdrawn, consentsRevoked, summariesDeleted: deleted.length };
 }

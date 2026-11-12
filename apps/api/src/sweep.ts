@@ -4,6 +4,7 @@ import { schema, type Db } from './db/client';
 import { deleteStaleClinicLinks } from './clinic-links/service';
 import { deleteStaleRevokedHandoffs } from './crisis-handoffs/service';
 import { deleteStaleNonces } from './inbound/service';
+import { clearIdleOptIns } from './persons/last-seen';
 import { appendEvent, lastEvent } from './tickets/events';
 import { evaluate } from './tickets/transitions';
 
@@ -41,6 +42,8 @@ export interface SweepResult {
   stopsForgotten: number;
   /** No-login clinic links spent or expired more than a day ago, deleted. */
   linksDeleted: number;
+  /** People whose equity and statistics opt-ins were turned off because their device had not reached the server for too long. */
+  optInsCleared: number;
 }
 
 /** How long a logged summary draft may wait for its ticket before it is deleted: a pick that was abandoned. */
@@ -61,7 +64,7 @@ export async function deleteStaleDrafts(db: Db, clock: Clock): Promise<number> {
 
 /**
  * Also removes stale unclaimed drafts (`deleteStaleDrafts`, by the care clock), spent request nonces (`deleteStaleNonces`) and
- * remembered hand-off stops (`deleteStaleRevokedHandoffs`) and spent or expired clinic links (`deleteStaleClinicLinks`), all by the security clock: each guards a request's real-time window,
+ * remembered hand-off stops (`deleteStaleRevokedHandoffs`), spent or expired clinic links (`deleteStaleClinicLinks`) and the opt-ins of a person whose device has been silent too long (`clearIdleOptIns`), all by the security clock: each guards a request's real-time window,
  * so a demo clock jump must not purge it. Finds every ticket past its deadline that has not been seen and appends one `overdue` event to each. Safe to run
  * from several places at once and every minute: a ticket that is already overdue, or that another sweep got to first,
  * is left alone, so there is never a second `overdue` event.
@@ -71,7 +74,7 @@ export async function sweep(db: Db, clock: Clock, hooks: SweepHooks = {}, securi
     .select({ id: schema.tickets.id })
     .from(schema.tickets)
     .where(and(inArray(schema.tickets.state, ['issued', 'acknowledged']), lte(schema.tickets.deadlineAt, clock.now())));
-  const result: SweepResult = { marked: 0, lostRace: 0, skipped: 0, draftsDeleted: 0, noncesDeleted: 0, stopsForgotten: 0, linksDeleted: 0 };
+  const result: SweepResult = { marked: 0, lostRace: 0, skipped: 0, draftsDeleted: 0, noncesDeleted: 0, stopsForgotten: 0, linksDeleted: 0, optInsCleared: 0 };
   for (const { id } of due) {
     const outcome = await markOverdue(db, clock, id, hooks);
     if (outcome === 'marked') result.marked += 1;
@@ -82,5 +85,6 @@ export async function sweep(db: Db, clock: Clock, hooks: SweepHooks = {}, securi
   result.noncesDeleted = await deleteStaleNonces(db, securityClock);
   result.stopsForgotten = await deleteStaleRevokedHandoffs(db, securityClock.now());
   result.linksDeleted = await deleteStaleClinicLinks(db, securityClock.now());
+  result.optInsCleared = await clearIdleOptIns(db, securityClock.now());
   return result;
 }

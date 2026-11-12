@@ -9,6 +9,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Clock } from '../clock';
 import { schema, type Db } from '../db/client';
 import { sendError } from '../plugins/auth';
+import { dayOf, touchLastSeen } from '../persons/last-seen';
 import { hashesEqual, sha256Hex } from '../security';
 
 /**
@@ -16,10 +17,10 @@ import { hashesEqual, sha256Hex } from '../security';
  * its first server write, so check-in needs no network. The server stores only the secret's hash and the
  * locale: no name, email, Emirates ID or phone is collected, and the body schema strips anything else.
  *
- * Registering the same id with the same secret is idempotent (200); the same id with a different secret is
+ * Registering the same id with the same secret is idempotent (200) and counts as the device being seen today; the same id with a different secret is
  * refused (409) so a stranger cannot take over a registered id.
  */
-export function registerPersonRoutes(app: FastifyInstance, deps: { db: Db; clock: Clock }): void {
+export function registerPersonRoutes(app: FastifyInstance, deps: { db: Db; clock: Clock; /** The wall clock: the day a device was last seen is real time, never the demo clock. */ securityClock: Clock }): void {
   app.withTypeProvider<ZodTypeProvider>().post(
     '/persons',
     {
@@ -34,7 +35,7 @@ export function registerPersonRoutes(app: FastifyInstance, deps: { db: Db; clock
       const secretHash = sha256Hex(secret);
       const inserted = await deps.db
         .insert(schema.persons)
-        .values({ id, secretHash, locale, equityOptIn: false, createdAt: deps.clock.now() })
+        .values({ id, secretHash, locale, equityOptIn: false, createdAt: deps.clock.now(), lastSeenOn: dayOf(deps.securityClock.now()) })
         .onConflictDoNothing({ target: schema.persons.id })
         .returning({ id: schema.persons.id });
       if (inserted.length > 0) return reply.code(201).send({ id, created: true });
@@ -44,7 +45,10 @@ export function registerPersonRoutes(app: FastifyInstance, deps: { db: Db; clock
         .from(schema.persons)
         .where(eq(schema.persons.id, id))
         .limit(1);
-      if (existing && hashesEqual(existing.secretHash, secretHash)) return reply.code(200).send({ id, created: false });
+      if (existing && hashesEqual(existing.secretHash, secretHash)) {
+        await touchLastSeen(deps.db, id, deps.securityClock.now());
+        return reply.code(200).send({ id, created: false });
+      }
       return sendError(reply, 409, 'conflict', 'This id is already registered');
     },
   );
