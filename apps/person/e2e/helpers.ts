@@ -75,8 +75,8 @@ export async function visitOnline(page: Page, locale: Locale): Promise<void> {
 
 /**
  * The static server's request counts once they have stopped moving. A page that has settled can still have a request on its
- * way that the browser made on its own (the service worker's check for a newer `sw.js`), and counted after the network was cut
- * it would look like a request made offline.
+ * way, and counted after the network was cut it would look like a request made offline. (The browser's own check for a newer
+ * `sw.js` is not in these counts: the server keeps it apart, because the browser makes it whatever the test browser's offline mode says.)
  */
 async function settledStaticHits(): Promise<void> {
   let last = JSON.stringify(await staticHits());

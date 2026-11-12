@@ -31,8 +31,10 @@ function resolveFile(/** @type {string} */ pathname) {
   return null;
 }
 
-/** Requests that reached this server, by path. A test reads it to prove a page was served from the service worker's cache. */
+/** Page and asset requests that reached this server, by path. A test reads it to prove a page was served from the service worker's cache. */
 const hits = new Map();
+/** The requests the browser itself made to check a service worker script for a newer version, by path (see `/__e2e/update-checks`). */
+const updateChecks = new Map();
 
 const server = createServer((request, response) => {
   const { pathname } = new URL(request.url ?? '/', 'http://localhost');
@@ -40,7 +42,14 @@ const server = createServer((request, response) => {
     response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(Object.fromEntries(hits)));
     return;
   }
-  hits.set(pathname, (hits.get(pathname) ?? 0) + 1);
+  if (pathname === '/__e2e/update-checks') {
+    response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(Object.fromEntries(updateChecks)));
+    return;
+  }
+  // The browser's own check for a newer worker script carries `Service-Worker: script` and is made by the browser, outside
+  // the page and outside the test browser's offline mode, so it is counted apart; any other request counts as a page request.
+  const counts = request.headers['service-worker'] === 'script' ? updateChecks : hits;
+  counts.set(pathname, (counts.get(pathname) ?? 0) + 1);
   const file = request.method === 'GET' || request.method === 'HEAD' ? resolveFile(pathname) : null;
   if (!file) {
     response.writeHead(404, { 'content-type': 'text/plain' }).end('not found');
