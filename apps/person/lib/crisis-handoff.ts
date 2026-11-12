@@ -36,6 +36,15 @@ export async function loadHandoffs(storage: StorageAdapter): Promise<HandoffReco
   });
 }
 
+/**
+ * The records to show after a re-read of the store: the new list when the read answers, and the list last read (`previous`) when the read
+ * fails or does not answer within `storeMs`. A screen that dropped its list on a failed read would stop offering Stop and would tell the next
+ * retry that no earlier attempt exists ("nothing was sent") while the server may hold the note. Never rejects; the crisis screen never waits on it.
+ */
+export function reloadHandoffs(storage: StorageAdapter, previous: readonly HandoffRecord[], storeMs: number = HANDOFF_STORE_PATIENCE_MS): Promise<readonly HandoffRecord[]> {
+  return within<readonly HandoffRecord[]>(loadHandoffs(storage), storeMs, previous);
+}
+
 /** The record for one crisis event, or null. */
 export function handoffFor(records: readonly HandoffRecord[], crisisEventId: string | null): HandoffRecord | null {
   return crisisEventId === null ? null : (records.find((record) => record.crisisEventId === crisisEventId) ?? null);

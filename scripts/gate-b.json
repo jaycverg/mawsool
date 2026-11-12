@@ -2910,7 +2910,7 @@
   },
   {
     "id": "the-handoff-timeout-does-not-claim-nothing-was-sent",
-    "sentence": "When the hand-off request was issued and the phone has no answer to go by (no answer in time, a dropped connection, a lost reply, a server error), the crisis screen says the phone could not confirm the note arrived, that the numbers above still work and that the note can still be stopped, in Arabic and English, and offers the stop control; the outcomes where nothing was sent for certain (no network reported, a crisis queue that cannot be flushed, a phone that cannot register, the phone could not prepare the note, a hand-off already stopped, a refusal) keep their own words on a first attempt, while a retry that finds an earlier attempt's record, or is told by the screen that it holds one, says it could not confirm and keeps the record and its Stop at the exits where nothing left the phone this time, including when the phone could not write its record or its store did not answer, and the crisis screen never waits on any of it",
+    "sentence": "When the hand-off request was issued and the phone has no answer to go by (no answer in time, a dropped connection, a lost reply, a server error), the crisis screen says the phone could not confirm the note arrived, that the numbers above still work and that the note can still be stopped, in Arabic and English, and offers the stop control; the outcomes where nothing was sent for certain (no network reported, a crisis queue that cannot be flushed, a phone that cannot register, the phone could not prepare the note, a hand-off already stopped, a refusal) keep their own words on a first attempt, while a retry that finds an earlier attempt's record, or is told by the screen that it holds one, says it could not confirm and keeps the record and its Stop at the exits where nothing left the phone this time, including when the phone could not write its record or its store did not answer, and when the screen's own re-read of the store fails or stalls, which leaves its list of records as last read, and the crisis screen never waits on any of it",
     "project": "apps/person",
     "tests": [
       {
@@ -2956,6 +2956,22 @@
       {
         "file": "test/crisis-handoff.test.ts",
         "name": "a retry that could not read the earlier records once, and then cannot register the phone, says unconfirmed"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "keeps the list last read when the read fails"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "keeps the list last read when the read does not answer in time"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "shows the new list when the read answers, an empty one included"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "keeps Stop and the earlier attempt known through every press of a retry while the store keeps failing"
       },
       {
         "file": "test/crisis-handoff.test.ts",
