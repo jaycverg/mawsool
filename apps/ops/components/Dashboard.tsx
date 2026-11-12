@@ -253,6 +253,22 @@ function Equity({ equity, t, format }: { equity: EquityResponse; t: Translate; f
   );
 }
 
+const TIMELINESS_COLUMNS = ['tier', 'target', 'tickets', 'within', 'median', 'p90'] as const;
+
+/**
+ * How the timeliness table reflows when its card is narrow (a container query on the card's inner width, not the screen's): the
+ * header row is kept for assistive technology only, each tier becomes a two-column block with its name across the top, and each
+ * figure carries its column's name from `data-label`. Wide enough, none of these apply and the table is a table.
+ */
+const NARROW = {
+  table: '@max-[520px]:block',
+  head: '@max-[520px]:sr-only',
+  body: '@max-[520px]:block',
+  row: '@max-[520px]:grid @max-[520px]:grid-cols-2 @max-[520px]:gap-x-4 @max-[520px]:border-b @max-[520px]:border-[#E6ECEA] @max-[520px]:py-2 @max-[520px]:[&:last-child]:border-b-0',
+  tier: '@max-[520px]:col-span-2 @max-[520px]:border-b-0 @max-[520px]:font-semibold',
+  cell: '@max-[520px]:flex @max-[520px]:justify-between @max-[520px]:gap-2 @max-[520px]:border-b-0 @max-[520px]:before:text-muted @max-[520px]:before:content-[attr(data-label)]',
+} as const;
+
 function Timeliness({ data, t, format }: { data: DashboardData; t: Translate; format: (value: number) => string }) {
   const { timeliness } = data;
   const rows = [{ id: 'overall', label: t('timeliness.overall'), cell: timeliness.overall }, ...timeliness.tiers.map((entry) => ({ id: entry.tier, label: t(`tier.${entry.tier}`), cell: entry.cell }))];
@@ -263,33 +279,35 @@ function Timeliness({ data, t, format }: { data: DashboardData; t: Translate; fo
   const below = (id: string, cell: (typeof rows)[number]['cell']): boolean =>
     id !== 'overall' && overallWithin !== null && !isSuppressed(cell) && !isSuppressed(cell.withinTarget) && cell.withinTarget.percent <= overallWithin - EQUITY_FLAG_POINTS;
   return (
-    <section aria-label={t('timeliness.label')} className={`${card} flex min-w-0 flex-[1_1_420px] flex-col gap-3 overflow-x-auto`} data-section="timeliness">
+    <section aria-label={t('timeliness.label')} className={`${card} flex min-w-0 flex-[1_1_420px] flex-col gap-3`} data-section="timeliness">
       <h2 className="-mb-0.5 text-[17px] font-bold">{t('timeliness.heading')}</h2>
 
-      <table className="w-full border-collapse text-[14px]">
-        <thead>
+      {/* Wide enough, the figures are a table. In a narrow card each tier becomes a block with its figures labelled, so nothing scrolls inside the card. */}
+      <div className="@container">
+      <table className={`w-full border-collapse text-[14px] ${NARROW.table}`}>
+        <thead className={NARROW.head}>
           <tr className="text-start text-[12px] uppercase tracking-[0.5px] text-muted">
-            {(['tier', 'target', 'tickets', 'within', 'median', 'p90'] as const).map((column) => <th key={column} scope="col" className="border-b border-border px-1.5 py-2 text-start font-bold">{t(`timeliness.${column}`)}</th>)}
+            {TIMELINESS_COLUMNS.map((column) => <th key={column} scope="col" className="border-b border-border px-1.5 py-2 text-start font-bold">{t(`timeliness.${column}`)}</th>)}
           </tr>
         </thead>
-        <tbody>
+        <tbody className={NARROW.body}>
           {rows.map(({ id, label, cell }) => {
             const hidden = isSuppressed(cell);
             const withinHidden = hidden || isSuppressed(cell.withinTarget);
             return (
-              <tr key={id} data-tier-row={id} data-suppressed={hidden ? '' : undefined} className="[&:last-child>td]:border-b-0">
-                <td className="border-b border-[#E6ECEA] px-1.5 py-2.5">{label}</td>
-                <td className="border-b border-[#E6ECEA] px-1.5 py-2.5">{id === 'overall' ? '—' : t('timeliness.days', { days: format(TIER_TARGET_DAYS[id as keyof typeof TIER_TARGET_DAYS]) })}</td>
+              <tr key={id} data-tier-row={id} data-suppressed={hidden ? '' : undefined} className={`[&:last-child>td]:border-b-0 ${NARROW.row}`}>
+                <td className={`border-b border-[#E6ECEA] px-1.5 py-2.5 ${NARROW.tier}`}>{label}</td>
+                <td className={`border-b border-[#E6ECEA] px-1.5 py-2.5 ${NARROW.cell}`} data-label={t('timeliness.target')}>{id === 'overall' ? '—' : t('timeliness.days', { days: format(TIER_TARGET_DAYS[id as keyof typeof TIER_TARGET_DAYS]) })}</td>
                 {hidden ? (
-                  <td colSpan={4} className="border-b border-[#E6ECEA] px-1.5 py-2.5 text-muted">{t('suppressed')}</td>
+                  <td colSpan={4} className={`border-b border-[#E6ECEA] px-1.5 py-2.5 text-muted ${NARROW.tier}`}>{t('suppressed')}</td>
                 ) : (
                   <>
-                    <td className="border-b border-[#E6ECEA] px-1.5 py-2.5">{format(cell.tickets)}</td>
-                    <td className={`border-b border-[#E6ECEA] px-1.5 py-2.5 ${below(id, cell) ? 'font-semibold' : ''}`} style={below(id, cell) ? { color: FLAG_INK } : undefined} data-below-target={below(id, cell) ? '' : undefined}>
+                    <td className={`border-b border-[#E6ECEA] px-1.5 py-2.5 ${NARROW.cell}`} data-label={t('timeliness.tickets')}>{format(cell.tickets)}</td>
+                    <td className={`border-b border-[#E6ECEA] px-1.5 py-2.5 ${NARROW.cell} ${below(id, cell) ? 'font-semibold' : ''}`} style={below(id, cell) ? { color: FLAG_INK } : undefined} data-below-target={below(id, cell) ? '' : undefined} data-label={t('timeliness.within')}>
                       {withinHidden || isSuppressed(cell.withinTarget) ? t('suppressedShort') : `${format(cell.withinTarget.percent)}%`}
                     </td>
-                    <td className="border-b border-[#E6ECEA] px-1.5 py-2.5">{isSuppressed(cell.medianDaysToSeen) ? t('suppressedShort') : t('timeliness.days', { days: format(cell.medianDaysToSeen) })}</td>
-                    <td className="border-b border-[#E6ECEA] px-1.5 py-2.5">{isSuppressed(cell.p90DaysToSeen) ? t('suppressedShort') : t('timeliness.days', { days: format(cell.p90DaysToSeen) })}</td>
+                    <td className={`border-b border-[#E6ECEA] px-1.5 py-2.5 ${NARROW.cell}`} data-label={t('timeliness.median')}>{isSuppressed(cell.medianDaysToSeen) ? t('suppressedShort') : t('timeliness.days', { days: format(cell.medianDaysToSeen) })}</td>
+                    <td className={`border-b border-[#E6ECEA] px-1.5 py-2.5 ${NARROW.cell}`} data-label={t('timeliness.p90')}>{isSuppressed(cell.p90DaysToSeen) ? t('suppressedShort') : t('timeliness.days', { days: format(cell.p90DaysToSeen) })}</td>
                   </>
                 )}
               </tr>
@@ -297,6 +315,7 @@ function Timeliness({ data, t, format }: { data: DashboardData; t: Translate; fo
           })}
         </tbody>
       </table>
+      </div>
       <p className="t-small text-muted">{t('timeliness.basis')}</p>
       <InfoPanel id="timeliness" label={t('timeliness.heading')} />
 
@@ -346,7 +365,7 @@ function Safety({ data, t, format }: { data: DashboardData; t: Translate; format
   return (
     <section aria-label={t('safety.label')} className={`${card} flex min-w-0 flex-[1_1_420px] flex-col gap-2.5`} data-section="safety">
       <h2 className="text-[17px] font-bold">{t('safety.heading')}</h2>
-      <div className="grid grid-cols-3 gap-2.5">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-2.5">
         {stat('shown', t('safety.shown'), isSuppressed(crisis.shown) ? null : format(crisis.shown))}
         {stat('called', t('safety.called'), isSuppressed(crisis.calledALine) ? null : t('safety.of', { count: format(crisis.calledALine.count), of: format(crisis.calledALine.of) }))}
         {stat('median', t('safety.median'), isSuppressed(crisis.medianMinutesToContact) ? null : t('safety.minutes', { minutes: format(crisis.medianMinutesToContact) }))}
@@ -391,7 +410,7 @@ function Outcomes({ data, t, lang, format }: { data: DashboardData; t: Translate
             <div className="grid grid-cols-3 gap-2.5">
               <div data-outcome-stat="mean">
                 <div className="text-[12px] text-muted">{t('outcomes.mean')}</div>
-                <div className="text-[20px] font-bold" data-value>{value(isSuppressed(entry.meanChange) ? null : t('outcomes.points', { points: decimal(entry.meanChange) }))}</div>
+                <div className="whitespace-nowrap text-[20px] font-bold" data-value>{value(isSuppressed(entry.meanChange) ? null : t('outcomes.points', { points: decimal(entry.meanChange) }))}</div>
               </div>
               <div data-outcome-stat="improved">
                 <div className="text-[12px] text-muted">{t('outcomes.improved')}</div>

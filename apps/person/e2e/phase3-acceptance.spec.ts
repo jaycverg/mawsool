@@ -1551,6 +1551,40 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page.locator('[data-prompt="reminder"]')).toHaveCount(0);
   },
 
+  async 'reminder-notifier-shows-a-due-reminder-as-a-notification-when-the-app-opens'({ page, context, locale }) {
+    await context.grantPermissions(['notifications']);
+    // Records every notification the page asks the service worker's registration to show, and still shows it.
+    await page.addInitScript(() => {
+      const show = ServiceWorkerRegistration.prototype.showNotification;
+      ServiceWorkerRegistration.prototype.showNotification = function (this: ServiceWorkerRegistration, title: string, options?: NotificationOptions) {
+        sessionStorage.setItem('e2e.shown', JSON.stringify([...JSON.parse(sessionStorage.getItem('e2e.shown') ?? '[]'), { title, body: options?.body, tag: options?.tag }]));
+        return show.call(this, title, options);
+      };
+    });
+    const shown = async (): Promise<{ title: string; body: string; tag: string }[]> => JSON.parse((await page.evaluate(() => sessionStorage.getItem('e2e.shown'))) ?? '[]');
+    await visitOnline(page, locale);
+    await page.goto(`/${locale}/settings/`);
+    await page.locator('[data-reminders-switch]').click();
+    await expect(page.locator('[data-reminders-switch]')).toBeChecked();
+    await page.locator('input[name="reminder-interval"][value="2"]').click();
+    await expect(page.locator('input[name="reminder-interval"][value="2"]')).toBeChecked();
+
+    // Not yet due: opening the app shows nothing.
+    await page.goto(`/${locale}/`);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await expect(page.locator('[data-prompt="reminder"]')).toHaveCount(0);
+    expect(await shown()).toEqual([]);
+
+    // Due, on the care clock: the notifier mounted by the layout shows it when the page opens, in the reminder words alone.
+    await context.clock.setFixedTime(new Date(Date.now() + 15 * DAY_MS));
+    await page.goto(`/${locale}/`);
+    await expect(page.locator('[data-prompt="reminder"]')).toBeVisible();
+    await expect.poll(shown, { timeout: 15_000 }).toHaveLength(1);
+    const [notification] = await shown();
+    expect(notification).toMatchObject({ title: msg(locale, 'reminder.title'), body: msg(locale, 'reminder.body') });
+    expect(notification!.tag).toBe('check-in-reminder');
+  },
+
   async 'reminder-number-is-optional-stored-apart-and-deleted-with-the-reminders'({ page, locale }) {
     await visitOnline(page, locale);
     await page.goto(`/${locale}/settings/`);
@@ -1799,6 +1833,113 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await page.goto(`/${locale}/settings/`);
     await expect(page.locator('[data-panel="reminders"]')).toBeVisible();
     await expect(page.locator('[data-panel="statistics"]')).toHaveCount(0);
+  },
+
+  async 'statistics-note-refused-write-sends-nothing-shows-the-message-and-keeps-finish-in-view'({ page, context, locale }) {
+    await installFailingIndexedDb(page);
+    await visitOnline(page, locale);
+    const id = await stubSeenTicket(page, locale);
+    const bodies: Record<string, unknown>[] = [];
+    await page.route(`${API}/me/tickets/${id}/remeasure`, async (route) => {
+      bodies.push(route.request().postDataJSON());
+      await route.fulfill({ json: { state: 'closed', scoresShared: true, events: [] } });
+    });
+    await context.clock.setFixedTime(new Date(SEEN_AT_MS + SIX_WEEKS_MS));
+    await page.goto(`/${locale}/ticket/?id=${id}`);
+    await takeRepeatCheck(page, locale, id);
+    const totalsUrl = page.url();
+    await page.locator('[data-control="share-totals"]').check();
+    await page.locator('[data-control="count-in-statistics"]').check();
+    const finish = page.locator('[data-control="finish-remeasure"]');
+    const inView = async (what: string) => {
+      const box = (await finish.boundingBox())!;
+      expect(box.y, `${what}: Finish starts inside the viewport`).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height, `${what}: Finish ends inside the viewport`).toBeLessThanOrEqual(page.viewportSize()!.height);
+    };
+    await inView('with the box ticked');
+
+    // The phone cannot write its note that the choice may be on: nothing is sent, the message says so, and the choice is still not recorded.
+    await setIdbMode(page, 'refuse-writes');
+    await finish.click();
+    await expect(page.locator('[data-note-failed]')).toHaveText(msg(locale, 'remeasure.statisticsNoteFailed'));
+    await expect(page).toHaveURL(totalsUrl);
+    expect(bodies, 'nothing was sent').toEqual([]);
+    expect(await rawStoreKeys(page)).not.toContain('outcome-statistics');
+    // The message is on the screen and Finish is still in view, in both languages, without scrolling to it.
+    await inView('with the message shown');
+
+    // With the phone able to write again, the same Finish sends the choice and the note is kept.
+    await setIdbMode(page, null);
+    await finish.click();
+    await expect(page).toHaveURL(`${BASE}/${locale}/ticket/?id=${id}`);
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toMatchObject({ statisticsOptIn: true });
+    expect(await rawStoreKeys(page)).toContain('outcome-statistics');
+  },
+
+  async 'statistics-note-lost-reply-keeps-the-settings-turn-off-visible'({ page, context, locale, consoleGuard }) {
+    await visitOnline(page, locale);
+    const id = await stubSeenTicket(page, locale);
+    consoleGuard.allow({ url: `${API}/me/tickets/${id}/remeasure`, expect: 'net::ERR_FAILED', reason: 'the test drops the reply of the send on purpose: the server may have counted the totals, so the phone must keep the choice it can turn off' });
+    await page.route(`${API}/me/tickets/${id}/remeasure`, (route) => route.abort());
+    await context.clock.setFixedTime(new Date(SEEN_AT_MS + SIX_WEEKS_MS));
+    await page.goto(`/${locale}/ticket/?id=${id}`);
+    await takeRepeatCheck(page, locale, id);
+    const totalsUrl = page.url();
+    await page.locator('[data-control="share-totals"]').check();
+    await page.locator('[data-control="count-in-statistics"]').check();
+    await page.locator('[data-control="finish-remeasure"]').click();
+    // The send did not get an answer: the screen says so and stays, and the phone has already noted that the choice may be on.
+    await expect(page.getByRole('alert').filter({ hasText: msg(locale, 'remeasure.failed') })).toBeVisible();
+    await expect(page).toHaveURL(totalsUrl);
+    expect(await rawStoreKeys(page)).toContain('outcome-statistics');
+    // Settings still offers the turn-off, with the wording that covers every total.
+    await page.goto(`/${locale}/settings/`);
+    const panel = page.locator('[data-panel="statistics"]');
+    await expect(panel).toContainText(msg(locale, 'settings.statisticsOnBody'));
+    await expect(panel.locator('[data-control="turn-off-statistics"]')).toBeVisible();
+    await expect(panel.locator('[data-control="turn-off-statistics"]')).toHaveText(msg(locale, 'settings.statisticsOptOut'));
+  },
+
+  async 'repeat-check-statistics-help-stays-readable-while-the-box-is-disabled'({ page, context, locale }) {
+    await visitOnline(page, locale);
+    const id = await stubSeenTicket(page, locale);
+    await context.clock.setFixedTime(new Date(SEEN_AT_MS + SIX_WEEKS_MS));
+    await page.goto(`/${locale}/ticket/?id=${id}`);
+    await takeRepeatCheck(page, locale, id);
+    const box = page.locator('[data-control="count-in-statistics"]');
+    const choice = page.locator('label', { has: box });
+    // Disabled while the totals are not sent: the box cannot be ticked and the label looks and acts unavailable.
+    await expect(box).toBeDisabled();
+    await expect(choice).toHaveCSS('cursor', 'not-allowed');
+    await expect(choice).toHaveAttribute('data-disabled', '');
+    /** WCAG contrast of an element's text against the background it is drawn on, with any fading by opacity of it or an ancestor counted. */
+    const contrast = (selector: string) =>
+      page.evaluate((text) => {
+        const channels = (value: string) => value.match(/[\d.]+/g)!.map(Number) as [number, number, number];
+        const linear = (value: number) => (value / 255 <= 0.03928 ? value / 255 / 12.92 : ((value / 255 + 0.055) / 1.055) ** 2.4);
+        const luminance = ([r, g, b]: [number, number, number]) => 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+        const element = document.querySelector(text)!;
+        let opacity = 1;
+        for (let node: Element | null = element; node; node = node.parentElement) opacity *= Number(getComputedStyle(node).opacity);
+        let backdrop: Element | null = element;
+        while (backdrop && getComputedStyle(backdrop).backgroundColor === 'rgba(0, 0, 0, 0)') backdrop = backdrop.parentElement;
+        const back = channels(getComputedStyle(backdrop!).backgroundColor);
+        const fore = channels(getComputedStyle(element).color);
+        const shown = fore.map((value, i) => value * opacity + back[i]! * (1 - opacity)) as [number, number, number];
+        const [light, dark] = [luminance(shown), luminance(back)].sort((a, b) => b - a);
+        return { ratio: (light! + 0.05) / (dark! + 0.05), opacity };
+      }, selector);
+    const help = await contrast('label:has([data-control="count-in-statistics"]) .t-small');
+    const title = await contrast('label:has([data-control="count-in-statistics"]) .font-semibold');
+    expect(help.opacity, 'the help is not faded').toBe(1);
+    expect(help.ratio, 'the disabled help text reads at 4.5:1 or better').toBeGreaterThanOrEqual(4.5);
+    expect(title.ratio, 'the disabled title reads at 4.5:1 or better').toBeGreaterThanOrEqual(4.5);
+    // Enabled, it is the ordinary white card.
+    await page.locator('[data-control="share-totals"]').check();
+    await expect(box).toBeEnabled();
+    await expect(choice).not.toHaveAttribute('data-disabled', '');
+    expect((await contrast('label:has([data-control="count-in-statistics"]) .t-small')).ratio).toBeGreaterThanOrEqual(4.5);
   },
 
   async 'repeat-check-starts-a-fresh-check-in-and-never-finishes-an-old-one'({ page, context, locale }) {

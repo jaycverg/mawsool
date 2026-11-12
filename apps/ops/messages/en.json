@@ -210,7 +210,8 @@
         "ambulance": "Ambulance",
         "police": "Police"
       },
-      "source": "Source note"
+      "source": "Source note",
+      "englishOnly": "English only"
     },
     "signOut": "Sign out"
   },

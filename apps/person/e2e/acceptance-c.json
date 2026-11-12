@@ -16,6 +16,14 @@
     "sentence": "The admin panel shows the crisis numbers' last_verified date, moves the demo clock by its three steps, resets to the seed and the real clock, and the API refuses the ops role the same controls"
   },
   {
+    "id": "admin-panel-crisis-number-notes-say-english-only-on-the-arabic-page",
+    "sentence": "The admin panel's crisis-number source notes are the rules config's English text, marked as English and read from the left, and on the Arabic page each carries an Arabic label saying it is English only, because no Arabic source for them exists; the English page carries no such label"
+  },
+  {
+    "id": "dashboard-fits-a-phone-with-no-inner-scroll-and-keeps-a-value-and-its-unit-on-one-line",
+    "sentence": "At 390 px the ops dashboard does not scroll sideways and no card scrolls inside itself; the timeliness figures stay inside their card, one block per tier with each figure under its column's name; and a symptom-change mean and its unit share one line inside their block, in Arabic and English"
+  },
+  {
     "id": "clinic-queue-follows-the-demo-clock",
     "sentence": "The clinic queue counts days left from the demo clock, so overdue marks agree with the API"
   },

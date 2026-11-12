@@ -1,5 +1,5 @@
 import { type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { TIER_TARGET_DAYS } from '@mawsool/rules';
+import { CRISIS_NUMBERS_CONFIG, TIER_TARGET_DAYS } from '@mawsool/rules';
 import { METRIC_DEFINITIONS } from '@mawsool/types';
 import { expect, test, type ConsoleGuard } from './fixtures';
 import acceptance from './acceptance-c.json';
@@ -468,6 +468,65 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     const opsSession = await staffSession(OPS_USER);
     expect((await call('POST', '/demo/reset', { headers: bearer(opsSession) })).status).toBe(403);
     expect((await call('POST', '/demo/clock/advance', { headers: bearer(opsSession), body: { by: '7d' } })).status).toBe(403);
+  },
+
+  async 'admin-panel-crisis-number-notes-say-english-only-on-the-arabic-page'({ context, locale }) {
+    const admin = await signedInPage(context, OPS, ADMIN);
+    await admin.goto(opsUrl(locale));
+    const rows = admin.locator('[data-section="crisis-numbers"] [data-crisis-number]');
+    await expect(rows).toHaveCount(CRISIS_NUMBERS_CONFIG.length);
+    for (const line of CRISIS_NUMBERS_CONFIG) {
+      const row = admin.locator(`[data-crisis-number="${line.number}"]`);
+      // The note is the rules config's own English text, marked as English and left to read from the left, in either language.
+      await expect(row.locator('[data-source-note]'), `${line.number} note`).toHaveText(line.note);
+      await expect(row.locator('[data-source-note]')).toHaveAttribute('lang', 'en');
+      await expect(row.locator('[data-source-note]')).toHaveAttribute('dir', 'ltr');
+      // No Arabic source for it exists, so the Arabic page says so beside it; the English page needs no such label.
+      if (locale === 'ar') {
+        await expect(row.locator('[data-english-only]'), `${line.number} label`).toHaveText(omsg('ar', 'admin.crisis.englishOnly'));
+        expect(omsg('ar', 'admin.crisis.englishOnly')).toMatch(/[؀-ۿ]/);
+      } else {
+        await expect(row.locator('[data-english-only]')).toHaveCount(0);
+      }
+    }
+  },
+
+  async 'dashboard-fits-a-phone-with-no-inner-scroll-and-keeps-a-value-and-its-unit-on-one-line'({ context, browser, locale }) {
+    // From a fresh reset, so the symptom-change tile has numbers (a mean change with its unit) on the default view.
+    await resetFromPanel(await signedInPage(context, OPS, ADMIN), locale);
+    const dash = await dashboard(browser, locale);
+    await dash.setViewportSize({ width: 390, height: 844 });
+    await expect(dash.locator('[data-section="timeliness"] [data-tier-row]')).toHaveCount(5);
+    await expect(dash.locator('[data-section="outcomes"] [data-outcome-stat="mean"] [data-value]').first()).toHaveText(/\d/);
+
+    // Nothing scrolls sideways: not the page, and not a card or anything inside one.
+    const scrolling = await dash.evaluate(() => {
+      const overflowing = (element: Element) => element.scrollWidth > element.clientWidth + 1;
+      const inner = [...document.querySelectorAll('[data-section] , [data-section] *')].filter((element) => ['auto', 'scroll'].includes(getComputedStyle(element).overflowX) && overflowing(element));
+      return { page: document.documentElement.scrollWidth - document.documentElement.clientWidth, inner: inner.map((element) => `${element.tagName}[${element.getAttribute('data-section') ?? ''}]`) };
+    });
+    expect(scrolling.page, 'the page does not scroll sideways').toBeLessThanOrEqual(0);
+    expect(scrolling.inner, 'no card scrolls inside itself').toEqual([]);
+
+    // The timeliness figures stay inside their card, one block per tier, each figure under the name of its column.
+    const section = (await dash.locator('[data-section="timeliness"]').boundingBox())!;
+    for (const row of await dash.locator('[data-section="timeliness"] [data-tier-row]').all()) {
+      const box = (await row.boundingBox())!;
+      expect(box.x, 'a tier row starts inside the card').toBeGreaterThanOrEqual(section.x);
+      expect(box.x + box.width, 'a tier row ends inside the card').toBeLessThanOrEqual(section.x + section.width + 1);
+    }
+    const labels = await dash.locator('[data-tier-row="gp"] td[data-label]').evaluateAll((cells) => cells.map((cell) => ({ label: cell.getAttribute('data-label'), before: getComputedStyle(cell, '::before').content })));
+    expect(labels.map((cell) => cell.label)).toEqual(['target', 'tickets', 'within', 'median', 'p90'].map((column) => omsg(locale, `dash.timeliness.${column}`)));
+    expect(labels.map((cell) => cell.before)).toEqual(labels.map((cell) => `"${cell.label}"`));
+
+    // A mean change and its unit ("-0.8 points") are on one line, inside their column.
+    for (const value of await dash.locator('[data-section="outcomes"] [data-outcome-stat="mean"] [data-value]').all()) {
+      const lineHeight = parseFloat(await value.evaluate((node) => getComputedStyle(node).lineHeight));
+      const box = (await value.boundingBox())!;
+      expect(box.height, 'the value and its unit share one line').toBeLessThanOrEqual(lineHeight + 1);
+      const fits = await value.evaluate((node) => node.scrollWidth <= node.clientWidth + 1 && node.getBoundingClientRect().right <= node.closest('[data-outcome]')!.getBoundingClientRect().right + 1 && node.getBoundingClientRect().left >= node.closest('[data-outcome]')!.getBoundingClientRect().left - 1);
+      expect(fits, 'the value stays inside its block').toBe(true);
+    }
   },
 
   async 'clinic-queue-follows-the-demo-clock'({ context, locale }) {

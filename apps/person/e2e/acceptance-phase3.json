@@ -136,6 +136,10 @@
     "sentence": "Reminders are off until the person turns them on, come every 4 weeks to start and every 2 weeks if chosen, and a due one shows on the home screen in the reminder words alone until the next check-in is finished"
   },
   {
+    "id": "reminder-notifier-shows-a-due-reminder-as-a-notification-when-the-app-opens",
+    "sentence": "With notifications allowed and reminders on, opening the app shows nothing while no reminder is due, and once one is due the notifier the layout mounts shows it through the service worker's registration, in the reminder words alone"
+  },
+  {
     "id": "reminder-number-is-optional-stored-apart-and-deleted-with-the-reminders",
     "sentence": "The number for text reminders is optional, refused unless international, held by the server only as ciphertext in its own row, labelled a sample, answered with a prepared sample that sends nothing, and deleted by removing it, by turning reminders off and by Delete everything"
   },
@@ -154,6 +158,18 @@
   {
     "id": "person-ending-a-seen-ticket-closes-it",
     "sentence": "The person's control to end a seen ticket moves it from seen to closed with the person as actor, and nothing is offered to end a ticket that has not been seen"
+  },
+  {
+    "id": "statistics-note-refused-write-sends-nothing-shows-the-message-and-keeps-finish-in-view",
+    "sentence": "When the phone cannot write its note that the statistics choice may be on, Finish sends nothing, the repeat check screen says that nothing was sent, no note is recorded and Finish stays in view at 390 by 844 with the message shown; once the phone can write again the same Finish sends the choice and the note is kept"
+  },
+  {
+    "id": "statistics-note-lost-reply-keeps-the-settings-turn-off-visible",
+    "sentence": "When the reply to a repeat check sent with the statistics choice never arrives, the screen says it failed, the phone keeps its note that the choice may be on, and Settings still shows the statistics panel with its turn-off button"
+  },
+  {
+    "id": "repeat-check-statistics-help-stays-readable-while-the-box-is-disabled",
+    "sentence": "While the box to send the totals is unticked, the statistics box is disabled and looks unavailable (not-allowed cursor, flat ground) yet its title and help text read at 4.5:1 or better against their background, with no fading by opacity; ticking the send box makes it an ordinary enabled card"
   },
   {
     "id": "repeat-check-counts-in-anonymous-statistics-only-when-ticked-and-only-with-the-totals",
