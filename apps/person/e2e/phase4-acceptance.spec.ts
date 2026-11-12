@@ -1194,13 +1194,19 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page).toHaveURL(new RegExp(`^${escapeRe(BASE)}/${locale}/result/\\?id=[0-9a-f-]{36}$`));
   },
 
-  async 'crisis-handoff-timeout-says-it-could-not-confirm-and-offers-the-stop'({ page, locale }) {
+  async 'crisis-handoff-timeout-says-it-could-not-confirm-and-offers-the-stop'({ page, locale, consoleGuard }) {
     // The send is never answered, so the phone's own ten second limit on a call runs out: a slow send may still have arrived.
     test.setTimeout(90_000);
     await visitOnline(page, locale);
     const before = (await storedHandoffs()).length;
     await triggerCrisis(page, locale);
-    await page.route(`${API}/me/crisis-handoffs`, () => new Promise<void>(() => undefined));
+    // The held request never reaches the server, so the stop finds no note and the server answers 404 (the phone treats that as already stopped).
+    // The note's id is read from the held request, and that one address is allowed.
+    await page.route(`${API}/me/crisis-handoffs`, (route) => {
+      const { handoffId } = route.request().postDataJSON() as { handoffId: string };
+      consoleGuard.allow({ url: `${API}/me/crisis-handoffs/${handoffId}`, expect: 404, reason: 'the held send never reached the server, so stopping it finds nothing there' });
+      return new Promise<void>(() => undefined);
+    });
     await page.locator('[data-handoff-offer]').click();
     await page.locator('[data-handoff-consent]').check();
     await page.locator('[data-handoff-send]').click();
