@@ -18,6 +18,7 @@ import { createDriver, createNotifier, type Notifier } from './notifier';
 import { registerClinicLinkRoutes } from './routes/clinic-links';
 import { registerAuth } from './plugins/auth';
 import { registerInboundAuth } from './plugins/inbound-auth';
+import { privateRequestLogger } from './plugins/request-log';
 import { registerRouteRegistry } from './plugins/route-registry';
 import { registerSecurityHeaders } from './plugins/security-headers';
 import { registerAuthRoutes } from './routes/auth';
@@ -72,7 +73,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   if (demoClock) await restoreDemoClock(deps.db, demoClock);
   const clock: Clock = demoClock ?? securityClock;
   const cipher = createCipher(deps.config.encryptionKey);
-  const app = Fastify({ logger: deps.logger ?? false });
+  const app = Fastify({ logger: privateRequestLogger(deps.logger) });
 
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
@@ -87,6 +88,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerSecurityHeaders(app);
   registerAuth(app, { db: deps.db, clock: securityClock });
   registerInboundAuth(app, { clock: securityClock, keys: deps.config.inboundKeys ?? {} });
+
+  // Fastify's own 404 writes "Route <method>:<address as typed> not found" to the log, which would put an id back in it.
+  // The reply to the caller is the same; the log line is the request's own (method and "(unmatched)").
+  app.setNotFoundHandler((request, reply) => reply.code(404).send({ message: `Route ${request.method}:${request.url} not found`, error: 'Not Found', statusCode: 404 }));
 
   app.setErrorHandler((error: FastifyError, request, reply) => {
     if (hasZodFastifySchemaValidationErrors(error)) {
