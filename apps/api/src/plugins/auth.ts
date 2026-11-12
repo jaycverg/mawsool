@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { StaffRole } from '@mawsool/types';
 import type { Clock } from '../clock';
 import { schema, type Db } from '../db/client';
+import { touchLastSeen } from '../persons/last-seen';
 import { hashesEqual, sha256Hex } from '../security';
 
 export type Principal =
@@ -33,7 +34,8 @@ export function sendError(reply: FastifyReply, status: number, error: string, me
   return reply.code(status).send({ error, message });
 }
 
-async function authenticatePerson(db: Db, token: string): Promise<Principal | null> {
+/** Authenticates a device credential and notes that the person was seen today (`clock` is the wall clock; once a day per person). */
+async function authenticatePerson(db: Db, clock: Clock, token: string): Promise<Principal | null> {
   const parts = PERSON_CREDENTIAL.exec(token);
   if (!parts) return null;
   const [, personId, secret] = parts as unknown as [string, string, string];
@@ -43,6 +45,7 @@ async function authenticatePerson(db: Db, token: string): Promise<Principal | nu
     .where(eq(schema.persons.id, personId))
     .limit(1);
   if (!person || !hashesEqual(person.secretHash, sha256Hex(secret))) return null;
+  await touchLastSeen(db, person.id, clock.now());
   return { kind: 'person', personId: person.id };
 }
 
@@ -84,7 +87,7 @@ export function registerAuth(app: FastifyInstance, deps: { db: Db; /** The wall 
     if (token === null) return sendError(reply, 401, 'unauthorized', 'Authentication required');
 
     if (access === 'person') {
-      const principal = await authenticatePerson(deps.db, token);
+      const principal = await authenticatePerson(deps.db, deps.clock, token);
       if (!principal) return sendError(reply, 401, 'unauthorized', 'Authentication required');
       request.principal = principal;
       return;

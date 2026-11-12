@@ -11,7 +11,7 @@ import { schema } from '../src/db/client';
  * can ask the server to delete anything, so a row nobody erased can never be removed later, and nothing else would fail.
  */
 const REVIEWED: Record<string, { fate: 'deleted' | 'kept'; why: string; proof: string }> = {
-  persons: { fate: 'kept', why: 'holds only the hash of the device secret; the equity buckets and the statistics opt-in are cleared (every column is reviewed below)', proof: 'consent.test.ts' },
+  persons: { fate: 'kept', why: 'holds only the hash of the device secret; the equity buckets, the statistics opt-in and the last day seen are cleared (every column is reviewed below)', proof: 'consent.test.ts' },
   tickets: { fate: 'kept', why: 'a ticket and its events stay as pseudonymous timings with no data', proof: 'consent.test.ts' },
   consents: { fate: 'kept', why: 'the append-only ledger keeps ticket consents and their revocations; a crisis_handoff row is deleted on Stop and Delete everything (crisis-handoffs.test.ts)', proof: 'consent.test.ts' },
   summary_logs: { fate: 'deleted', why: 'logged summaries are health text', proof: 'revoke-reach.test.ts' },
@@ -65,6 +65,7 @@ const PERSON_COLUMNS: Record<string, { fate: 'kept' | 'cleared'; why: string; pr
   gender: { fate: 'cleared', why: 'an equity bucket', proof: 'consent.test.ts' },
   language: { fate: 'cleared', why: 'an equity bucket', proof: 'consent.test.ts' },
   region: { fate: 'cleared', why: 'an equity bucket', proof: 'consent.test.ts' },
+  lastSeenOn: { fate: 'cleared', why: 'the last day (no time) the device reached the server, which the sweep reads to turn idle opt-ins off; after the erase there is nothing left for it to turn off and no device to date', proof: 'consent.test.ts' },
   outcomeStatsOptIn: { fate: 'cleared', why: 'the opt-in to counting shared totals in the anonymous symptom-change figures', proof: 'consent.test.ts' },
 };
 

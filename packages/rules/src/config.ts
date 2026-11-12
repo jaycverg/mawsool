@@ -99,6 +99,14 @@ export const TIER_TARGET_DAYS = { community: 14, tele: 7, gp: 7, specialist: 14 
 /** Aggregates over fewer people than this are never shown (k-anonymity). */
 export const SUPPRESSION_THRESHOLD = 10;
 
+/**
+ * Days a person's device may go without reaching the server before the server turns off that person's equity and
+ * statistics opt-ins itself (about six months). It is counted on the wall clock from the last day the device
+ * authenticated, so a person who cleared the browser's site data, and so has no device left to turn the choices off, stops
+ * being counted. The Settings text says it in both languages. See docs/opt-in-lifetime.md.
+ */
+export const OPT_IN_IDLE_LIMIT_DAYS = 180;
+
 /** What a number is for. The crisis screen shows the hotline as the large button and the other two as emergency numbers. */
 export type CrisisRole = 'hotline' | 'ambulance' | 'police';
 

@@ -270,6 +270,7 @@ describe('consent, revoke and the bundle', () => {
       await ctx.app.inject({ method: 'POST', url: '/summary/draft', headers: mine.headers, payload: { requestId: crypto.randomUUID(), locale: 'en', useAi: false, consented: ['ticket'], content: {} } });
       await ctx.app.inject({ method: 'PUT', url: '/me/equity', headers: mine.headers, payload: { optIn: true, buckets: { ageBand: '25_34', gender: 'female', language: 'ur', region: 'al_ain' } } });
       expect((await testDb.db.select().from(schema.persons).where(eq(schema.persons.id, mine.id)))[0]).toMatchObject({ equityOptIn: true, language: 'ur' });
+      expect((await testDb.db.select().from(schema.persons).where(eq(schema.persons.id, mine.id)))[0]!.lastSeenOn).not.toBeNull();
 
       const res = await ctx.app.inject({ method: 'DELETE', url: '/me/data', headers: mine.headers });
       expect(res.statusCode).toBe(200);
@@ -281,7 +282,7 @@ describe('consent, revoke and the bundle', () => {
         expect((await eventStates(testDb.db, ticket.id)).at(-1)!.to).toBe('withdrawn');
       }
       expect(await testDb.db.select().from(schema.summaryLogs).where(eq(schema.summaryLogs.personId, mine.id))).toHaveLength(0);
-      expect((await testDb.db.select().from(schema.persons).where(eq(schema.persons.id, mine.id)))[0]).toMatchObject({ equityOptIn: false, ageBand: null, gender: null, language: null, region: null });
+      expect((await testDb.db.select().from(schema.persons).where(eq(schema.persons.id, mine.id)))[0]).toMatchObject({ equityOptIn: false, ageBand: null, gender: null, language: null, region: null, lastSeenOn: null });
       expect((await rawBundle(testDb.db, c.id)).contentCiphertext).not.toBeNull();
 
       const again = await ctx.app.inject({ method: 'DELETE', url: '/me/data', headers: mine.headers });

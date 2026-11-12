@@ -105,7 +105,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // Every outbound message goes through the notifier, whose driver is a mock (`NOTIFIER_DRIVER`): nothing is sent.
   const notifier = deps.notifier ?? createNotifier(createDriver(deps.config.notifierDriver ?? 'log', { log: app.log, encryptionKey: deps.config.encryptionKey }));
   registerHealthRoutes(app);
-  registerPersonRoutes(app, { db: deps.db, clock });
+  registerPersonRoutes(app, { db: deps.db, clock, securityClock });
   registerAuthRoutes(app, {
     db: deps.db,
     clock: securityClock,
