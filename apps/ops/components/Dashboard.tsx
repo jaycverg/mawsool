@@ -365,7 +365,7 @@ function Safety({ data, t, format }: { data: DashboardData; t: Translate; format
   return (
     <section aria-label={t('safety.label')} className={`${card} flex min-w-0 flex-[1_1_420px] flex-col gap-2.5`} data-section="safety">
       <h2 className="text-[17px] font-bold">{t('safety.heading')}</h2>
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-2.5">
+      <div className="grid grid-cols-3 gap-2.5">
         {stat('shown', t('safety.shown'), isSuppressed(crisis.shown) ? null : format(crisis.shown))}
         {stat('called', t('safety.called'), isSuppressed(crisis.calledALine) ? null : t('safety.of', { count: format(crisis.calledALine.count), of: format(crisis.calledALine.of) }))}
         {stat('median', t('safety.median'), isSuppressed(crisis.medianMinutesToContact) ? null : t('safety.minutes', { minutes: format(crisis.medianMinutesToContact) }))}
@@ -407,7 +407,7 @@ function Outcomes({ data, t, lang, format }: { data: DashboardData; t: Translate
         return (
           <div key={instrument} className="flex flex-col gap-2 rounded-input bg-ground px-3 py-2.5" data-outcome={instrument}>
             <div className="text-[14px] font-semibold">{t(`outcomes.instrument.${instrument}`)}</div>
-            <div className="grid grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-2.5">
               <div data-outcome-stat="mean">
                 <div className="text-[12px] text-muted">{t('outcomes.mean')}</div>
                 <div className="whitespace-nowrap text-[20px] font-bold" data-value>{value(isSuppressed(entry.meanChange) ? null : t('outcomes.points', { points: decimal(entry.meanChange) }))}</div>
