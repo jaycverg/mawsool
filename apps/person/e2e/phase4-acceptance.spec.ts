@@ -1269,10 +1269,8 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
       page.on('request', (request) => {
         if (request.url().startsWith(API)) seen.push(`${request.method()} ${request.url()}`);
       });
-      const open = async (address: string) => {
-        await page.goto(address);
-        await page.reload(); // the hash alone changes nothing for the browser: this loads the page and its fragment afresh
-      };
+      // Each later link is pasted into the same tab, where the page only sees its fragment change and opens it in place.
+      const open = (address: string) => page.goto(address);
       await page.goto(link.replace('/en/', `/${locale}/`));
       await expect(page.locator('[data-screen="clinic-link"] [data-mock-label]')).toHaveText(cmsg(locale, 'clinicLink.mock'));
       await expect(page.locator('[data-link-state="ready"] [data-code]')).toHaveText(`${ticket.shortCode.slice(0, 2)}-${ticket.shortCode.slice(2)}`);
@@ -1296,7 +1294,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
       expect(afterAck.map((event) => [event.toState, event.actor])).toEqual([['issued', 'person'], ['acknowledged', 'clinic']]);
       expect((afterAck.at(-1) as unknown as { channel: string }).channel).toBe('link');
 
-      // The same link again: refused like any bad link, nothing moves. (The page took the fragment out of the address, so the link is opened afresh.)
+      // The same link again: refused like any bad link, nothing moves. (The page took the fragment out of the address; the link is pasted into the same tab.)
       await open(link.replace('/en/', `/${locale}/`));
       await expect(page.locator('[data-link-state="invalid"]')).toHaveText(cmsg(locale, 'clinicLink.refused.invalid'));
       await expect(page.locator('[data-code]')).toHaveCount(0);
