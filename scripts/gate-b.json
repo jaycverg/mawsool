@@ -2910,7 +2910,7 @@
   },
   {
     "id": "the-handoff-timeout-does-not-claim-nothing-was-sent",
-    "sentence": "When the hand-off request was issued and the phone has no answer to go by (no answer in time, a dropped connection, a lost reply, a server error), the crisis screen says the phone could not confirm the note arrived, that the numbers above still work and that the note can still be stopped, in Arabic and English, and offers the stop control; the outcomes where nothing was sent for certain (no network reported, a crisis queue that cannot be flushed, a phone that cannot register, the phone could not prepare the note, a hand-off already stopped, a refusal) keep their own words, and the crisis screen never waits on any of it",
+    "sentence": "When the hand-off request was issued and the phone has no answer to go by (no answer in time, a dropped connection, a lost reply, a server error), the crisis screen says the phone could not confirm the note arrived, that the numbers above still work and that the note can still be stopped, in Arabic and English, and offers the stop control; the outcomes where nothing was sent for certain (no network reported, a crisis queue that cannot be flushed, a phone that cannot register, the phone could not prepare the note, a hand-off already stopped, a refusal) keep their own words on a first attempt, while a retry that finds an earlier attempt's record says it could not confirm and keeps the record and its Stop, and the crisis screen never waits on any of it",
     "project": "apps/person",
     "tests": [
       {
@@ -2920,6 +2920,22 @@
       {
         "file": "test/crisis-handoff.test.ts",
         "name": "says offline, and keeps no record, only where nothing left the phone"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "says unconfirmed and keeps the record, Stop included, when the phone has since forgotten its registration"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "says unconfirmed and keeps the record when the browser reports no network on the retry"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "says unconfirmed and keeps the record when the crisis queue cannot be flushed on the retry"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "still says offline for a first attempt at each of those exits"
       },
       {
         "file": "test/crisis-handoff.test.ts",
@@ -3095,6 +3111,22 @@
       },
       {
         "file": "test/stored-choice.test.ts",
+        "name": "keeps the statistics note when a read STARTS after the send has begun and is answered off while the send is still on its way"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "keeps the equity note when a read STARTS after the send has begun and is answered off while the send is still on its way"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "lets a mark abandoned mid-send time out even though the send was made on a care clock far ahead of the wall clock"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "keeps a live mark pending when the read is made on a care clock far ahead of the wall clock"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
         "name": "brackets a send with a start and an end mark whatever way it ends"
       }
     ],
@@ -3169,7 +3201,13 @@
         "file": "test/stored-choice.test.ts",
         "name": "says, in ar, why the choice was unticked and not sent, in the words of the other notes on the screen"
       }
-    ]
+    ],
+    "browser": "consent-screen-sends-no-group-totals-true-the-server-has-off-and-says-the-referral-has-not-gone"
+  },
+  {
+    "id": "the-repeat-check-screen-asks-the-server-before-it-sends-a-statistics-choice-only-the-phone-remembers",
+    "sentence": "On the repeat check's totals screen, a statistics box that starts ticked from the phone's note alone, with the server holding the choice off, sends nothing when Finish is pressed, is unticked with the reason shown in view above Finish, sends the totals with no choice the next time, and a box the person ticks on the screen sends the choice without a read of the server",
+    "browser": "repeat-check-sends-no-statistics-true-the-server-has-off-and-says-so-above-finish"
   },
   {
     "id": "the-reminder-notifier-is-mounted-once-by-the-layout-and-a-tap-reopens-the-app",
