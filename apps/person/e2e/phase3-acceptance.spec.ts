@@ -1214,6 +1214,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     // Settings can turn it off.
     await page.goto(`/${locale}/settings/`);
     await expect(page.locator('[data-panel="equity"]')).toContainText(msg(locale, 'settings.equityOnBody'));
+    await expect(page.locator('[data-panel="equity"] [data-idle-note]')).toHaveText(msg(locale, 'settings.optInIdleNote'));
     await page.getByRole('button', { name: msg(locale, 'settings.equityOptOut'), exact: true }).click();
     await expect(page.getByText(msg(locale, 'settings.equityRemoved'))).toBeVisible();
     expect(puts.at(-1)).toEqual({ optIn: false });
@@ -1783,6 +1784,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     const panel = page.locator('[data-panel="statistics"]');
     await expect(panel).toContainText(msg(locale, 'settings.statisticsTitle'));
     await expect(panel).toContainText(msg(locale, 'settings.statisticsOnBody'));
+    await expect(panel.locator('[data-idle-note]')).toHaveText(msg(locale, 'settings.optInIdleNote'));
     const off = panel.getByRole('button', { name: msg(locale, 'settings.statisticsOptOut'), exact: true });
     await off.click();
     await expect(panel.getByRole('alert')).toHaveText(msg(locale, 'settings.statisticsFailed'));

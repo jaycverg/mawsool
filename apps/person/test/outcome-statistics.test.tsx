@@ -265,6 +265,8 @@ describe('the box beside the totals', () => {
     expect(help).toContain(locale === 'en' ? 'ever sees this choice' : 'هذا الاختيار أبدًا');
     expect(help).toContain(locale === 'en' ? 'anonymous group figures' : 'مجمّعة مجهولة');
     expect(help, 'covers every referral, not only this one').toContain(locale === 'en' ? 'all your referrals' : 'جميع إحالاتك');
+    expect(help, 'says the scope in so many words').toContain(locale === 'en' ? 'every total you have sent or will send your clinics' : 'كل مجموع أرسلته أو سترسله إلى عياداتك');
+    expect(MESSAGES[locale].remeasure.statisticsLabel, 'the label says it too').toContain(locale === 'en' ? 'every total I have sent or will send my clinics' : 'كل مجموع أرسلته أو سأرسله إلى عياداتي');
     if (locale === 'ar') expect(help).toMatch(/[؀-ۿ]/);
   });
 });
@@ -292,6 +294,21 @@ describe('Settings\' note on the choice', () => {
     expect(body).toContain('10');
     expect(body).toContain(locale === 'en' ? 'ever sees this choice' : 'هذا الاختيار أبدًا');
     expect(body, 'covers every referral').toContain(locale === 'en' ? 'all your referrals' : 'جميع إحالاتك');
+    expect(body, 'says the scope in so many words').toContain(locale === 'en' ? 'every total you have sent or will send your clinics' : 'كل مجموع أرسلته أو سترسله إلى عياداتك');
+    expect(html, 'says the choice turns itself off when the phone is not used').toContain(MESSAGES[locale].settings.optInIdleNote);
+  });
+
+  it('turns off and confirms in the same all-referrals scope, with no two-totals wording, in both languages', () => {
+    expect(en.settings.statisticsOptOut).toBe('Stop counting my totals');
+    expect(en.settings.statisticsRemoved).toBe('Your totals no longer count in anonymous statistics.');
+    expect(ar.settings.statisticsOptOut).toBe('أوقف احتساب مجاميعي');
+    expect(ar.settings.statisticsRemoved).toBe('لم تعد مجاميعك تُحتسب في الإحصاءات المجهولة.');
+    for (const text of [ar.settings.statisticsOptOut, ar.settings.statisticsRemoved, ar.settings.statisticsOnBody, ar.remeasure.statisticsLabel, ar.remeasure.statisticsHelp]) expect(text).not.toMatch(/هذين|مجموعاك|مجموعين|المجموعين/);
+    for (const text of [en.settings.statisticsOptOut, en.settings.statisticsRemoved, en.settings.statisticsOnBody]) expect(text).not.toMatch(/these two|both totals|two totals/i);
+  });
+
+  it.each(['en', 'ar'] as const)('says nothing about turning itself off while the choice is off or just turned off, in %s', (locale) => {
+    expect(render(locale, false, 'removed')).not.toContain(MESSAGES[locale].settings.optInIdleNote);
   });
 
   it.each(['en', 'ar'] as const)('says it was turned off, with no button, and says when turning it off failed with the button still there, in %s', (locale) => {
@@ -308,6 +325,8 @@ describe('Settings\' note on the choice', () => {
     expect(keys(ar.settings)).toEqual(keys(en.settings));
     expect(keys(ar.remeasure)).toEqual(keys(en.remeasure));
     expect(keys(en.settings)).toHaveLength(5);
+    expect(ar.settings.optInIdleNote).toMatch(/[؀-ۿ]/);
+    expect(en.settings.optInIdleNote).toContain('6 months');
     expect(keys(en.remeasure)).toHaveLength(3);
     for (const text of [ar.settings.statisticsTitle, ar.settings.statisticsOnBody, ar.remeasure.statisticsLabel, ar.remeasure.statisticsHelp]) expect(text).toMatch(/[؀-ۿ]/);
   });
