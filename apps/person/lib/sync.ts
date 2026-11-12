@@ -4,7 +4,9 @@ import { API_URL } from './api';
 import { deviceNow } from './clock';
 import { refreshDemoOffset, restoreDemoOffset } from './demo-offset';
 import { flushOutbox } from './crisis-outbox';
+import { keepSeenToday } from './presence';
 import { loadDirectory } from './directory';
+import { KEYS } from './keys';
 import { deviceFetch } from './net';
 import { getDevice } from './use-device';
 
@@ -64,5 +66,26 @@ export function refreshDemoClock(options: { restore: boolean }): void {
     void (options.restore ? restoreDemoOffset(storage) : Promise.resolve()).then(() => refreshDemoOffset(storage)).catch(() => undefined);
   } catch {
     // No usable storage: the offset stays as it is.
+  }
+}
+
+/**
+ * Keeps the server's note of the person's last visit moving while a choice that would otherwise time out is on (see
+ * `keepSeenToday`). Fire and forget, a failure is silent and tried again at the next start, and it runs after the crisis
+ * outbox has been handed its turn and never while a crisis is open. An anonymous session makes no request.
+ */
+export function reportPresence(locale: Locale): void {
+  if (isAnonymous()) return;
+  try {
+    const { storage } = getDevice();
+    void keepSeenToday({
+      server: { storage, fetch: deviceFetch(), apiUrl: API_URL, locale, random: window.crypto },
+      now: () => new Date(),
+      isAnonymous,
+      isOnline: () => navigator.onLine,
+      crisisOpen: async (store) => ((await store.get<{ blocked?: unknown } | undefined>(KEYS.crisisBlock))?.blocked === true) || getDevice().tabMark.get() !== null,
+    }).catch(() => undefined);
+  } catch {
+    // No usable storage, so there is no choice to keep.
   }
 }
