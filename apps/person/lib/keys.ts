@@ -13,6 +13,7 @@ export const KEYS = {
   footprint: 'server:footprint',
   lastSeenSent: 'server:last-seen-sent',
   optInsCleared: 'server:opt-ins-cleared',
+  choiceSends: 'server:choice-sends',
   directory: 'directory',
   crisisBlock: 'crisis:block',
   crisisOutbox: 'crisis:outbox',

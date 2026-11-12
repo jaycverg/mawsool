@@ -16,6 +16,8 @@ import { memoryStorage } from './helpers/memory';
 
 const MESSAGES = { en, ar } as const;
 const TICKET_ID = '11111111-1111-4111-8111-111111111111';
+/** The box was ticked on the screen: the choice goes without asking the server first. */
+const TICKED = { statisticsSource: 'ticked' as const };
 
 function server(reply: { status: number; body?: unknown } | 'offline') {
   const store = memoryStorage();
@@ -112,26 +114,26 @@ describe('finishing the repeat check keeps the phone\'s note of the choice hones
 
   it('writes the note before a send that carries true, and keeps it when the reply is lost, since the server may have turned it on', async () => {
     const { deps, store, calls } = server('offline');
-    expect(await finishRepeatCheck(deps, TICKET_ID, SCORES, true)).toBe('failed');
+    expect(await finishRepeatCheck(deps, TICKET_ID, SCORES, true, TICKED)).toBe('failed');
     expect(calls).toHaveLength(1);
     expect(await noteOf(store)).toBe(true);
   });
 
   it('keeps the note true when the server answers 200 with something that cannot be read', async () => {
     const { deps, store } = server({ status: 200, body: { nope: true } });
-    expect(await finishRepeatCheck(deps, TICKET_ID, SCORES, true)).toBe('failed');
+    expect(await finishRepeatCheck(deps, TICKET_ID, SCORES, true, TICKED)).toBe('failed');
     expect(await noteOf(store)).toBe(true);
   });
 
   it('keeps the note true when the server fails', async () => {
     const { deps, store } = server({ status: 503 });
-    expect(await finishRepeatCheck(deps, TICKET_ID, SCORES, true)).toBe('failed');
+    expect(await finishRepeatCheck(deps, TICKET_ID, SCORES, true, TICKED)).toBe('failed');
     expect(await noteOf(store)).toBe(true);
   });
 
   it('sends nothing, and says so, when the note cannot be written before a send that carries true', async () => {
     const { deps, store, calls } = server({ status: 200 });
-    expect(await finishRepeatCheck({ ...deps, storage: refusingNote(store) }, TICKET_ID, SCORES, true)).toBe('note_failed');
+    expect(await finishRepeatCheck({ ...deps, storage: refusingNote(store) }, TICKET_ID, SCORES, true, TICKED)).toBe('note_failed');
     expect(calls).toEqual([]);
     expect(await noteOf(store)).toBe(false);
   });
@@ -140,21 +142,21 @@ describe('finishing the repeat check keeps the phone\'s note of the choice hones
     for (const before of [false, true]) {
       const { deps, store } = server({ status: 409 });
       await saveOutcomeStatistics(store.storage, before);
-      expect(await finishRepeatCheck(deps, TICKET_ID, SCORES, true)).toBe('not_ready');
+      expect(await finishRepeatCheck(deps, TICKET_ID, SCORES, true, TICKED)).toBe('not_ready');
       expect(await noteOf(store), `was ${before}`).toBe(true);
     }
   });
 
   it('keeps the note true when a send that carries true is confirmed', async () => {
     const { deps, store } = server({ status: 200 });
-    expect(await finishRepeatCheck(deps, TICKET_ID, SCORES, true)).toBe('done');
+    expect(await finishRepeatCheck(deps, TICKET_ID, SCORES, true, TICKED)).toBe('done');
     expect(await noteOf(store)).toBe(true);
   });
 
   it('clears the note only on a confirmed send that carries false', async () => {
     const { deps, store, calls } = server({ status: 200 });
     await saveOutcomeStatistics(store.storage, true);
-    expect(await finishRepeatCheck(deps, TICKET_ID, SCORES, false)).toBe('done');
+    expect(await finishRepeatCheck(deps, TICKET_ID, SCORES, false, TICKED)).toBe('done');
     expect((calls[0]!.body as { statisticsOptIn: boolean }).statisticsOptIn).toBe(false);
     expect(await noteOf(store)).toBe(false);
   });
@@ -167,21 +169,21 @@ describe('finishing the repeat check keeps the phone\'s note of the choice hones
   ])('leaves the note as it was when a send that carries false gets no confirmation: %s', async (_name, reply) => {
     const { deps, store } = server(reply);
     await saveOutcomeStatistics(store.storage, true);
-    await finishRepeatCheck(deps, TICKET_ID, SCORES, false);
+    await finishRepeatCheck(deps, TICKET_ID, SCORES, false, TICKED);
     expect(await noteOf(store)).toBe(true);
   });
 
   it('leaves the note true, so Settings can still turn it off, when a confirmed send of false cannot clear it', async () => {
     const { deps, store } = server({ status: 200 });
     await saveOutcomeStatistics(store.storage, true);
-    expect(await finishRepeatCheck({ ...deps, storage: refusingNote(store) }, TICKET_ID, SCORES, false)).toBe('done');
+    expect(await finishRepeatCheck({ ...deps, storage: refusingNote(store) }, TICKET_ID, SCORES, false, TICKED)).toBe('done');
     expect(await noteOf(store)).toBe(true);
   });
 
   it('does not touch the note, and sends no choice, when the totals are not sent', async () => {
     const { deps, store, calls } = server({ status: 200 });
     await saveOutcomeStatistics(store.storage, true);
-    expect(await finishRepeatCheck(deps, TICKET_ID, [], undefined)).toBe('done');
+    expect(await finishRepeatCheck(deps, TICKET_ID, [], undefined, TICKED)).toBe('done');
     expect(calls[0]!.body).toEqual({ scores: [] });
     expect(await noteOf(store)).toBe(true);
   });

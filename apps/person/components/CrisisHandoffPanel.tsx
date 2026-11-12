@@ -72,7 +72,7 @@ export function CrisisHandoffPanel({ device, lang, mode, open }: { device: Devic
     if (!open || !agreed) return;
     setPhase('sending');
     const outcome = await sendHandoff(
-      { server, flush: () => flushOutbox({ storage: device.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, random: window.crypto }), now: deviceNow, newId: () => crypto.randomUUID() },
+      { server, flush: () => flushOutbox({ storage: device.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, random: window.crypto }), now: deviceNow, newId: () => crypto.randomUUID(), isOnline: () => navigator.onLine },
       { crisisEventId: open.eventId, screenings, language: lang, trigger: open.trigger, callbackInput: callback },
     );
     setPhase(outcome);

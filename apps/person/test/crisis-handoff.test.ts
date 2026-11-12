@@ -178,10 +178,10 @@ describe('sending the hand-off', () => {
   it('keeps a "sending" record when the network fails or the reply is lost, and a retry reuses its id so the server holds one', async () => {
     for (const reply of ['offline', 'lost-reply', 'unavailable'] as const) {
       const s = setup(reply);
-      expect(await sendHandoff(s.deps, input()), reply).toBe('offline');
+      expect(await sendHandoff(s.deps, input()), reply).toBe('unconfirmed');
       const first = (await loadHandoff(s.store.storage))!;
       expect(first.state).toBe('sending');
-      expect(await sendHandoff(s.deps, input()), reply).toBe('offline');
+      expect(await sendHandoff(s.deps, input()), reply).toBe('unconfirmed');
       const ids = posts(s.calls).map((call) => call.body!.handoffId);
       expect(new Set(ids), reply).toEqual(new Set([first.handoffId]));
     }
@@ -200,13 +200,35 @@ describe('sending the hand-off', () => {
     expect(await loadHandoff(s.store.storage)).toBeNull();
   });
 
-  it('keeps saying offline, with nothing recorded as sent, for every failure that is not a timeout after the request left', async () => {
-    for (const reply of ['offline', 'lost-reply', 'unavailable'] as const) {
-      expect(await sendHandoff(setup(reply).deps, input()), reply).toBe('offline');
+  it('says unconfirmed, never offline, for every failure after the request was issued: a dropped connection, a lost reply, a server error, a timeout', async () => {
+    for (const reply of ['offline', 'lost-reply', 'unavailable', 'timeout'] as const) {
+      const s = setup(reply);
+      expect(await sendHandoff(s.deps, input()), reply).toBe('unconfirmed');
+      expect(posts(s.calls), `${reply}: the request was issued`).toHaveLength(1);
+      expect((await loadHandoff(s.store.storage))!.state, `${reply}: the record is kept to stop from`).toBe('sending');
     }
+  });
+
+  it('says offline, and keeps no record, only where nothing left the phone: no network reported, a queue that cannot be flushed, a phone that cannot register', async () => {
+    const noNetwork = setup();
+    expect(await sendHandoff({ ...noNetwork.deps, isOnline: () => false }, input())).toBe('offline');
+    expect(noNetwork.calls).toEqual([]);
+    expect(noNetwork.flushFn).not.toHaveBeenCalled();
+    expect(await loadHandoff(noNetwork.store.storage)).toBeNull();
+
     const unregistered = setup();
     unregistered.serverDeps.fetch = (async () => new Response('{}', { status: 503 })) as unknown as typeof fetch;
     expect(await sendHandoff(unregistered.deps, input()), 'the phone could not register, so nothing left it').toBe('offline');
+    expect(await loadHandoff(unregistered.store.storage), 'there is nothing to stop').toBeNull();
+
+    const noCredential = setup();
+    noCredential.store.storage.setIfAbsent = (async () => { throw new Error('storage write failed'); }) as typeof noCredential.store.storage.setIfAbsent;
+    expect(await sendHandoff(noCredential.deps, input())).toBe('offline');
+    expect(posts(noCredential.calls)).toEqual([]);
+    expect(await loadHandoff(noCredential.store.storage)).toBeNull();
+
+    const online = setup();
+    expect(await sendHandoff({ ...online.deps, isOnline: () => true }, input())).toBe('sent');
   });
 
   it('keeps the outcomes where nothing was sent for certain: stopped, refused, not ready, could not prepare, invalid number', async () => {

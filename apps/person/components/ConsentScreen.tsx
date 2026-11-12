@@ -16,7 +16,8 @@ import { href } from '../lib/routes';
 import { loadScreenings } from '../lib/screening-store';
 import { sendReferral } from '../lib/send-referral';
 import { callServer, markServerFootprint, type ServerDeps } from '../lib/server';
-import { EMPTY_SHARING, buildContent, loadEquity, loadSharing, parseConditions, saveEquity, saveSharing, type Sharing } from '../lib/share';
+import { sendEquityChoice } from '../lib/server-choices';
+import { EMPTY_SHARING, buildContent, loadEquity, loadSharing, parseConditions, saveSharing, type Sharing } from '../lib/share';
 import { useDevice, type Device } from '../lib/use-device';
 import { FlowHeader } from './FlowHeader';
 
@@ -65,6 +66,9 @@ export function ConsentScreen() {
   const [equity, setEquity] = useState<{ on: boolean; buckets: Partial<Demographics> }>({ on: false, buckets: {} });
   const [sending, setSending] = useState(false);
   const [problem, setProblem] = useState<Problem>(null);
+  // Whether the person ticked the group-totals box on this screen. A box ticked only by the phone's earlier note is checked with the server before it is sent.
+  const [equityTicked, setEquityTicked] = useState(false);
+  const [equityNote, setEquityNote] = useState<'cleared' | 'unread' | null>(null);
 
   useEffect(() => {
     if (device === null || device === 'unavailable') return;
@@ -166,17 +170,22 @@ export function ConsentScreen() {
     setProblem(null);
     const deps = serverDeps(dev);
     try {
-      let optInSaved = true;
-      if (equity.on || storedOptIn) {
-        const buckets: Demographics = { ageBand: equity.buckets.ageBand ?? null, gender: equity.buckets.gender ?? null, language: equity.buckets.language ?? null, region: equity.buckets.region ?? null };
-        await markServerFootprint(dev.storage, deviceNow);
-        const saved = await callServer(deps, 'PUT', '/me/equity', equity.on ? { optIn: true, buckets } : { optIn: false });
-        if (!saved.ok) {
-          setSending(false);
-          return setProblem(saved.reason === 'offline' ? 'offline' : 'rejected');
-        }
-        optInSaved = await saveEquity(dev.storage, { optIn: equity.on, buckets: equity.on ? buckets : {} }).then(() => true, () => false);
+      const buckets: Demographics = { ageBand: equity.buckets.ageBand ?? null, gender: equity.buckets.gender ?? null, language: equity.buckets.language ?? null, region: equity.buckets.region ?? null };
+      const choice = await sendEquityChoice(deps, { on: equity.on, buckets, storedOptIn, tickedHere: equityTicked, now: deviceNow });
+      if (choice === 'cleared' || choice === 'unread') {
+        // The box was ticked only by the phone's old note and the server does not hold the choice (or could not be asked): nothing about it was sent. The box is unticked,
+        // the person is told, and ticking it again is their choice to make.
+        setEquity({ on: false, buckets: {} });
+        setStoredOptIn(false);
+        setEquityNote(choice);
+        setSending(false);
+        return;
       }
+      if (choice === 'offline' || choice === 'rejected') {
+        setSending(false);
+        return setProblem(choice);
+      }
+      const optInSaved = choice !== 'saved_unnoted';
       const outcome = await sendReferral(deps, {
         pending,
         elements,
@@ -284,7 +293,17 @@ export function ConsentScreen() {
           )}
         </section>
 
-        <EquityPanel t={t} to={to} value={equity} onChange={setEquity} />
+        <EquityPanel
+          t={t}
+          to={to}
+          value={equity}
+          note={equityNote}
+          onChange={(next) => {
+            if (next.on && !equity.on) setEquityTicked(true);
+            if (next.on) setEquityNote(null);
+            setEquity(next);
+          }}
+        />
 
         <section className="flex flex-col gap-1.5 rounded-staff bg-accent-tint px-4 py-3.5" data-preview>
           <span className="text-[13px] font-semibold uppercase tracking-[0.6px] text-accent-dark">{t('previewTitle')}</span>
@@ -326,7 +345,7 @@ function Shell({ lang, t, children }: { lang: 'ar' | 'en'; t: Translate; childre
   );
 }
 
-function EquityPanel({ t, to, value, onChange }: { t: Translate; to: Translate; value: { on: boolean; buckets: Partial<Demographics> }; onChange: (next: { on: boolean; buckets: Partial<Demographics> }) => void }) {
+function EquityPanel({ t, to, value, note, onChange }: { t: Translate; to: Translate; value: { on: boolean; buckets: Partial<Demographics> }; note: 'cleared' | 'unread' | null; onChange: (next: { on: boolean; buckets: Partial<Demographics> }) => void }) {
   const set = (key: keyof Demographics, entry: string) => onChange({ ...value, buckets: { ...value.buckets, [key]: entry === '' ? null : entry } });
   const fields = [
     { key: 'ageBand', label: t('ageBand'), values: AGE_BANDS, text: (v: string) => t(`ageBands.${v}`) },
@@ -342,6 +361,7 @@ function EquityPanel({ t, to, value, onChange }: { t: Translate; to: Translate; 
         <input type="checkbox" id="equity-on" className="size-6 accent-accent" checked={value.on} onChange={(event) => onChange({ ...value, on: event.target.checked })} />
         {t('equityToggle')}
       </label>
+      {note !== null && <p role="alert" className="t-small text-danger" data-equity-note={note}>{t(note === 'cleared' ? 'equityCleared' : 'equityUnread')}</p>}
       {value.on &&
         fields.map((field) => (
           <div key={field.key} className="flex flex-col gap-1">

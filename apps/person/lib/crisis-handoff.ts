@@ -95,11 +95,11 @@ export interface HandoffPatience {
 
 /**
  * - `sent`: the server holds the hand-off and the consent is recorded.
- * - `offline`: no connection before the note was sent (the crisis queue could not be flushed, the phone could not register), or the call
- *   failed or the server answered with an error; the screen says nothing was sent and stays as it is.
- * - `unconfirmed`: the note was sent and no answer came in time (the network patience ran out, or the call's own time limit did), so the
- *   server may well hold it. The `sending` record stays, so the person can stop it and a retry reuses its id. The screen says the phone could
- *   not confirm it arrived, never that nothing was sent.
+ * - `offline`: nothing left the phone: the browser reports no network, the crisis queue could not be flushed, or the phone could not
+ *   register or hold no credential. The screen says nothing was sent and stays as it is.
+ * - `unconfirmed`: the request was issued and the phone has no answer to go by (no answer in time, a dropped connection, a server error, the
+ *   call's own time limit), so the server may well hold the note. The `sending` record stays, so the person can stop it and a retry reuses
+ *   its id. The screen says the phone could not confirm it arrived, never that nothing was sent.
  * - `not_ready`: the server does not yet hold the crisis record this belongs to.
  * - `rejected`: the server refused the request for good.
  * - `stopped`: the server says this hand-off was already stopped, so it was not stored. Nothing is offered again.
@@ -115,6 +115,8 @@ export interface SendDeps {
   now: Now;
   newId: NewId;
   patience?: HandoffPatience;
+  /** Whether the browser reports a network; when it says there is none the send stops before it writes or sends anything. */
+  isOnline?: () => boolean;
 }
 
 /**
@@ -140,6 +142,8 @@ export async function sendHandoff(deps: SendDeps, input: { crisisEventId: string
   if (typed !== '' && !callback) return 'invalid_number';
   const preview = buildHandoffPreview({ screenings: input.screenings, language: input.language, trigger: input.trigger, callback });
 
+  // The browser says there is no network: nothing is written or sent, and the words that say nothing was sent are true.
+  if (deps.isOnline && !deps.isOnline()) return 'offline';
   const flushed = await within(deps.flush().catch(() => null), networkMs, null);
   if (flushed === null || flushed.outcome === 'offline' || flushed.outcome === 'conflict') return 'offline';
 
@@ -150,10 +154,13 @@ export async function sendHandoff(deps: SendDeps, input: { crisisEventId: string
   // No answer in time: the server may or may not hold the note. The `sending` record stays, so the person can stop it and a retry reuses its id.
   if (sent === null) return 'unconfirmed';
   if (!sent.ok) {
-    // The call's own time limit ran out after the request left: the same unknown, so the same outcome. Any other failure to reach the server is `offline`.
-    if (sent.reason !== 'rejected') return sent.timedOut ? 'unconfirmed' : 'offline';
-    // A refusal means nothing was stored, so the record has nothing to stop. If the store will not take the change, the record stays and a stop finds the server has none.
+    // Once the request was issued, a dropped connection, a server error or a call that ran out of time all leave it unknown whether the note
+    // arrived: the same outcome as no answer in time, so the screen never says "nothing was sent" for them. The record stays to stop from.
+    if (sent.reason === 'offline') return 'unconfirmed';
+    // A refusal, or a phone that could not register or has no credential, means nothing was stored, so the record has nothing to stop. If the
+    // store will not take the change, the record stays and a stop finds the server has none.
     await within(changeHandoffs(storage, (records) => records.filter((other) => other.handoffId !== record.handoffId)).catch(() => undefined), storeMs, undefined);
+    if (sent.reason === 'not_registered') return 'offline';
     if (sent.status === 409 && sent.error === 'handoff_stopped') return 'stopped';
     return sent.status === 409 ? 'not_ready' : 'rejected';
   }

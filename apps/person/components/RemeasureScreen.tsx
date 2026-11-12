@@ -26,6 +26,9 @@ type Load =
 
 export type Send = 'idle' | 'sending' | 'failed' | 'not_ready' | 'note_failed';
 
+/** Why the statistics box was unticked for the person after they pressed Finish: the server did not hold the choice, or could not be asked. */
+export type ChoiceNote = 'cleared' | 'unread' | null;
+
 /**
  * The end of the repeat check. With both questionnaires done it shows the two totals and two choices, each off until ticked:
  * send those two totals to the clinic, and (only with that one) count them in anonymous group statistics. Finishing moves the
@@ -48,6 +51,10 @@ export function RemeasureScreen() {
   const [share, setShare] = useState(false);
   // The separate choice to count the totals in anonymous statistics: off unless the phone's note says it is on, and sent only with the totals.
   const [statistics, setStatistics] = useState(false);
+  // Whether the person ticked the statistics box on this screen; a box ticked only by the phone's note is checked with the server before it is sent.
+  const [statisticsTicked, setStatisticsTicked] = useState(false);
+  // Why the box was unticked for the person: the server does not hold the choice, or could not be asked. Nothing was sent.
+  const [choiceNote, setChoiceNote] = useState<ChoiceNote>(null);
   const [send, setSend] = useState<Send>('idle');
   // Re-render when the demo clock moves, so a repeat check that the clock made due opens.
   useDemoOffsetMs();
@@ -85,9 +92,24 @@ export function RemeasureScreen() {
     if (device === null || device === 'unavailable') return;
     setSend('sending');
     const server = { storage: device.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, random: window.crypto };
-    const outcome = await finishRepeatCheck(server, ticket.id, share ? totalsOf(check) : [], share ? statistics : undefined);
+    // After a note that the choice was not sent, an unticked box leaves the server's choice alone (no choice is sent) until the person ticks it again.
+    const choice = share ? (choiceNote !== null && !statistics ? undefined : statistics) : undefined;
+    const outcome = await finishRepeatCheck(server, ticket.id, share ? totalsOf(check) : [], choice, { statisticsSource: statisticsTicked ? 'ticked' : 'noted' });
     if (outcome === 'done') return window.location.assign(href(lang, 'ticket', { id: ticket.id }));
+    if (outcome === 'choice_cleared' || outcome === 'choice_unread') {
+      setStatistics(false);
+      setChoiceNote(outcome === 'choice_cleared' ? 'cleared' : 'unread');
+      return setSend('idle');
+    }
     setSend(outcome);
+  }
+
+  function tickStatistics(on: boolean) {
+    if (on) {
+      setStatisticsTicked(true);
+      setChoiceNote(null);
+    }
+    setStatistics(on);
   }
 
   return (
@@ -132,7 +154,8 @@ export function RemeasureScreen() {
             share={share}
             setShare={setShare}
             statistics={statistics}
-            setStatistics={setStatistics}
+            setStatistics={tickStatistics}
+            choiceNote={choiceNote}
             send={send}
             onFinish={() => void finish(load.ticket, load.check!)}
           />
@@ -151,6 +174,8 @@ export interface TotalsProps {
   setShare: (share: boolean) => void;
   statistics: boolean;
   setStatistics: (statistics: boolean) => void;
+  /** Set after Finish unticked the statistics box because the server did not hold the choice or could not be asked. */
+  choiceNote?: ChoiceNote;
   send: Send;
   onFinish: () => void;
 }
@@ -160,7 +185,7 @@ export interface TotalsProps {
  * box: off unless the person has it on, and available only while the first is ticked, because a total is counted only if the
  * clinic's copy of it exists. While the first is unticked the second is disabled and shows unticked.
  */
-export function Totals({ check, ticket, bandNames, names, share, setShare, statistics, setStatistics, send, onFinish }: TotalsProps) {
+export function Totals({ check, ticket, bandNames, names, share, setShare, statistics, setStatistics, choiceNote = null, send, onFinish }: TotalsProps) {
   const t = useTranslations('remeasure');
   /** The clinic can be sent the totals only while the person is still sharing the ticket with it. */
   const sharing = ticket.consents.some((consent) => consent.element === 'ticket' && consent.revokedAt === null);
@@ -212,6 +237,7 @@ export function Totals({ check, ticket, bandNames, names, share, setShare, stati
         {send === 'failed' && <p role="alert" className="t-body text-danger">{t('failed')}</p>}
         {send === 'not_ready' && <p role="alert" className="t-body text-danger">{t('conflict')}</p>}
         {send === 'note_failed' && <p role="alert" className="t-body text-danger" data-note-failed>{t('statisticsNoteFailed')}</p>}
+        {choiceNote !== null && <p role="alert" className="t-body text-danger" data-choice-note={choiceNote}>{t(choiceNote === 'cleared' ? 'choiceCleared' : 'choiceUnread')}</p>}
         <button type="button" className="btn-primary" disabled={send === 'sending'} onClick={onFinish} data-control="finish-remeasure">
           {send === 'sending' ? t('sending') : t('finish')}
         </button>
