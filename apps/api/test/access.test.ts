@@ -58,6 +58,7 @@ const REVIEWED: Record<string, { access: RouteAccess; kind: Kind }> = {
   'POST /consents': { access: 'person', kind: 'person-own' },
   'DELETE /consents/:id': { access: 'person', kind: 'person-own' },
   'DELETE /me/data': { access: 'person', kind: 'person-own' },
+  'GET /me/opt-ins': { access: 'person', kind: 'person-own' },
   'PUT /me/equity': { access: 'person', kind: 'person-own' },
   'PUT /me/outcome-statistics': { access: 'person', kind: 'person-own' },
   'PUT /me/reminder-phone': { access: 'person', kind: 'person-own' },

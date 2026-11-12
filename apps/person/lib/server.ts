@@ -1,5 +1,5 @@
 import type { Locale } from '@mawsool/types';
-import { loadOrCreateIdentity, personAuthorization, registerDevice, type DeviceIdentity, type RandomSource, type StorageAdapter } from '@mawsool/ui';
+import { loadDeviceIdentity, loadOrCreateIdentity, personAuthorization, registerDevice, type DeviceIdentity, type RandomSource, type StorageAdapter } from '@mawsool/ui';
 import { KEYS } from './keys';
 
 export interface ServerDeps {
@@ -15,7 +15,17 @@ export interface ServerDeps {
  * a 4xx the person can do nothing about by retrying, with its status, and `not_registered` is a device the server does
  * not know and could not register.
  */
-export type CallResult<T> = { ok: true; status: number; body: T } | { ok: false; reason: 'offline' | 'rejected' | 'not_registered'; status: number | null; /** The API's error code on a refusal, when it sent one. */ error?: string | null };
+export type CallResult<T> =
+  | { ok: true; status: number; body: T }
+  | {
+      ok: false;
+      reason: 'offline' | 'rejected' | 'not_registered';
+      status: number | null;
+      /** The API's error code on a refusal, when it sent one. */
+      error?: string | null;
+      /** Set when the request was sent and no answer came before the call's own time limit, so the server may still have acted on it. */
+      timedOut?: true;
+    };
 
 const registered = new WeakMap<StorageAdapter, string>();
 
@@ -62,15 +72,26 @@ export async function callServer<T>(deps: ServerDeps, method: 'GET' | 'POST' | '
   return callOnce<T>(deps, method, path, body);
 }
 
-async function callOnce<T>(deps: ServerDeps, method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<CallResult<T>> {
-  let identity: DeviceIdentity;
+/**
+ * One read made by the app on its own, with no person acting: it uses the credential the phone already holds and nothing
+ * else. It never makes an identity, never registers the device and never registers it again, so a phone the server has
+ * forgotten is not quietly made a new person by a call nobody asked for. A 401 comes back as it is (`rejected`, status 401)
+ * and the caller changes nothing. A call the person takes themselves uses `callServer`.
+ */
+export async function callServerInBackground<T>(deps: ServerDeps, path: string): Promise<CallResult<T>> {
+  return callOnce<T>(deps, 'GET', path, undefined, { register: false });
+}
+
+async function callOnce<T>(deps: ServerDeps, method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown, options: { register: boolean } = { register: true }): Promise<CallResult<T>> {
+  let identity: DeviceIdentity | null;
   try {
-    identity = await loadOrCreateIdentity(deps.storage, deps.random);
+    identity = options.register ? await loadOrCreateIdentity(deps.storage, deps.random) : await loadDeviceIdentity(deps.storage);
   } catch {
     // The phone's own store would not give up or keep the device secret: nothing can be asked of the server.
     return { ok: false, reason: 'not_registered', status: null };
   }
-  if (!(await ensureRegistered(deps, identity))) return { ok: false, reason: 'not_registered', status: null };
+  if (identity === null) return { ok: false, reason: 'not_registered', status: null };
+  if (options.register && !(await ensureRegistered(deps, identity))) return { ok: false, reason: 'not_registered', status: null };
   let response: Response;
   try {
     response = await deps.fetch(`${deps.apiUrl}${path}`, {
@@ -79,8 +100,8 @@ async function callOnce<T>(deps: ServerDeps, method: 'GET' | 'POST' | 'PUT' | 'D
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(10_000),
     });
-  } catch {
-    return { ok: false, reason: 'offline', status: null };
+  } catch (error) {
+    return { ok: false, reason: 'offline', status: null, ...((error as { name?: unknown } | null)?.name === 'TimeoutError' ? { timedOut: true as const } : {}) };
   }
   if (response.status >= 500) return { ok: false, reason: 'offline', status: response.status };
   let parsed: unknown = null;

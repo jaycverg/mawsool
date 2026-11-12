@@ -267,7 +267,14 @@ const NARROW = {
   row: '@max-[520px]:grid @max-[520px]:grid-cols-2 @max-[520px]:gap-x-4 @max-[520px]:border-b @max-[520px]:border-[#E6ECEA] @max-[520px]:py-2 @max-[520px]:[&:last-child]:border-b-0',
   tier: '@max-[520px]:col-span-2 @max-[520px]:border-b-0 @max-[520px]:font-semibold',
   cell: '@max-[520px]:flex @max-[520px]:justify-between @max-[520px]:gap-2 @max-[520px]:border-b-0 @max-[520px]:before:text-muted @max-[520px]:before:content-[attr(data-label)]',
+  /** A block of two columns holds five figures, so the last one is alone on its row: it takes the whole row, wide enough for its name and its value together. */
+  wholeRow: '@max-[520px]:col-span-2',
 } as const;
+
+/** A figure and its unit ("18 days", "71%") never break across lines, whatever room its column has. */
+function Figure({ children }: { children: string }) {
+  return <span className="whitespace-nowrap">{children}</span>;
+}
 
 function Timeliness({ data, t, format }: { data: DashboardData; t: Translate; format: (value: number) => string }) {
   const { timeliness } = data;
@@ -297,17 +304,17 @@ function Timeliness({ data, t, format }: { data: DashboardData; t: Translate; fo
             return (
               <tr key={id} data-tier-row={id} data-suppressed={hidden ? '' : undefined} className={`[&:last-child>td]:border-b-0 ${NARROW.row}`}>
                 <td className={`border-b border-[#E6ECEA] px-1.5 py-2.5 ${NARROW.tier}`}>{label}</td>
-                <td className={`border-b border-[#E6ECEA] px-1.5 py-2.5 ${NARROW.cell}`} data-label={t('timeliness.target')}>{id === 'overall' ? '—' : t('timeliness.days', { days: format(TIER_TARGET_DAYS[id as keyof typeof TIER_TARGET_DAYS]) })}</td>
+                <td className={`border-b border-[#E6ECEA] px-1.5 py-2.5 ${NARROW.cell}`} data-label={t('timeliness.target')}>{id === 'overall' ? '—' : <Figure>{t('timeliness.days', { days: format(TIER_TARGET_DAYS[id as keyof typeof TIER_TARGET_DAYS]) })}</Figure>}</td>
                 {hidden ? (
                   <td colSpan={4} className={`border-b border-[#E6ECEA] px-1.5 py-2.5 text-muted ${NARROW.tier}`}>{t('suppressed')}</td>
                 ) : (
                   <>
                     <td className={`border-b border-[#E6ECEA] px-1.5 py-2.5 ${NARROW.cell}`} data-label={t('timeliness.tickets')}>{format(cell.tickets)}</td>
                     <td className={`border-b border-[#E6ECEA] px-1.5 py-2.5 ${NARROW.cell} ${below(id, cell) ? 'font-semibold' : ''}`} style={below(id, cell) ? { color: FLAG_INK } : undefined} data-below-target={below(id, cell) ? '' : undefined} data-label={t('timeliness.within')}>
-                      {withinHidden || isSuppressed(cell.withinTarget) ? t('suppressedShort') : `${format(cell.withinTarget.percent)}%`}
+                      {withinHidden || isSuppressed(cell.withinTarget) ? t('suppressedShort') : <Figure>{`${format(cell.withinTarget.percent)}%`}</Figure>}
                     </td>
-                    <td className={`border-b border-[#E6ECEA] px-1.5 py-2.5 ${NARROW.cell}`} data-label={t('timeliness.median')}>{isSuppressed(cell.medianDaysToSeen) ? t('suppressedShort') : t('timeliness.days', { days: format(cell.medianDaysToSeen) })}</td>
-                    <td className={`border-b border-[#E6ECEA] px-1.5 py-2.5 ${NARROW.cell}`} data-label={t('timeliness.p90')}>{isSuppressed(cell.p90DaysToSeen) ? t('suppressedShort') : t('timeliness.days', { days: format(cell.p90DaysToSeen) })}</td>
+                    <td className={`border-b border-[#E6ECEA] px-1.5 py-2.5 ${NARROW.cell}`} data-label={t('timeliness.median')}>{isSuppressed(cell.medianDaysToSeen) ? t('suppressedShort') : <Figure>{t('timeliness.days', { days: format(cell.medianDaysToSeen) })}</Figure>}</td>
+                    <td className={`border-b border-[#E6ECEA] px-1.5 py-2.5 ${NARROW.cell} ${NARROW.wholeRow}`} data-label={t('timeliness.p90')}>{isSuppressed(cell.p90DaysToSeen) ? t('suppressedShort') : <Figure>{t('timeliness.days', { days: format(cell.p90DaysToSeen) })}</Figure>}</td>
                   </>
                 )}
               </tr>

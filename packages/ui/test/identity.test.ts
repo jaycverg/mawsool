@@ -4,6 +4,7 @@ import { PERSON_SECRET_PATTERN, RegisterPersonRequestSchema } from '@mawsool/typ
 import {
   createDeviceIdentity,
   createIndexedDbStorage,
+  loadDeviceIdentity,
   loadOrCreateIdentity,
   personAuthorization,
   registerDevice,
@@ -58,6 +59,17 @@ describe('device identity', () => {
     ]);
     expect(a).toEqual(b);
     expect(await createIndexedDbStorage({ indexedDB: factory }).get('identity')).toEqual(a);
+  });
+
+  it('reads the stored identity without ever making one, so background work cannot give a phone a credential', async () => {
+    const empty = storage();
+    expect(await loadDeviceIdentity(empty)).toBeNull();
+    expect(await empty.get('identity')).toBeUndefined();
+    const store = storage();
+    const made = await loadOrCreateIdentity(store, random);
+    expect(await loadDeviceIdentity(store)).toEqual(made);
+    await store.set('identity', { id: 7 });
+    expect(await loadDeviceIdentity(store)).toBeNull();
   });
 
   it('builds the bearer value the API expects', () => {

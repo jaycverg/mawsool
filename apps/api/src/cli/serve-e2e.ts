@@ -27,6 +27,7 @@ import { startOfDubaiDay } from '../metrics/facts';
 import { E2E_INBOUND_KEYS } from './e2e-keys';
 import { FACILITY_A_ID, STAFF } from '../seed/fixtures';
 import { sha256Hex } from '../security';
+import { sweep } from '../sweep';
 
 // A fixed key for the throwaway end-to-end database; it protects nothing.
 const E2E_ENCRYPTION_KEY = Buffer.alloc(32, 9).toString('base64');
@@ -201,6 +202,11 @@ const inspect = createServer(async (request, response) => {
     const day = dayOf(new Date(systemClock.now().getTime() - daysAgo * 86_400_000));
     await db.update(schema.persons).set({ lastSeenOn: day }).where(eq(schema.persons.id, url.pathname.split('/')[3]!));
     response.end(JSON.stringify({ lastSeenOn: day }));
+  } else if (request.method === 'POST' && url.pathname === '/e2e/sweep') {
+    // Runs the real sweep once on the wall clock, the way pg-boss does every minute in production (this harness does not start pg-boss), so a
+    // person put back by `/e2e/last-seen` loses the opt-ins the idle limit takes. Not a product route.
+    const swept = await sweep(db, systemClock);
+    response.end(JSON.stringify({ optInsCleared: swept.optInsCleared }));
   } else if (url.pathname === '/persons/count') {
     response.end(JSON.stringify({ count: (await db.select({ id: schema.persons.id }).from(schema.persons)).length }));
   } else {

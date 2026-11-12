@@ -12,6 +12,7 @@ The demo script (steps 1 to 12) runs in Arabic and in English against the real A
 - `admin-panel-controls-clock-and-reset`: The admin panel shows the crisis numbers' last_verified date, moves the demo clock by its three steps, resets to the seed and the real clock, and the API refuses the ops role the same controls
 - `admin-panel-crisis-number-notes-say-english-only-on-the-arabic-page`: The admin panel's crisis-number source notes are the rules config's English text, marked as English and read from the left, and on the Arabic page each carries an Arabic label saying it is English only, because no Arabic source for them exists; the English page carries no such label
 - `dashboard-fits-a-phone-with-no-inner-scroll-and-keeps-a-value-and-its-unit-on-one-line`: At 390 px the ops dashboard does not scroll sideways and no card scrolls inside itself; the timeliness figures stay inside their card, one block per tier with each figure under its column's name; and a symptom-change mean and its unit share one line inside their block, in Arabic and English
+- `timeliness-figures-keep-value-and-unit-on-one-line-in-cells-as-tall-as-their-neighbours`: In the ops dashboard's timeliness card, at 390 px and at 1280 px, every figure and its unit (such as "18 days" or "71%") stays on one line, no cell of a tier is taller than the others in its tier, and nothing inside the card scrolls, in Arabic and English
 - `clinic-queue-follows-the-demo-clock`: The clinic queue counts days left from the demo clock, so overdue marks agree with the API
 - `mock-label-audit`: Every mock or sample surface that exists carries its label: the mock TAMM page, the unverified instrument wording, the sample directory and indicative insurance, the Malaffi-ready export, the sample labs of the context panel, the no-login clinic link's sample channel, and the dashboard's simulated data
 - `staff-apps-have-icons-and-log-no-console-error`: The clinician and ops apps declare an icon that loads, and their sign-in and home pages log no console error
@@ -562,6 +563,48 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
       });
       expect(measured.scrollWidth, `the value stays inside its own column: ${JSON.stringify(measured)}`).toBeLessThanOrEqual(measured.clientWidth + 1);
       expect(Math.min(measured.left, measured.right), `the value stays inside its block: ${JSON.stringify(measured)}`).toBeGreaterThanOrEqual(-1);
+    }
+  },
+
+  async 'timeliness-figures-keep-value-and-unit-on-one-line-in-cells-as-tall-as-their-neighbours'({ context, browser, locale }) {
+    await resetFromPanel(await signedInPage(context, OPS, ADMIN), locale);
+    const dash = await dashboard(browser, locale);
+    await expect(dash.locator('[data-section="timeliness"] [data-tier-row]')).toHaveCount(5);
+    for (const width of [390, 1280]) {
+      await dash.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+      const rows = await dash.locator('[data-section="timeliness"] [data-tier-row]:not([data-suppressed])').evaluateAll((trs) =>
+        trs.map((tr) => {
+          const cells = [...tr.querySelectorAll<HTMLElement>('td[data-label]')];
+          return {
+            tier: tr.getAttribute('data-tier-row'),
+            cells: cells.map((cell) => {
+              const figure = cell.querySelector<HTMLElement>('span');
+              const style = getComputedStyle(figure ?? cell);
+              return {
+                label: cell.getAttribute('data-label'),
+                height: Math.round(cell.getBoundingClientRect().height),
+                figureHeight: figure ? Math.round(figure.getBoundingClientRect().height) : null,
+                lineHeight: parseFloat(style.lineHeight),
+                lines: figure ? figure.getClientRects().length : null,
+                text: figure?.textContent ?? cell.textContent,
+              };
+            }),
+          };
+        }),
+      );
+      expect(rows.length, `${width} px: every tier has figures`).toBeGreaterThanOrEqual(4);
+      for (const row of rows) {
+        for (const cell of row.cells) {
+          if (cell.figureHeight !== null) {
+            expect(cell.figureHeight, `${width} px, ${row.tier} ${cell.label}: "${cell.text}" is on one line`).toBeLessThanOrEqual(cell.lineHeight + 1);
+            expect(cell.lines, `${width} px, ${row.tier} ${cell.label}: "${cell.text}" is not split`).toBe(1);
+          }
+        }
+        const heights = row.cells.map((cell) => cell.height);
+        expect(Math.max(...heights) - Math.min(...heights), `${width} px, ${row.tier}: no cell is taller than its neighbours (${heights.join(', ')})`).toBeLessThanOrEqual(1);
+      }
+      const scrolled = await dash.evaluate(() => [...document.querySelectorAll('[data-section="timeliness"] , [data-section="timeliness"] *')].filter((node) => ['auto', 'scroll'].includes(getComputedStyle(node).overflowX) && node.scrollWidth > node.clientWidth + 1).length);
+      expect(scrolled, `${width} px: nothing inside the timeliness card scrolls`).toBe(0);
     }
   },
 

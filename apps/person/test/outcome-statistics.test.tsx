@@ -320,6 +320,22 @@ describe('Settings\' note on the choice', () => {
     expect(failed).toContain('<button');
   });
 
+  it.each(['en', 'ar'] as const)('says, in %s, why a choice was turned off while the phone was idle, in the words of the other Settings notes', (locale) => {
+    const settings = MESSAGES[locale].settings;
+    const notes = [settings.optInsClearedEquity, settings.optInsClearedStatistics, settings.optInsClearedBoth];
+    for (const note of notes) {
+      expect(note, 'names the six months of the idle limit, written as the existing note writes it').toContain(locale === 'en' ? '6 months' : '6 أشهر');
+      expect(note, 'says it was turned off').toContain(locale === 'en' ? 'turned off' : 'أُوقف');
+      expect(note, 'says the person can turn it on again').toMatch(locale === 'en' ? /turn (it|either) on again/ : /من جديد/);
+      expect(note, 'no clinical words').not.toMatch(locale === 'en' ? /\b(score|band|depress|anxi|PHQ|GAD|crisis|diagnos)/i : /(درجة|اكتئاب|قلق|أزمة|تشخيص)/);
+    }
+    expect(settings.optInsClearedEquity).toContain(locale === 'en' ? 'group totals' : 'مجاميع المجموعات');
+    expect(settings.optInsClearedStatistics).toContain(locale === 'en' ? 'anonymous statistics' : 'الإحصاءات المجهولة');
+    expect(settings.optInsClearedBoth).toContain(locale === 'en' ? 'group totals' : 'مجاميع المجموعات');
+    expect(settings.optInsClearedBoth).toContain(locale === 'en' ? 'anonymous statistics' : 'الإحصاءات المجهولة');
+    if (locale === 'ar') for (const note of notes) expect(note).toMatch(/[؀-ۿ]/);
+  });
+
   it('has the same keys in both languages and Arabic text in Arabic script', () => {
     const keys = (section: Record<string, unknown>) => Object.keys(section).filter((key) => key.startsWith('statistic')).sort();
     expect(keys(ar.settings)).toEqual(keys(en.settings));

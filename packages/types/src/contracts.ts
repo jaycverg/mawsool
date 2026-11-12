@@ -428,6 +428,14 @@ export type EquityRequest = z.infer<typeof EquityRequestSchema>;
 export const OutcomeStatisticsRequestSchema = z.object({ optIn: z.boolean() }).strict();
 export type OutcomeStatisticsRequest = z.infer<typeof OutcomeStatisticsRequestSchema>;
 
+/**
+ * GET /me/opt-ins: what the server holds for the caller's two opt-in choices right now (the equity group totals, and counting the
+ * totals shared with a clinic in anonymous symptom-change figures). The phone keeps its own note of each; this lets it learn that
+ * the server turned one off (the idle limit does), and it never turns a choice on.
+ */
+export const OptInsSchema = z.object({ equityOptIn: z.boolean(), outcomeStatsOptIn: z.boolean() }).strict();
+export type OptIns = z.infer<typeof OptInsSchema>;
+
 export const OpenApiDocumentSchema = z.object({ openapi: z.string(), paths: z.record(z.string(), z.unknown()) }).passthrough();
 
 /** How often a reminder to re-check comes, in weeks. Reminders are off until the person turns them on. */

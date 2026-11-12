@@ -4,6 +4,7 @@ import {
   ErrorResponseSchema,
   GrantConsentRequestSchema,
   ConsentRecordSchema,
+  OptInsSchema,
   OutcomeStatisticsRequestSchema,
   RevokeConsentResultSchema,
   SummaryDraftRequestSchema,
@@ -97,6 +98,21 @@ export function registerPersonDataRoutes(app: FastifyInstance, deps: PersonDataD
     async (request) => {
       await deps.db.update(schema.persons).set({ outcomeStatsOptIn: request.body.optIn }).where(eq(schema.persons.id, personId(request)));
       return { optIn: request.body.optIn };
+    },
+  );
+
+  // The caller's own two choices as the server holds them now. It is how a phone learns that the idle limit turned one off; it
+  // changes nothing, carries no bucket and no figure, and the phone never turns a choice on from the answer.
+  typed.get(
+    '/me/opt-ins',
+    { config: { access: 'person' }, schema: { response: { 200: OptInsSchema } } },
+    async (request) => {
+      const [row] = await deps.db
+        .select({ equityOptIn: schema.persons.equityOptIn, outcomeStatsOptIn: schema.persons.outcomeStatsOptIn })
+        .from(schema.persons)
+        .where(eq(schema.persons.id, personId(request)))
+        .limit(1);
+      return { equityOptIn: row?.equityOptIn ?? false, outcomeStatsOptIn: row?.outcomeStatsOptIn ?? false };
     },
   );
 
