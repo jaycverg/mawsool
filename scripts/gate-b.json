@@ -2740,11 +2740,11 @@
     "tests": [
       {
         "file": "test/presence.test.ts",
-        "name": "makes one authenticated read of the person’s own tickets when the equity choice is on"
+        "name": "makes one authenticated read of the person’s own two choices when the equity choice is on"
       },
       {
         "file": "test/presence.test.ts",
-        "name": "makes one authenticated read of the person’s own tickets when the statistics choice is on"
+        "name": "makes one authenticated read of the person’s own two choices when the statistics choice is on"
       },
       {
         "file": "test/presence.test.ts",
@@ -2799,6 +2799,148 @@
     "browser": "opted-in-phone-reaches-the-server-once-a-day-so-the-idle-limit-does-not-clear-its-choices"
   },
   {
+    "id": "the-phone-learns-that-the-server-switched-an-opt-in-off",
+    "sentence": "The next time the app reaches the server (the daily call while a choice is on, or opening Settings online) the phone learns the server's own state of the person's two choices and turns off, on the phone, any choice the server has off, dropping the equity buckets; it never turns a choice on from the answer, changes nothing when the read fails or the answer is not the two choices, retries at the next start when it cannot write, and tells the person once in Settings that the choice was turned off because the phone was not used for 6 months, only when idleness is the plausible reason; the server answers the read for the caller's own row alone",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/presence.test.ts",
+        "name": "turns off on the phone a choice the server has off, drops the equity buckets, and leaves a note for Settings that is given out once"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "turns off only the equity choice when the server has only that one off"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "turns off only the statistics choice when the server has only that one off"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "never turns a choice on from the server’s answer"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "changes nothing on the phone and records no day when the read ends in a network failure"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "changes nothing on the phone and records no day when the read ends in a server error"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "changes nothing on the phone and records no day when the read ends in a refusal"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "changes nothing on the phone and records no day when the read ends in an answer that is not the two choices"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "is retried at the next start, not marked done, when the phone’s store refuses to turn the choice off"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "still turns the choice off when only the note for Settings cannot be kept"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "gives no note when the phone reached the server recently and still disagrees with it"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "on opening Settings, reads even though today’s call was made, records no day, and turns off what the server has off"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/opt-in-lifetime.test.ts",
+        "name": "tells a person their own two choices as the server holds them"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/opt-in-lifetime.test.ts",
+        "name": "answers off for both choices once the idle limit has turned them off"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/access.test.ts"
+      },
+      {
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "says, in en, why a choice was turned off while the phone was idle, in the words of the other Settings notes"
+      },
+      {
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "says, in ar, why a choice was turned off while the phone was idle, in the words of the other Settings notes"
+      }
+    ],
+    "browser": "settings-says-once-that-the-idle-limit-switched-the-equity-choice-off-and-the-phone-then-sends-nothing-under-it"
+  },
+  {
+    "id": "a-background-read-never-registers-the-phone",
+    "sentence": "The phone's background reads (the daily call and the read on opening Settings) use the credential the phone already holds and never make an identity, register or register the phone again: a 401 changes nothing on the phone, records no day and is a result of its own, while a call the person makes themselves still registers the phone once and asks again once",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/presence.test.ts",
+        "name": "makes no registration, and no second try, when the server answers 401"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "makes no registration on a fresh page load either"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "makes no request and makes no identity when the phone holds none"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "is the same on opening Settings: a 401 registers nothing and changes nothing"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "a foreground call that gets 401 registers the phone again, once, and asks again once"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "leaves a second 401 of a foreground call as it is"
+      }
+    ],
+    "browser": "a-background-read-that-gets-401-registers-nothing-and-records-no-day"
+  },
+  {
+    "id": "the-handoff-timeout-does-not-claim-nothing-was-sent",
+    "sentence": "When the hand-off send is not answered in time after the note was sent, the crisis screen says the phone could not confirm the note arrived, that the numbers above still work and that the note can still be stopped, in Arabic and English, and offers the stop control; the outcomes where nothing was sent for certain (no connection before sending, the phone could not prepare the note, a hand-off already stopped, a refusal) keep their own words, and the crisis screen never waits on any of it",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "keeps saying offline, with nothing recorded as sent, for every failure that is not a timeout after the request left"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "keeps the outcomes where nothing was sent for certain"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "say, in en, that the arrival could not be confirmed, that the numbers still work and that the note can be stopped"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "say, in ar, that the arrival could not be confirmed, that the numbers still work and that the note can be stopped"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "never claim, in either language, that nothing was sent"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "leave the words for the outcomes where nothing was sent for certain exactly as they were"
+      }
+    ],
+    "delegated": { "gate": "gate:phase4", "id": "crisis-handoff-timeout-says-it-could-not-confirm-and-offers-the-stop" }
+  },
+  {
     "id": "the-statistics-choice-says-it-covers-every-total-sent-or-to-be-sent",
     "sentence": "The repeat check's statistics box and Settings' statistics note say in both languages that the choice covers every total the person has sent or will send their clinics, and the Settings turn-off button and its confirmation use the same all-referrals scope, not two totals",
     "project": "apps/person",
@@ -2819,7 +2961,7 @@
   },
   {
     "id": "a-handoff-send-and-stop-do-not-wait-for-ever-on-a-store-or-a-network",
-    "sentence": "The hand-off send and stop on the phone end in an outcome the screen already has when the phone's store or the network stops answering, and never wait for ever: a store that does not answer before the send means failed and nothing sent, a network that does not answer means offline with the sending record kept so the note can still be stopped, a step that runs out after the answer leaves the sent or refused outcome, and a stop that cannot finish keeps its record",
+    "sentence": "The hand-off send and stop on the phone end in an outcome the screen already has when the phone's store or the network stops answering, and never wait for ever: a store that does not answer before the send means failed and nothing sent, a crisis queue that does not flush means offline and nothing sent, a call that does not answer once the note was sent means unconfirmed with the sending record kept so the note can still be stopped, a step that runs out after the answer leaves the sent or refused outcome, and a stop that cannot finish keeps its record",
     "project": "apps/person",
     "tests": [
       {
@@ -2840,7 +2982,11 @@
       },
       {
         "file": "test/crisis-handoff.test.ts",
-        "name": "says offline when the call does not answer, keeps the \"sending\" record to stop from"
+        "name": "says unconfirmed, not offline, when the call does not answer, keeps the \"sending\" record to stop from"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "says unconfirmed, not offline, when the call’s own time limit runs out after the request was sent"
       },
       {
         "file": "test/crisis-handoff.test.ts",
@@ -2912,6 +3058,11 @@
       }
     ],
     "browser": "statistics-note-refused-write-sends-nothing-shows-the-message-and-keeps-finish-in-view"
+  },
+  {
+    "id": "the-note-failed-message-is-not-covered-by-the-finish-bar",
+    "sentence": "On the repeat check's totals screen at 390 by 844, the message that the statistics choice's note could not be kept is wholly in view with nothing over it, above the Finish button and without a scroll, in both languages",
+    "browser": "repeat-check-note-failed-message-is-not-covered-by-the-finish-bar"
   },
   {
     "id": "a-lost-statistics-reply-keeps-the-settings-turn-off",

@@ -1194,6 +1194,31 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page).toHaveURL(new RegExp(`^${escapeRe(BASE)}/${locale}/result/\\?id=[0-9a-f-]{36}$`));
   },
 
+  async 'crisis-handoff-timeout-says-it-could-not-confirm-and-offers-the-stop'({ page, locale }) {
+    // The send is never answered, so the phone's own ten second limit on a call runs out: a slow send may still have arrived.
+    test.setTimeout(90_000);
+    await visitOnline(page, locale);
+    const before = (await storedHandoffs()).length;
+    await triggerCrisis(page, locale);
+    await page.route(`${API}/me/crisis-handoffs`, () => new Promise<void>(() => undefined));
+    await page.locator('[data-handoff-offer]').click();
+    await page.locator('[data-handoff-consent]').check();
+    await page.locator('[data-handoff-send]').click();
+    const failure = page.locator('[data-handoff-failure="unconfirmed"]');
+    await expect(failure).toHaveText(msg(locale, 'crisis.handoffNotConfirmed'), { timeout: 30_000 });
+    expect(await failure.innerText(), 'it does not say nothing was sent').not.toContain(msg(locale, 'crisis.handoffOffline'));
+    // The note may be on its way, so it can be stopped from here; the numbers and the block are as they were.
+    await expect(page.locator('[data-handoff-stop]')).toBeVisible();
+    await expect(page.locator('[data-handoff-send]')).toBeVisible();
+    for (const number of ['800725462', '998', '999']) await expect(page.locator(`a[href="tel:${number}"]`)).toBeVisible();
+    expect(await storedHandoffs()).toHaveLength(before);
+    await page.locator('[data-handoff-stop]').click();
+    await expect(page.getByText(msg(locale, 'crisis.handoffStopped'), { exact: true })).toBeVisible();
+    await expect(page.locator('[data-handoff-stop]')).toHaveCount(0);
+    await page.reload();
+    await expect(page).toHaveURL(crisisUrl(locale));
+  },
+
   async 'context-panel-puts-the-trajectory-beside-conditions-and-labels-the-sample-labs'({ context, locale }) {
     const person = await newPerson();
     const serviceId = await serviceAt(FACILITY_A);

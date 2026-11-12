@@ -26,6 +26,7 @@ function when(iso: string, lang: Locale): string {
 const INSTRUMENT_NAMES = { who5: 'WHO-5', phq9: 'PHQ-9', gad7: 'GAD-7' } as const;
 const FAILURES: Partial<Record<Phase, string>> = {
   offline: 'handoffOffline',
+  unconfirmed: 'handoffNotConfirmed',
   not_ready: 'handoffNotReady',
   rejected: 'handoffRejected',
   invalid_number: 'handoffInvalidNumber',

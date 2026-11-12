@@ -37,6 +37,15 @@ export async function loadOrCreateIdentity(storage: StorageAdapter, random: Rand
   return storage.setIfAbsent(STORAGE_KEY, createDeviceIdentity(random));
 }
 
+/**
+ * The identity stored on this device, or null when there is none (or what is stored is not an identity). Unlike
+ * `loadOrCreateIdentity` it never writes, so background work can ask whether the phone has a credential without making one.
+ */
+export async function loadDeviceIdentity(storage: StorageAdapter): Promise<DeviceIdentity | null> {
+  const stored = await storage.get<Partial<DeviceIdentity> | undefined>(STORAGE_KEY);
+  return typeof stored?.id === 'string' && typeof stored.secret === 'string' ? { id: stored.id, secret: stored.secret } : null;
+}
+
 /** The `Authorization` header value for person routes. */
 export function personAuthorization(identity: DeviceIdentity): string {
   return `Bearer ${identity.id}.${identity.secret}`;

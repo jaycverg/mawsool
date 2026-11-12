@@ -1234,7 +1234,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     page.on('request', (request) => {
       if (!toApi(request)) return;
       inFlight.add(request);
-      if (request.method() === 'GET' && new URL(request.url()).pathname === '/me/tickets') reads.push(request.url());
+      if (request.method() === 'GET' && request.url() === `${API}/me/opt-ins`) reads.push(request.url());
     });
     // The answer's headers, not the request's end: the phone never reads the body of its registration call, so that call never "finishes".
     // The API has done its work (dated the person) before it answers.
@@ -1278,7 +1278,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect((await person()).equityOptIn).toBe(true);
 
     // A day later by the phone's own clock, with the server's last note of the phone ten days old: opening the app is use, so the
-    // phone reads the person's own tickets once (the home screen asks the server for nothing itself) and the server's note is its
+    // phone reads the person's own two choices once (the home screen asks the server for nothing itself) and the server's note is its
     // own day again.
     await page.clock.setFixedTime(new Date(Date.now() + 86_400_000));
     const tenDaysAgo = await backdate(10);
@@ -1296,6 +1296,77 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await page.waitForLoadState('networkidle');
     expect((await person()).lastSeenOn).toBe(backdated);
     expect(reads).toHaveLength(1);
+  },
+
+  async 'settings-says-once-that-the-idle-limit-switched-the-equity-choice-off-and-the-phone-then-sends-nothing-under-it'({ page, locale }) {
+    const equityPuts: string[] = [];
+    page.on('request', (request) => {
+      if (request.url() === `${API}/me/equity` && request.method() === 'PUT') equityPuts.push(request.postData() ?? '');
+    });
+    await toConsent(page, locale);
+    await page.locator('#equity-on').check();
+    await page.locator('#equity-ageBand').selectOption('25_34');
+    await send(page, locale);
+    await expect(page).toHaveURL(ticketUrl(locale));
+    const { ticket } = await stored(ticketIdOf(page));
+    const person = async () => (await (await fetch(`${INSPECT}/persons/${ticket.personId}`)).json()) as { equityOptIn: boolean; ageBand: string | null };
+    expect(await person()).toMatchObject({ equityOptIn: true, ageBand: '25_34' });
+
+    // Let the calls the ticket screen starts finish and leave it, or one lands after the server's note is put back and moves it.
+    await expect(page.locator('[data-screen="ticket"] [data-ticket]')).toBeVisible();
+    await waitForStored(page, 'server:last-seen-sent');
+    await page.waitForLoadState('networkidle');
+    await page.goto('about:blank');
+
+    // The phone is then silent for the idle limit: the server's note of it goes back 180 days and the real sweep runs, which turns the choice off there.
+    expect((await fetch(`${INSPECT}/e2e/last-seen/${ticket.personId}?daysAgo=180`, { method: 'POST' })).ok).toBe(true);
+    const swept = (await (await fetch(`${INSPECT}/e2e/sweep`, { method: 'POST' })).json()) as { optInsCleared: number };
+    expect(swept.optInsCleared).toBeGreaterThanOrEqual(1);
+    expect(await person()).toMatchObject({ equityOptIn: false, ageBand: null });
+
+    // Opened again 180 days later by the phone's own clock: Settings reads the server's two choices, shows the group-totals choice off, and says why, in its own words.
+    await page.clock.setFixedTime(new Date(Date.now() + 180 * 86_400_000));
+    equityPuts.length = 0;
+    await page.goto(`/${locale}/settings/`);
+    await expect(page.locator('[data-opt-ins-cleared="equity"]')).toHaveText(msg(locale, 'settings.optInsClearedEquity'));
+    await expect(page.locator('[data-panel="equity"]')).toHaveCount(0);
+
+    // It is said once: the next visit shows nothing about it, and the choice is still off.
+    await page.goto(`/${locale}/settings/`);
+    await expect(page.locator('[data-panel="reminders"]')).toBeVisible();
+    await expect(page.locator('[data-opt-ins-cleared]')).toHaveCount(0);
+    await expect(page.locator('[data-panel="equity"]')).toHaveCount(0);
+
+    // Nothing is sent under the cleared choice: the consent screen starts with it off, and no equity request was made on the way.
+    await page.goto(`/${locale}/options/`);
+    await page.locator('[data-tier][data-lead] button').click();
+    await expect(page.locator('#equity-on')).not.toBeChecked();
+    expect(equityPuts).toEqual([]);
+    expect(await person()).toMatchObject({ equityOptIn: false, ageBand: null });
+  },
+
+  async 'a-background-read-that-gets-401-registers-nothing-and-records-no-day'({ page, locale, consoleGuard }) {
+    const registrations: string[] = [];
+    page.on('request', (request) => {
+      if (request.url() === `${API}/persons` && request.method() === 'POST') registrations.push(request.url());
+    });
+    consoleGuard.allow({ url: `${API}/me/opt-ins`, expect: 401, reason: 'the test answers the phone background read of its own choices with 401, as a server that forgot the phone would' });
+    await page.route(`${API}/me/opt-ins`, (route) => route.fulfill({ status: 401, json: { error: 'unauthorized', message: 'Unknown device' } }));
+    const refused = page.waitForResponse((response) => response.url() === `${API}/me/opt-ins`);
+    await toConsent(page, locale);
+    await page.locator('#equity-on').check();
+    await page.locator('#equity-ageBand').selectOption('25_34');
+    await send(page, locale);
+    await expect(page).toHaveURL(ticketUrl(locale));
+    await expect(page.locator('[data-screen="ticket"] [data-ticket]')).toBeVisible();
+
+    // The background read on the ticket screen's start was refused: the phone registered once, for the send it made itself, and
+    // not again for the read; the day it keeps for the read was not written.
+    expect((await refused).status()).toBe(401);
+    await page.waitForLoadState('networkidle');
+    expect(registrations, 'only the send registered the phone').toHaveLength(1);
+    expect(await rawStoreKeys(page)).not.toContain('server:last-seen-sent');
+    expect(await rawStoreKeys(page)).toContain('equity');
   },
 
   async 'reads-list-and-its-failure'({ page, locale, consoleGuard }) {
@@ -1956,6 +2027,50 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect(bodies).toHaveLength(1);
     expect(bodies[0]).toMatchObject({ statisticsOptIn: true });
     expect(await rawStoreKeys(page)).toContain('outcome-statistics');
+  },
+
+  async 'repeat-check-note-failed-message-is-not-covered-by-the-finish-bar'({ page, context, locale }) {
+    await installFailingIndexedDb(page);
+    await visitOnline(page, locale);
+    const id = await stubSeenTicket(page, locale);
+    await context.clock.setFixedTime(new Date(SEEN_AT_MS + SIX_WEEKS_MS));
+    await page.goto(`/${locale}/ticket/?id=${id}`);
+    await takeRepeatCheck(page, locale, id);
+    await page.locator('[data-control="share-totals"]').check();
+    await page.locator('[data-control="count-in-statistics"]').check();
+    const finish = page.locator('[data-control="finish-remeasure"]');
+    const scrolledBefore = await page.evaluate(() => window.scrollY);
+
+    await setIdbMode(page, 'refuse-writes');
+    await finish.click();
+    const message = page.locator('[data-note-failed]');
+    await expect(message).toHaveText(msg(locale, 'remeasure.statisticsNoteFailed'));
+
+    // At first render, with no scrolling: the whole message is on the screen, nothing sits over any part of it, and the button is below it.
+    const seen = await message.evaluate((node) => {
+      const box = node.getBoundingClientRect();
+      const top = (x: number, y: number) => {
+        const hit = document.elementFromPoint(x, y);
+        return hit !== null && node.contains(hit);
+      };
+      return {
+        top: box.top,
+        bottom: box.bottom,
+        scrolled: window.scrollY,
+        height: window.innerHeight,
+        fontSize: parseFloat(getComputedStyle(node).fontSize),
+        reachable: [top(box.left + 2, box.top + 2), top(box.right - 2, box.top + 2), top((box.left + box.right) / 2, (box.top + box.bottom) / 2), top(box.left + 2, box.bottom - 2), top(box.right - 2, box.bottom - 2)],
+      };
+    });
+    expect(seen.scrolled, 'the page did not have to scroll for the message to show').toBe(scrolledBefore);
+    expect(seen.top, 'the message starts inside the viewport').toBeGreaterThanOrEqual(0);
+    expect(seen.bottom, 'the message ends inside the viewport').toBeLessThanOrEqual(seen.height);
+    expect(seen.reachable, 'no part of the message has anything over it').toEqual([true, true, true, true, true]);
+    expect(seen.fontSize, 'the message keeps the size of body text').toBeGreaterThanOrEqual(15);
+    const button = (await finish.boundingBox())!;
+    expect(button.y, 'the button starts below the message, with no overlap').toBeGreaterThanOrEqual(seen.bottom);
+    expect(button.y + button.height, 'the button ends inside the viewport').toBeLessThanOrEqual(seen.height);
+    expect(button.height, 'the button keeps its 44 px target').toBeGreaterThanOrEqual(44);
   },
 
   async 'statistics-note-lost-reply-keeps-the-settings-turn-off-visible'({ page, context, locale, consoleGuard }) {

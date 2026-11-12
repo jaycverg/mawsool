@@ -24,6 +24,10 @@
     "sentence": "At 390 px the ops dashboard does not scroll sideways and no card scrolls inside itself; the timeliness figures stay inside their card, one block per tier with each figure under its column's name; and a symptom-change mean and its unit share one line inside their block, in Arabic and English"
   },
   {
+    "id": "timeliness-figures-keep-value-and-unit-on-one-line-in-cells-as-tall-as-their-neighbours",
+    "sentence": "In the ops dashboard's timeliness card, at 390 px and at 1280 px, every figure and its unit (such as \"18 days\" or \"71%\") stays on one line, no cell of a tier is taller than the others in its tier, and nothing inside the card scrolls, in Arabic and English"
+  },
+  {
     "id": "clinic-queue-follows-the-demo-clock",
     "sentence": "The clinic queue counts days left from the demo clock, so overdue marks agree with the API"
   },

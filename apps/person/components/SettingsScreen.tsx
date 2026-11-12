@@ -26,6 +26,8 @@ import {
   type ReminderSettings,
 } from '../lib/reminders';
 import { loadOutcomeStatistics, turnOffOutcomeStatistics } from '../lib/outcome-statistics';
+import { takeClearedNote, type ClearedNote } from '../lib/server-choices';
+import { learnChoicesNow } from '../lib/sync';
 import { callServer, markServerFootprint, type ServerDeps } from '../lib/server';
 import { href } from '../lib/routes';
 import { loadEquity, saveEquity } from '../lib/share';
@@ -64,15 +66,26 @@ export function SettingsScreen() {
   const [equityState, setEquityState] = useState<'idle' | 'working' | 'removed' | 'failed'>('idle');
   const [statisticsOn, setStatisticsOn] = useState<boolean | null>(null);
   const [statisticsState, setStatisticsState] = useState<StatisticsState>('idle');
+  const [cleared, setCleared] = useState<ClearedNote>({ equity: false, statistics: false });
   const [reminders, setReminders] = useState<ReminderSettings | null>(null);
   const [reminderNote, setReminderNote] = useState<ReminderNote>('none');
   const [phoneInput, setPhoneInput] = useState('');
 
   useEffect(() => {
     if (!usable) return;
-    void loadEquity(device.storage).then((stored) => setEquityOn(stored.optIn), () => setEquityOn(null));
-    void loadOutcomeStatistics(device.storage).then(setStatisticsOn, () => setStatisticsOn(null));
+    /** Reads the phone's notes of the two choices, and takes (once) the note of a choice the server switched off. */
+    const showChoices = async () => {
+      void loadEquity(device.storage).then((stored) => setEquityOn(stored.optIn), () => setEquityOn(null));
+      void loadOutcomeStatistics(device.storage).then(setStatisticsOn, () => setStatisticsOn(null));
+      if (device.anonymous) return;
+      const taken = await takeClearedNote(device.storage);
+      if (taken) setCleared((earlier) => ({ equity: earlier.equity || taken.equity, statistics: earlier.statistics || taken.statistics }));
+    };
+    void showChoices();
+    // Settings shows what the server holds: a choice it switched off while the phone was idle is shown off, once the read comes back.
+    void learnChoicesNow(lang).then(() => showChoices());
     void loadReminders(device.storage).then(setReminders, () => setReminders(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [device, usable]);
 
   const serverFor = (d: Device): ServerDeps => ({ storage: d.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, random: window.crypto });
@@ -296,6 +309,14 @@ export function SettingsScreen() {
           {reminderNote === 'failed' && <p role="alert" className="text-[15px] font-semibold text-danger" data-reminder-note="failed">{t('remindersFailed')}</p>}
           {reminderNote === 'blocked' && <p role="alert" className="text-[15px] font-semibold text-danger" data-reminder-note="blocked">{t('remindersBlocked')}</p>}
         </section>
+        )}
+
+        {(cleared.equity || cleared.statistics) && (
+          <section className="flex flex-col gap-2.5 rounded-card border border-border bg-surface p-5" data-panel="opt-ins-cleared">
+            <p role="status" className="t-body" data-opt-ins-cleared={cleared.equity && cleared.statistics ? 'both' : cleared.equity ? 'equity' : 'statistics'}>
+              {t(cleared.equity && cleared.statistics ? 'optInsClearedBoth' : cleared.equity ? 'optInsClearedEquity' : 'optInsClearedStatistics')}
+            </p>
+          </section>
         )}
 
         {(equityOn || equityState === 'removed' || equityState === 'failed') && (

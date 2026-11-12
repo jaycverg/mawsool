@@ -12,6 +12,7 @@ export const KEYS = {
   outcomeStatistics: 'outcome-statistics',
   footprint: 'server:footprint',
   lastSeenSent: 'server:last-seen-sent',
+  optInsCleared: 'server:opt-ins-cleared',
   directory: 'directory',
   crisisBlock: 'crisis:block',
   crisisOutbox: 'crisis:outbox',

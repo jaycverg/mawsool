@@ -207,11 +207,11 @@ export function Totals({ check, ticket, bandNames, names, share, setShare, stati
         <p className="t-small text-muted" data-share-unavailable>{t('shareUnavailable')}</p>
       )}
       <p className="t-small text-muted">{t('stays')}</p>
-      {send === 'failed' && <p role="alert" className="t-body text-danger">{t('failed')}</p>}
-      {send === 'not_ready' && <p role="alert" className="t-body text-danger">{t('conflict')}</p>}
-      {send === 'note_failed' && <p role="alert" className="t-body text-danger" data-note-failed>{t('statisticsNoteFailed')}</p>}
-      {/* Finish stays at the foot of the screen, so a longer text above it (a note that failed, the help under a choice) never pushes it out of view. */}
-      <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex flex-col border-t border-border bg-ground px-4 pb-4 pt-3" data-finish-bar>
+      {/* Finish stays at the foot of the screen, so a longer text above it (the help under a choice) never pushes it out of view. The answer to pressing it is part of the bar, above the button: left in the page, the bar sat over it. */}
+      <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex flex-col gap-2 border-t border-border bg-ground px-4 pb-4 pt-3" data-finish-bar>
+        {send === 'failed' && <p role="alert" className="t-body text-danger">{t('failed')}</p>}
+        {send === 'not_ready' && <p role="alert" className="t-body text-danger">{t('conflict')}</p>}
+        {send === 'note_failed' && <p role="alert" className="t-body text-danger" data-note-failed>{t('statisticsNoteFailed')}</p>}
         <button type="button" className="btn-primary" disabled={send === 'sending'} onClick={onFinish} data-control="finish-remeasure">
           {send === 'sending' ? t('sending') : t('finish')}
         </button>

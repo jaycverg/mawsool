@@ -104,6 +104,10 @@
     "sentence": "When the hand-off cannot be sent the panel says so, nothing is stored, and the crisis screen still shows every number, the block survives a reload and a direct visit to the options, and \"I'm safe right now\" still releases it"
   },
   {
+    "id": "crisis-handoff-timeout-says-it-could-not-confirm-and-offers-the-stop",
+    "sentence": "When the hand-off send is not answered before the phone's call limit runs out, the panel says the phone could not confirm the note arrived (not that nothing was sent), the crisis numbers stay on the screen, and the stop control is offered and removes the note, in Arabic and English"
+  },
+  {
     "id": "a-note-the-server-says-was-stopped-leaves-the-form-with-its-send-button-not-ready",
     "sentence": "When the server answers a send as already stopped, the panel says the note was not sent, the form stays open with the agreement cleared and its send button not ready, nothing is stored, and ticking again makes it ready"
   },

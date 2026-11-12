@@ -122,6 +122,30 @@ describe('an opt-in does not outlive the device that could turn it off', () => {
     await testDb.db.update(schema.persons).set({ equityOptIn: false, outcomeStatsOptIn: false, ageBand: null, gender: null, language: null, region: null }).where(eq(schema.persons.id, person.id));
   });
 
+  it('tells a person their own two choices as the server holds them, counts the read as the device being in use, and shows only their own row', async () => {
+    const person = await optedIn();
+    const other = await registerPerson(ctx);
+    const read = (who: TestPerson) => ctx.app.inject({ method: 'GET', url: '/me/opt-ins', headers: who.headers });
+    const mine = await read(person);
+    expect(mine.statusCode).toBe(200);
+    expect(mine.json()).toEqual({ equityOptIn: true, outcomeStatsOptIn: true });
+    expect((await read(other)).json()).toEqual({ equityOptIn: false, outcomeStatsOptIn: false });
+    await lastSeenDaysAgo(person, 10);
+    expect((await read(person)).statusCode).toBe(200);
+    expect(await seenOn(person)).toBe(dayOf(ctx.clock.now()));
+    expect((await ctx.app.inject({ method: 'GET', url: '/me/opt-ins' })).statusCode).toBe(401);
+    await testDb.db.update(schema.persons).set({ equityOptIn: false, outcomeStatsOptIn: false, ageBand: null, gender: null, language: null, region: null }).where(eq(schema.persons.id, person.id));
+  });
+
+  it('answers off for both choices once the idle limit has turned them off, and carries no bucket either way', async () => {
+    const person = await optedIn();
+    await lastSeenDaysAgo(person, OPT_IN_IDLE_LIMIT_DAYS);
+    expect((await sweep(testDb.db, ctx.clock)).optInsCleared).toBeGreaterThanOrEqual(1);
+    const read = await ctx.app.inject({ method: 'GET', url: '/me/opt-ins', headers: person.headers });
+    expect(read.json()).toEqual({ equityOptIn: false, outcomeStatsOptIn: false });
+    expect(Object.keys(read.json()).sort()).toEqual(['equityOptIn', 'outcomeStatsOptIn']);
+  });
+
   it('keeps the choices of a person whose device is in use, however long ago they chose', async () => {
     const person = await optedIn();
     ctx.clock.advance((OPT_IN_IDLE_LIMIT_DAYS - 1) * DAY);

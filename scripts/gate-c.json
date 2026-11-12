@@ -837,5 +837,10 @@
     "id": "the-ops-dashboard-fits-a-phone-without-inner-scroll",
     "sentence": "At 390 px the ops dashboard does not scroll sideways, no card scrolls inside itself, the timeliness figures reflow into one block per tier inside their card, and a symptom-change mean keeps its value and unit on one line, in both languages",
     "browser": "dashboard-fits-a-phone-with-no-inner-scroll-and-keeps-a-value-and-its-unit-on-one-line"
+  },
+  {
+    "id": "the-timeliness-figures-keep-a-value-and-its-unit-on-one-line",
+    "sentence": "In the timeliness card at 390 px and at 1280 px every figure and its unit stays on one line and no cell of a tier is taller than its neighbours, with nothing scrolling inside the card, in both languages",
+    "browser": "timeliness-figures-keep-value-and-unit-on-one-line-in-cells-as-tall-as-their-neighbours"
   }
 ]

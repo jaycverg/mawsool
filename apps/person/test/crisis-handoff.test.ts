@@ -7,6 +7,8 @@ import { buildHandoffPreview, handoffFor, handoffOffer, loadHandoffs, offerState
 import type { FlushResult } from '../lib/crisis-outbox';
 import { deleteDeviceData } from '../lib/device-data';
 import { forgetRegistration, hasServerFootprint } from '../lib/server';
+import ar from '../messages/ar.json';
+import en from '../messages/en.json';
 import { fixtureClock, memoryStorage } from './helpers/memory';
 
 const EVENT_ID = '11111111-1111-4111-8111-111111111111';
@@ -22,7 +24,7 @@ function unfinishedPhq9(): Screening {
   return { id: 's2', instrument: 'phq9', answers: [3, 3, 3], total: 9, band: null, item9Flag: false, takenAt: '2026-11-01T08:05:00+04:00' } as Screening;
 }
 
-type PostReply = 'created' | 'offline' | 'lost-reply' | 'unknown-event' | 'stopped' | 'rejected' | 'unavailable';
+type PostReply = 'created' | 'offline' | 'lost-reply' | 'timeout' | 'unknown-event' | 'stopped' | 'rejected' | 'unavailable';
 
 /** A fake API: registration works, the hand-off route answers as told, and a row is kept when the server "stored" it. */
 function setup(post: PostReply = 'created', flush: FlushResult['outcome'] = 'sent') {
@@ -43,6 +45,8 @@ function setup(post: PostReply = 'created', flush: FlushResult['outcome'] = 'sen
       if (post === 'rejected') return new Response('{}', { status: 400 });
       server.stored = true;
       if (post === 'lost-reply') throw new TypeError('the reply never came');
+      // What `AbortSignal.timeout` makes fetch reject with when the call's own limit runs out after the request was sent.
+      if (post === 'timeout') throw new DOMException('The operation timed out.', 'TimeoutError');
       return new Response(JSON.stringify({ handoffId: 'x', consentId: 'y', grantedAt: '2026-11-01T04:00:00.000Z', created: true }), { status: 201 });
     }
     if (server.deleteAnswers === 'offline') throw new TypeError('network down');
@@ -183,6 +187,38 @@ describe('sending the hand-off', () => {
     }
   });
 
+  it('says unconfirmed, not offline, when the call’s own time limit runs out after the request was sent, keeps the record to stop from, and a retry reuses its id', async () => {
+    const s = setup('timeout');
+    expect(await sendHandoff(s.deps, input())).toBe('unconfirmed');
+    expect(s.server.stored, 'the server did get the note').toBe(true);
+    const first = (await loadHandoff(s.store.storage))!;
+    expect(first.state).toBe('sending');
+    expect(await sendHandoff(s.deps, input())).toBe('unconfirmed');
+    expect(new Set(posts(s.calls).map((call) => call.body!.handoffId))).toEqual(new Set([first.handoffId]));
+    expect(await stopHandoff({ server: s.serverDeps }, first)).toBe('stopped');
+    expect(s.server.stored).toBe(false);
+    expect(await loadHandoff(s.store.storage)).toBeNull();
+  });
+
+  it('keeps saying offline, with nothing recorded as sent, for every failure that is not a timeout after the request left', async () => {
+    for (const reply of ['offline', 'lost-reply', 'unavailable'] as const) {
+      expect(await sendHandoff(setup(reply).deps, input()), reply).toBe('offline');
+    }
+    const unregistered = setup();
+    unregistered.serverDeps.fetch = (async () => new Response('{}', { status: 503 })) as unknown as typeof fetch;
+    expect(await sendHandoff(unregistered.deps, input()), 'the phone could not register, so nothing left it').toBe('offline');
+  });
+
+  it('keeps the outcomes where nothing was sent for certain: stopped, refused, not ready, could not prepare, invalid number', async () => {
+    expect(await sendHandoff(setup('stopped').deps, input())).toBe('stopped');
+    expect(await sendHandoff(setup('rejected').deps, input())).toBe('rejected');
+    expect(await sendHandoff(setup('unknown-event').deps, input())).toBe('not_ready');
+    const unprepared = setup();
+    unprepared.store.failures.write = true;
+    expect(await sendHandoff(unprepared.deps, input())).toBe('failed');
+    expect(await sendHandoff(setup().deps, input({ callbackInput: '0501' }))).toBe('invalid_number');
+  });
+
   it('drops its record when the server refuses for good, and says the crisis record is not there yet on a 409', async () => {
     const unknown = setup('unknown-event');
     expect(await sendHandoff(unknown.deps, input())).toBe('not_ready');
@@ -263,10 +299,10 @@ describe('a hand-off that waits on a store or a network that does not answer', (
     expect(posts(s.calls)).toHaveLength(1);
   });
 
-  it('says offline when the call does not answer, keeps the "sending" record to stop from, and a retry reuses its id and is not marked sent by the abandoned call', async () => {
+  it('says unconfirmed, not offline, when the call does not answer, keeps the "sending" record to stop from, and a retry reuses its id and is not marked sent by the abandoned call', async () => {
     const s = setup();
     const inner = hangPost(s);
-    expect(await sendHandoff(quick(s), input())).toBe('offline');
+    expect(await sendHandoff(quick(s), input())).toBe('unconfirmed');
     const waiting = (await loadHandoff(s.store.storage))!;
     expect(waiting.state).toBe('sending');
     s.serverDeps.fetch = inner;
@@ -278,7 +314,7 @@ describe('a hand-off that waits on a store or a network that does not answer', (
   it('can stop the note whose send did not answer, because its record was written before the send', async () => {
     const s = setup();
     hangPost(s);
-    expect(await sendHandoff(quick(s), input())).toBe('offline');
+    expect(await sendHandoff(quick(s), input())).toBe('unconfirmed');
     const waiting = (await loadHandoff(s.store.storage))!;
     expect(await stopHandoff({ server: s.serverDeps, patience: QUICK }, waiting)).toBe('stopped');
     expect(await loadHandoff(s.store.storage)).toBeNull();
@@ -445,5 +481,28 @@ describe('a send the server says was stopped', () => {
     expect(await sendHandoff(notReady.deps, input())).toBe('not_ready');
     const stopped = setup('stopped');
     expect(await sendHandoff(stopped.deps, input())).not.toBe('not_ready');
+  });
+});
+
+describe('the words for a send that could not be confirmed', () => {
+  it.each([
+    ['en', en.crisis, ['could not confirm', 'may have been sent', 'numbers above still work', 'stop the note']],
+    ['ar', ar.crisis, ['تعذّر التأكد من وصول الملاحظة', 'قد تكون أُرسلت', 'الأرقام أعلاه تعمل كالمعتاد', 'إيقاف الملاحظة']],
+  ])('say, in %s, that the arrival could not be confirmed, that the numbers still work and that the note can be stopped', (_locale, crisis, parts) => {
+    for (const part of parts) expect(crisis.handoffNotConfirmed).toContain(part);
+  });
+
+  it('never claim, in either language, that nothing was sent, which a slow send may have disproved', () => {
+    expect(en.crisis.handoffNotConfirmed).not.toMatch(/nothing was sent/i);
+    expect(ar.crisis.handoffNotConfirmed).not.toContain('فلم يُرسَل');
+    expect(ar.crisis.handoffNotConfirmed).toMatch(/[؀-ۿ]/);
+  });
+
+  it('leave the words for the outcomes where nothing was sent for certain exactly as they were', () => {
+    expect(en.crisis.handoffOffline).toBe('We could not reach the server, so nothing was sent. The numbers above still work.');
+    expect(en.crisis.handoffFailed).toBe('This phone could not prepare the note, so nothing was sent.');
+    expect(en.crisis.handoffStoppedNote).toBe('You stopped this note before it was stored, so it was not sent.');
+    expect(ar.crisis.handoffOffline).toBe('تعذّر الوصول إلى الخادم، فلم يُرسَل شيء. الأرقام أعلاه تعمل كالمعتاد.');
+    expect(ar.crisis.handoffFailed).toBe('تعذّر على هذا الهاتف تجهيز الملاحظة، فلم يُرسَل شيء.');
   });
 });

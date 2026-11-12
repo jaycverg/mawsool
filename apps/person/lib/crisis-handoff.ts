@@ -95,15 +95,18 @@ export interface HandoffPatience {
 
 /**
  * - `sent`: the server holds the hand-off and the consent is recorded.
- * - `offline`: no connection, the server failed, or the network did not answer in time; nothing is known to be stored (a note that may be on its way stays
- *   recorded as `sending`, so it can still be stopped). The crisis screen says so and stays as it is.
+ * - `offline`: no connection before the note was sent (the crisis queue could not be flushed, the phone could not register), or the call
+ *   failed or the server answered with an error; the screen says nothing was sent and stays as it is.
+ * - `unconfirmed`: the note was sent and no answer came in time (the network patience ran out, or the call's own time limit did), so the
+ *   server may well hold it. The `sending` record stays, so the person can stop it and a retry reuses its id. The screen says the phone could
+ *   not confirm it arrived, never that nothing was sent.
  * - `not_ready`: the server does not yet hold the crisis record this belongs to.
  * - `rejected`: the server refused the request for good.
  * - `stopped`: the server says this hand-off was already stopped, so it was not stored. Nothing is offered again.
  * - `invalid_number`: the number typed is not an international number; nothing was sent.
  * - `failed`: the phone could not write its own record, or its store did not answer in time, so nothing was sent.
  */
-export type SendOutcome = 'sent' | 'offline' | 'not_ready' | 'stopped' | 'rejected' | 'invalid_number' | 'failed';
+export type SendOutcome = 'sent' | 'offline' | 'unconfirmed' | 'not_ready' | 'stopped' | 'rejected' | 'invalid_number' | 'failed';
 
 export interface SendDeps {
   server: ServerDeps;
@@ -145,9 +148,10 @@ export async function sendHandoff(deps: SendDeps, input: { crisisEventId: string
 
   const sent = await within(callServer<CrisisHandoffReceipt>(deps.server, 'POST', '/me/crisis-handoffs', { handoffId: record.handoffId, crisisEventId: record.crisisEventId, consented: true, ...preview }), networkMs, null);
   // No answer in time: the server may or may not hold the note. The `sending` record stays, so the person can stop it and a retry reuses its id.
-  if (sent === null) return 'offline';
+  if (sent === null) return 'unconfirmed';
   if (!sent.ok) {
-    if (sent.reason !== 'rejected') return 'offline';
+    // The call's own time limit ran out after the request left: the same unknown, so the same outcome. Any other failure to reach the server is `offline`.
+    if (sent.reason !== 'rejected') return sent.timedOut ? 'unconfirmed' : 'offline';
     // A refusal means nothing was stored, so the record has nothing to stop. If the store will not take the change, the record stays and a stop finds the server has none.
     await within(changeHandoffs(storage, (records) => records.filter((other) => other.handoffId !== record.handoffId)).catch(() => undefined), storeMs, undefined);
     if (sent.status === 409 && sent.error === 'handoff_stopped') return 'stopped';

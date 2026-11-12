@@ -534,6 +534,48 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     }
   },
 
+  async 'timeliness-figures-keep-value-and-unit-on-one-line-in-cells-as-tall-as-their-neighbours'({ context, browser, locale }) {
+    await resetFromPanel(await signedInPage(context, OPS, ADMIN), locale);
+    const dash = await dashboard(browser, locale);
+    await expect(dash.locator('[data-section="timeliness"] [data-tier-row]')).toHaveCount(5);
+    for (const width of [390, 1280]) {
+      await dash.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+      const rows = await dash.locator('[data-section="timeliness"] [data-tier-row]:not([data-suppressed])').evaluateAll((trs) =>
+        trs.map((tr) => {
+          const cells = [...tr.querySelectorAll<HTMLElement>('td[data-label]')];
+          return {
+            tier: tr.getAttribute('data-tier-row'),
+            cells: cells.map((cell) => {
+              const figure = cell.querySelector<HTMLElement>('span');
+              const style = getComputedStyle(figure ?? cell);
+              return {
+                label: cell.getAttribute('data-label'),
+                height: Math.round(cell.getBoundingClientRect().height),
+                figureHeight: figure ? Math.round(figure.getBoundingClientRect().height) : null,
+                lineHeight: parseFloat(style.lineHeight),
+                lines: figure ? figure.getClientRects().length : null,
+                text: figure?.textContent ?? cell.textContent,
+              };
+            }),
+          };
+        }),
+      );
+      expect(rows.length, `${width} px: every tier has figures`).toBeGreaterThanOrEqual(4);
+      for (const row of rows) {
+        for (const cell of row.cells) {
+          if (cell.figureHeight !== null) {
+            expect(cell.figureHeight, `${width} px, ${row.tier} ${cell.label}: "${cell.text}" is on one line`).toBeLessThanOrEqual(cell.lineHeight + 1);
+            expect(cell.lines, `${width} px, ${row.tier} ${cell.label}: "${cell.text}" is not split`).toBe(1);
+          }
+        }
+        const heights = row.cells.map((cell) => cell.height);
+        expect(Math.max(...heights) - Math.min(...heights), `${width} px, ${row.tier}: no cell is taller than its neighbours (${heights.join(', ')})`).toBeLessThanOrEqual(1);
+      }
+      const scrolled = await dash.evaluate(() => [...document.querySelectorAll('[data-section="timeliness"] , [data-section="timeliness"] *')].filter((node) => ['auto', 'scroll'].includes(getComputedStyle(node).overflowX) && node.scrollWidth > node.clientWidth + 1).length);
+      expect(scrolled, `${width} px: nothing inside the timeliness card scrolls`).toBe(0);
+    }
+  },
+
   async 'clinic-queue-follows-the-demo-clock'({ context, locale }) {
     const admin = await signedInPage(context, OPS, ADMIN);
     await resetFromPanel(admin, locale);

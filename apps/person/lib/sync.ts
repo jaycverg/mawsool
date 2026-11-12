@@ -4,7 +4,7 @@ import { API_URL } from './api';
 import { deviceNow } from './clock';
 import { refreshDemoOffset, restoreDemoOffset } from './demo-offset';
 import { flushOutbox } from './crisis-outbox';
-import { keepSeenToday } from './presence';
+import { keepSeenToday, learnChoicesOnOpen, type PresenceDeps, type PresenceResult } from './presence';
 import { loadDirectory } from './directory';
 import { KEYS } from './keys';
 import { deviceFetch } from './net';
@@ -77,15 +77,33 @@ export function refreshDemoClock(options: { restore: boolean }): void {
 export function reportPresence(locale: Locale): void {
   if (isAnonymous()) return;
   try {
-    const { storage } = getDevice();
-    void keepSeenToday({
-      server: { storage, fetch: deviceFetch(), apiUrl: API_URL, locale, random: window.crypto },
-      now: () => new Date(),
-      isAnonymous,
-      isOnline: () => navigator.onLine,
-      crisisOpen: async (store) => ((await store.get<{ blocked?: unknown } | undefined>(KEYS.crisisBlock))?.blocked === true) || getDevice().tabMark.get() !== null,
-    }).catch(() => undefined);
+    void keepSeenToday(presenceDeps(locale)).catch(() => undefined);
   } catch {
     // No usable storage, so there is no choice to keep.
   }
+}
+
+/**
+ * The read Settings makes when it opens, so a choice the server turned off is shown off (see `learnChoicesOnOpen`). Resolves with
+ * what it did and never rejects; an anonymous session, an open crisis or a phone with no usable storage make no request.
+ */
+export async function learnChoicesNow(locale: Locale): Promise<PresenceResult> {
+  if (isAnonymous()) return 'anonymous';
+  try {
+    return await learnChoicesOnOpen(presenceDeps(locale));
+  } catch {
+    return 'failed';
+  }
+}
+
+/** What the background reads need: the phone's own server dependencies, the wall clock and the three reasons to stay quiet. */
+function presenceDeps(locale: Locale): PresenceDeps {
+  const { storage } = getDevice();
+  return {
+    server: { storage, fetch: deviceFetch(), apiUrl: API_URL, locale, random: window.crypto },
+    now: () => new Date(),
+    isAnonymous,
+    isOnline: () => navigator.onLine,
+    crisisOpen: async (store) => ((await store.get<{ blocked?: unknown } | undefined>(KEYS.crisisBlock))?.blocked === true) || getDevice().tabMark.get() !== null,
+  };
 }
