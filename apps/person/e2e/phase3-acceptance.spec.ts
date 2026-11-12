@@ -1228,8 +1228,23 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
 
   async 'opted-in-phone-reaches-the-server-once-a-day-so-the-idle-limit-does-not-clear-its-choices'({ page, locale }) {
     const reads: string[] = [];
+    /** Calls to the API this page has started and not yet seen finish or fail. */
+    const inFlight = new Set<Request>();
+    const toApi = (request: Request) => request.url().startsWith(API);
     page.on('request', (request) => {
-      if (request.method() === 'GET' && new URL(request.url()).pathname === '/me/tickets' && request.url().startsWith(API)) reads.push(request.url());
+      if (!toApi(request)) return;
+      inFlight.add(request);
+      if (request.method() === 'GET' && new URL(request.url()).pathname === '/me/tickets') reads.push(request.url());
+    });
+    // The answer's headers, not the request's end: the phone never reads the body of its registration call, so that call never "finishes".
+    // The API has done its work (dated the person) before it answers.
+    page.on('response', (response) => {
+      const request = response.request();
+      if (!toApi(request)) return;
+      inFlight.delete(request);
+    });
+    page.on('requestfailed', (request) => {
+      inFlight.delete(request);
     });
     await toConsent(page, locale);
     await page.locator('#equity-on').check();
@@ -1237,27 +1252,49 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await send(page, locale);
     await expect(page).toHaveURL(ticketUrl(locale));
     const { ticket } = await stored(ticketIdOf(page));
-    const person = async () => (await (await fetch(`${INSPECT}/persons/${ticket.personId}`)).json()) as { equityOptIn: boolean; lastSeenOn: string };
-    const today = new Date().toISOString().slice(0, 10);
-    const backdate = async (daysAgo: number) => expect((await fetch(`${INSPECT}/e2e/last-seen/${ticket.personId}?daysAgo=${daysAgo}`, { method: 'POST' })).ok).toBe(true);
-    expect(await person()).toMatchObject({ equityOptIn: true, lastSeenOn: today });
+    // `serverToday` is the API's own day, read in the same answer, so a run across midnight UTC compares like with like.
+    const person = async () => (await (await fetch(`${INSPECT}/persons/${ticket.personId}`)).json()) as { equityOptIn: boolean; lastSeenOn: string; serverToday: string };
+    /** Where the server's note of the phone is: the string `today` when it holds the server's own day, else the day it holds. */
+    const noteOnServer = async () => {
+      const { lastSeenOn, serverToday } = await person();
+      return lastSeenOn === serverToday ? 'today' : lastSeenOn;
+    };
+    /** Puts the server's note back by N days and returns the day it now holds. */
+    const backdate = async (daysAgo: number) => {
+      const response = await fetch(`${INSPECT}/e2e/last-seen/${ticket.personId}?daysAgo=${daysAgo}`, { method: 'POST' });
+      expect(response.ok).toBe(true);
+      return ((await response.json()) as { lastSeenOn: string }).lastSeenOn;
+    };
 
-    // The page loads that followed the choice may already have told the server today. A day later by the phone's own clock, with the
-    // server's last note of the phone ten days old: opening the app is use, so the phone reads the person's own tickets once (the
-    // home screen asks the server for nothing itself) and the server's date is today again.
+    // The ticket screen was opened by a full page load, so it asks the server for the ticket, and, the choice being on, the phone's
+    // first start with it tells the server once. Both arrive some time after the address changes, and each of them is use: let
+    // them finish, and leave the screen, before the server's note is put back, or one lands after it and moves it.
+    await expect(page.locator('[data-screen="ticket"] [data-ticket]')).toBeVisible();
+    await waitForStored(page, 'server:last-seen-sent'); // the phone has told the server and noted the day, on its clock of that moment
+    await expect.poll(() => [...inFlight].map((request) => `${request.method()} ${request.url()}`)).toEqual([]);
+    await page.goto('about:blank');
+    await expect.poll(() => [...inFlight].map((request) => `${request.method()} ${request.url()}`)).toEqual([]);
+    expect(await noteOnServer()).toBe('today');
+    expect((await person()).equityOptIn).toBe(true);
+
+    // A day later by the phone's own clock, with the server's last note of the phone ten days old: opening the app is use, so the
+    // phone reads the person's own tickets once (the home screen asks the server for nothing itself) and the server's note is its
+    // own day again.
     await page.clock.setFixedTime(new Date(Date.now() + 86_400_000));
-    await backdate(10);
-    expect((await person()).lastSeenOn).not.toBe(today);
+    const tenDaysAgo = await backdate(10);
+    expect((await person()).lastSeenOn).toBe(tenDaysAgo);
     reads.length = 0;
     await page.goto(`/${locale}/`);
-    await expect.poll(async () => (await person()).lastSeenOn).toBe(today);
+    await expect.poll(noteOnServer).toBe('today');
     expect(reads).toHaveLength(1);
 
-    // Another start the same day asks nothing more: the date the server holds stays where the test put it.
-    await backdate(10);
+    // Another start the same day asks nothing more: the day the server holds stays where the test put it.
+    const clockRead = page.waitForResponse(`${API}/clock`);
+    const backdated = await backdate(10);
     await page.goto(`/${locale}/`);
+    await clockRead;
     await page.waitForLoadState('networkidle');
-    expect((await person()).lastSeenOn).not.toBe(today);
+    expect((await person()).lastSeenOn).toBe(backdated);
     expect(reads).toHaveLength(1);
   },
 
