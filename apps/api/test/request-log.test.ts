@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { Writable } from 'node:stream';
+import { DrizzleQueryError, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app';
 import { ManualClock } from '../src/clock';
-import { privateRequestLogger, REQUEST_LOG_SERIALIZERS, UNMATCHED_ROUTE } from '../src/plugins/request-log';
+import { schema } from '../src/db/client';
+import { DATABASE_ERROR_MESSAGE, privateRequestLogger, REQUEST_LOG_SERIALIZERS, UNMATCHED_ROUTE } from '../src/plugins/request-log';
 import { runSeed } from '../src/seed/run';
 import { TEST_START } from './helpers/app';
 import { TEST_CONFIG } from './helpers/config';
@@ -107,11 +109,74 @@ describe('the API request log', () => {
     expect(written.filter((line) => line.req?.route === '/clinic-link/open')).toHaveLength(1);
   });
 
-  it('reduces an error to its type, message and stack, so a database error cannot write the values it carries', () => {
-    const databaseError = Object.assign(new Error('insert failed'), { detail: 'Key (id)=(ROW-VALUE-MARKER-3380) already exists', parameters: ['ROW-VALUE-MARKER-3380'] });
-    const logged = REQUEST_LOG_SERIALIZERS.err(databaseError);
-    expect(Object.keys(logged).sort()).toEqual(['message', 'stack', 'type']);
-    expect(JSON.stringify(logged)).not.toContain('ROW-VALUE-MARKER-3380');
+  it('writes a failed query as a fixed message and its SQLSTATE, with no SQL, no bound value and no stack header', async () => {
+    // A database of its own, so dropping a table cannot spoil the other cases.
+    const broken = await createTestDb();
+    await runSeed(broken.db, broken.cipher);
+    const brokenRaw: string[] = [];
+    const brokenLines: Line[] = [];
+    const brokenApp = await buildApp({
+      db: broken.db,
+      clock: new ManualClock(TEST_START),
+      config: { ...TEST_CONFIG, demoMode: false },
+      logger: {
+        level: 'trace',
+        stream: new Writable({
+          write(chunk, _encoding, done) {
+            brokenRaw.push(String(chunk));
+            brokenLines.push(JSON.parse(String(chunk)) as Line);
+            done();
+          },
+        }),
+      },
+    });
+    try {
+      const person = await registerPerson({ app: brokenApp });
+      await broken.db.execute(sql.raw('DROP TABLE crisis_handoffs CASCADE'));
+      const handoffId = randomUUID();
+      const failed = await brokenApp.inject({ method: 'DELETE', url: `/me/crisis-handoffs/${handoffId}`, headers: person.headers });
+      expect(failed.statusCode).toBe(500);
+
+      const log = brokenRaw.join('');
+      for (const secret of [handoffId, person.id, person.headers.authorization, 'Failed query', 'params:', 'crisis_handoffs"']) {
+        expect(log, `the log holds ${secret}`).not.toContain(secret);
+      }
+      const failures = brokenLines.filter((line) => line.msg === 'request failed');
+      expect(failures).toHaveLength(1);
+      const logged = failures[0]!.err as { type: string; message: string; code: string; stack: string };
+      expect(logged.message).toBe(DATABASE_ERROR_MESSAGE);
+      expect(logged.code).toBe('42P01');
+      expect(logged.stack.split('\n').every((line) => /^\s+at /.test(line))).toBe(true);
+      expect(brokenLines.some((line) => line.req?.route === '/me/crisis-handoffs/:id')).toBe(true);
+    } finally {
+      await brokenApp.close();
+      await broken.close();
+    }
+  });
+
+  it('reduces a real failed query to its SQLSTATE whether it is the wrapper or the driver error beneath it, and keeps other errors to type, message and frames', async () => {
+    const probe = await createTestDb();
+    try {
+      const marker = 'BOUND-VALUE-MARKER-3380';
+      const wrapped = await probe.db.insert(schema.revokedHandoffs).values({ handoffId: marker, revokedAt: new Date() }).then(
+        () => null,
+        (error: unknown) => error as Error & { cause: Error },
+      );
+      expect(wrapped).toBeInstanceOf(DrizzleQueryError);
+      expect(wrapped!.message).toContain(marker);
+      for (const error of [wrapped!, wrapped!.cause]) {
+        const logged = REQUEST_LOG_SERIALIZERS.err(error);
+        expect(logged.message).toBe(DATABASE_ERROR_MESSAGE);
+        expect(logged.code).toBe('22P02');
+        expect(JSON.stringify(logged)).not.toContain(marker);
+      }
+      const plain = REQUEST_LOG_SERIALIZERS.err(new TypeError('x is not a function'));
+      expect(plain).toMatchObject({ type: 'TypeError', message: 'x is not a function' });
+      expect('code' in plain).toBe(false);
+      expect(plain.stack).not.toContain('TypeError');
+    } finally {
+      await probe.close();
+    }
   });
 
   it('stays silent when logging is off, and takes the serializers whether the logger is given as true or as options', () => {
