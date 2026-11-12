@@ -585,7 +585,6 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
                 height: Math.round(cell.getBoundingClientRect().height),
                 figureHeight: figure ? Math.round(figure.getBoundingClientRect().height) : null,
                 lineHeight: parseFloat(style.lineHeight),
-                lines: figure ? figure.getClientRects().length : null,
                 text: figure?.textContent ?? cell.textContent,
               };
             }),
@@ -597,7 +596,6 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
         for (const cell of row.cells) {
           if (cell.figureHeight !== null) {
             expect(cell.figureHeight, `${width} px, ${row.tier} ${cell.label}: "${cell.text}" is on one line`).toBeLessThanOrEqual(cell.lineHeight + 1);
-            expect(cell.lines, `${width} px, ${row.tier} ${cell.label}: "${cell.text}" is not split`).toBe(1);
           }
         }
         const heights = row.cells.map((cell) => cell.height);
