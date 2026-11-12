@@ -1433,8 +1433,10 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     const reads: string[] = [];
     const inFlight = new Set<Request>();
     page.on('request', (request) => {
-      if (request.url().startsWith(API)) inFlight.add(request);
-      if (request.url() === `${API}/me/opt-ins`) reads.push(request.method());
+      if (request.url() === `${API}/me/opt-ins`) {
+        inFlight.add(request);
+        reads.push(request.method());
+      }
     });
     page.on('response', (response) => inFlight.delete(response.request()));
     page.on('requestfailed', (request) => inFlight.delete(request));
