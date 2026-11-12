@@ -175,7 +175,7 @@ export function hiddenOutcomeCells(table: ProtectedTable, funnelHidesRemeasured:
 
 /**
  * Symptom and functioning change among re-measured tickets, for ONE period: the last 90 days (`EQUITY_PERIOD`), counted from
- * `since` (`onePeriodStart`). The route refuses every other period, so no two responses are ever for different windows of the
+ * `since` (`periodStart(EQUITY_PERIOD, now)`). The route refuses every other period, so no two responses are ever for different windows of the
  * same people, and a figure cannot be subtracted from the same figure of a longer or shorter period.
  *
  * The figures stand on the same people as the funnel's last stage for those 90 days (the funnel with no source or tier filter),
