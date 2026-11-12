@@ -109,7 +109,7 @@
   },
   {
     "id": "a-background-read-that-gets-401-registers-nothing-and-records-no-day",
-    "sentence": "When the phone's background read of its two choices is answered 401, the phone makes no registration request for it beyond the one the person's own send made, keeps no note of having reached the server, and changes nothing else on the phone"
+    "sentence": "When the phone's background read of its two choices is answered 401, the phone does not register itself again and ask a second time, keeps no note of having reached the server, and changes nothing else on the phone"
   },
   {
     "id": "reads-list-and-its-failure",
