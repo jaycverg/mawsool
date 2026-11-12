@@ -73,7 +73,7 @@ export function CrisisHandoffPanel({ device, lang, mode, open }: { device: Devic
     setPhase('sending');
     const outcome = await sendHandoff(
       { server, flush: () => flushOutbox({ storage: device.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, random: window.crypto }), now: deviceNow, newId: () => crypto.randomUUID(), isOnline: () => navigator.onLine },
-      { crisisEventId: open.eventId, screenings, language: lang, trigger: open.trigger, callbackInput: callback },
+      { crisisEventId: open.eventId, screenings, language: lang, trigger: open.trigger, callbackInput: callback, earlierRecordHeld: handoffFor(records, open.eventId) !== null },
     );
     setPhase(outcome);
     // A note the person stopped is not offered again as it stands: the form stays open with its answer, but a new send needs a fresh tick.

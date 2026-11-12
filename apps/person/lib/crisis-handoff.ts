@@ -97,7 +97,8 @@ export interface HandoffPatience {
  * - `sent`: the server holds the hand-off and the consent is recorded.
  * - `offline`: nothing left the phone: the browser reports no network, the crisis queue could not be flushed, or the phone could not
  *   register or hold no credential. The screen says nothing was sent and stays as it is. Only for a first attempt: a retry that finds an
- *   earlier attempt's record says `unconfirmed` at those exits and keeps the record, since the earlier attempt may have arrived.
+ *   earlier attempt's record (or is told the screen holds one) says `unconfirmed` at those exits and at `failed`'s, and keeps the record,
+ *   since the earlier attempt may have arrived.
  * - `unconfirmed`: the request was issued and the phone has no answer to go by (no answer in time, a dropped connection, a server error, the
  *   call's own time limit), so the server may well hold the note. The `sending` record stays, so the person can stop it and a retry reuses
  *   its id. The screen says the phone could not confirm it arrived, never that nothing was sent.
@@ -105,7 +106,7 @@ export interface HandoffPatience {
  * - `rejected`: the server refused the request for good.
  * - `stopped`: the server says this hand-off was already stopped, so it was not stored. Nothing is offered again.
  * - `invalid_number`: the number typed is not an international number; nothing was sent.
- * - `failed`: the phone could not write its own record, or its store did not answer in time, so nothing was sent.
+ * - `failed`: the phone could not write its own record, or its store did not answer in time, so nothing was sent. Only for a first attempt, like `offline`.
  */
 export type SendOutcome = 'sent' | 'offline' | 'unconfirmed' | 'not_ready' | 'stopped' | 'rejected' | 'invalid_number' | 'failed';
 
@@ -128,7 +129,10 @@ export interface SendDeps {
  * A retry of a send that did not finish reuses the same id, so a reply lost after the server stored the hand-off cannot
  * leave two.
  */
-export async function sendHandoff(deps: SendDeps, input: { crisisEventId: string; screenings: readonly Screening[]; language: Locale; trigger: CrisisTrigger; callbackInput: string }): Promise<SendOutcome> {
+export async function sendHandoff(
+  deps: SendDeps,
+  input: { crisisEventId: string; screenings: readonly Screening[]; language: Locale; trigger: CrisisTrigger; callbackInput: string; earlierRecordHeld: boolean },
+): Promise<SendOutcome> {
   const storeMs = deps.patience?.storeMs ?? HANDOFF_STORE_PATIENCE_MS;
   const networkMs = deps.patience?.networkMs ?? HANDOFF_NETWORK_PATIENCE_MS;
   const { storage } = deps.server;
@@ -136,7 +140,7 @@ export async function sendHandoff(deps: SendDeps, input: { crisisEventId: string
   // says so, and this is the second guard behind the screen not offering it. Nothing is read from the server or sent to it.
   // A store that does not answer cannot say, and could not keep the record the send needs first, so nothing is sent.
   const crisis = await within<CrisisRecord | undefined | typeof TIMED_OUT>(storage.get<CrisisRecord>(KEYS.crisisBlock).catch(() => undefined), storeMs, TIMED_OUT);
-  if (crisis === TIMED_OUT) return 'failed';
+  if (crisis === TIMED_OUT) return input.earlierRecordHeld ? 'unconfirmed' : 'failed';
   if (crisis?.anonymous && crisis.event?.id === input.crisisEventId) return 'failed';
   const typed = input.callbackInput.trim();
   const callback = typed === '' ? null : parsePhone(typed);
@@ -144,10 +148,13 @@ export async function sendHandoff(deps: SendDeps, input: { crisisEventId: string
   const preview = buildHandoffPreview({ screenings: input.screenings, language: input.language, trigger: input.trigger, callback });
 
   // A retry reuses an earlier attempt's record, and that attempt may have reached the server. "Nothing was sent" is then never true of the note, so the
-  // exits below that mean nothing left the phone this time say `unconfirmed` and keep the record (Stop stays); only a first attempt says `offline`.
+  // exits below that mean nothing left the phone this time say `unconfirmed` and keep the record (Stop stays); only a first attempt says `offline` or
+  // `failed`. The earlier record is known from this read or from the screen, which already holds it: a store that will not answer this read, or answers
+  // it with an error, cannot make the retry look like a first attempt.
   const prior = await within<HandoffRecord | null | typeof TIMED_OUT>(loadHandoffs(storage).then((records) => handoffFor(records, input.crisisEventId), () => null), storeMs, TIMED_OUT);
-  if (prior === TIMED_OUT) return 'failed';
-  const nothingLeft: SendOutcome = prior === null ? 'offline' : 'unconfirmed';
+  if (prior === TIMED_OUT) return input.earlierRecordHeld ? 'unconfirmed' : 'failed';
+  const earlier = prior !== null || input.earlierRecordHeld;
+  const nothingLeft: SendOutcome = earlier ? 'unconfirmed' : 'offline';
 
   // The browser says there is no network: nothing is written or sent this time.
   if (deps.isOnline && !deps.isOnline()) return nothingLeft;
@@ -155,7 +162,7 @@ export async function sendHandoff(deps: SendDeps, input: { crisisEventId: string
   if (flushed === null || flushed.outcome === 'offline' || flushed.outcome === 'conflict') return nothingLeft;
 
   const record = await within(recordBeforeSend(deps, input.crisisEventId), storeMs, null);
-  if (record === null) return 'failed';
+  if (record === null) return earlier ? 'unconfirmed' : 'failed';
 
   const sent = await within(callServer<CrisisHandoffReceipt>(deps.server, 'POST', '/me/crisis-handoffs', { handoffId: record.handoffId, crisisEventId: record.crisisEventId, consented: true, ...preview }), networkMs, null);
   // No answer in time: the server may or may not hold the note. The `sending` record stays, so the person can stop it and a retry reuses its id.
@@ -167,7 +174,7 @@ export async function sendHandoff(deps: SendDeps, input: { crisisEventId: string
     // A phone that could not register or has no credential sent nothing this time; a refusal means nothing was stored. Either way a record made by
     // THIS attempt has nothing to stop, but one that predates it is kept (an earlier attempt may have arrived). If the store will not take the change,
     // the record stays and a stop finds the server has none.
-    if (sent.reason === 'not_registered' && prior !== null) return 'unconfirmed';
+    if (sent.reason === 'not_registered' && earlier) return 'unconfirmed';
     await within(changeHandoffs(storage, (records) => records.filter((other) => other.handoffId !== record.handoffId)).catch(() => undefined), storeMs, undefined);
     if (sent.reason === 'not_registered') return 'offline';
     if (sent.status === 409 && sent.error === 'handoff_stopped') return 'stopped';
