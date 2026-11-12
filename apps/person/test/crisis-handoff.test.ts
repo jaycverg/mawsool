@@ -16,6 +16,7 @@ const OTHER_EVENT_ID = '33333333-3333-4333-8333-333333333333';
 /** The only record on the phone, or null: most cases involve one crisis. */
 const loadHandoff = async (storage: StorageAdapter): Promise<HandoffRecord | null> => (await loadHandoffs(storage))[0] ?? null;
 const NUMBER = '+971501234567';
+const QUICK = { storeMs: 25, networkMs: 40 };
 
 function phq9(): Screening {
   return { id: 's1', instrument: 'phq9', answers: [3, 3, 3, 3, 3, 3, 3, 3, 1], total: 25, band: 'severe', item9Flag: true, takenAt: '2026-11-01T08:00:00+04:00' } as Screening;
@@ -61,7 +62,7 @@ function setup(post: PostReply = 'created', flush: FlushResult['outcome'] = 'sen
   return { store, calls, server, flushFn, serverDeps, deps: { server: serverDeps, flush: flushFn, now: clock.now, newId: clock.newId } };
 }
 
-const input = (overrides: Record<string, unknown> = {}) => ({ crisisEventId: EVENT_ID, screenings: [phq9()], language: 'en' as const, trigger: 'phq9_item9' as const, callbackInput: '', ...overrides });
+const input = (overrides: Record<string, unknown> = {}) => ({ crisisEventId: EVENT_ID, screenings: [phq9()], language: 'en' as const, trigger: 'phq9_item9' as const, callbackInput: '', earlierRecordHeld: false, ...overrides });
 const posts = (calls: ReturnType<typeof setup>['calls']) => calls.filter((call) => call.method === 'POST' && call.path === '/me/crisis-handoffs');
 
 describe('what the hand-off would send', () => {
@@ -264,6 +265,93 @@ describe('sending the hand-off', () => {
       expect(await loadHandoffs(s.store.storage)).toEqual([first]);
     });
 
+    /** Makes every write of the hand-off records throw, as a store that refuses them. */
+    function refuseRecordWrites(s: ReturnType<typeof setup>) {
+      const set = s.store.storage.set.bind(s.store.storage);
+      s.store.storage.set = async (key, value) => {
+        if (key === 'crisis:handoff') throw new Error('storage write failed');
+        return set(key, value);
+      };
+    }
+    /** Makes one read of one key never answer, or throw. */
+    function breakRead(s: ReturnType<typeof setup>, key: string, how: 'hang' | 'throw') {
+      const get = s.store.storage.get.bind(s.store.storage);
+      s.store.storage.get = ((k: string) => (k === key ? (how === 'hang' ? new Promise(() => undefined) : Promise.reject(new Error('storage read failed'))) : get(k))) as typeof s.store.storage.get;
+    }
+
+    it('a retry whose record the store will not write says unconfirmed, not failed, and keeps the earlier record and sends nothing', async () => {
+      const { s, first } = await afterAnUnconfirmedAttempt();
+      const posted = posts(s.calls).length;
+      refuseRecordWrites(s);
+      expect(await sendHandoff(s.deps, input())).toBe('unconfirmed');
+      expect(posts(s.calls)).toHaveLength(posted);
+      expect(await loadHandoffs(s.store.storage)).toEqual([first]);
+    });
+
+    it('a retry whose earlier records the store does not answer in time says unconfirmed when the screen holds the record, and sends nothing', async () => {
+      const { s, first } = await afterAnUnconfirmedAttempt();
+      const posted = posts(s.calls).length;
+      const get = s.store.storage.get.bind(s.store.storage);
+      breakRead(s, 'crisis:handoff', 'hang');
+      expect(await sendHandoff({ ...s.deps, patience: QUICK }, input({ earlierRecordHeld: true }))).toBe('unconfirmed');
+      expect(posts(s.calls)).toHaveLength(posted);
+      s.store.storage.get = get as typeof s.store.storage.get;
+      expect(await loadHandoffs(s.store.storage)).toEqual([first]);
+    });
+
+    it('a retry whose earlier records the store fails to read says unconfirmed, not offline, when the screen holds the record and the browser reports no network', async () => {
+      const { s, first } = await afterAnUnconfirmedAttempt();
+      const posted = posts(s.calls).length;
+      const get = s.store.storage.get.bind(s.store.storage);
+      breakRead(s, 'crisis:handoff', 'throw');
+      expect(await sendHandoff({ ...s.deps, isOnline: () => false }, input({ earlierRecordHeld: true }))).toBe('unconfirmed');
+      expect(posts(s.calls)).toHaveLength(posted);
+      s.store.storage.get = get as typeof s.store.storage.get;
+      expect(await loadHandoffs(s.store.storage)).toEqual([first]);
+    });
+
+    it('a retry whose crisis record the store does not answer in time says unconfirmed when the screen holds the record, and sends nothing', async () => {
+      const { s, first } = await afterAnUnconfirmedAttempt();
+      const posted = posts(s.calls).length;
+      const get = s.store.storage.get.bind(s.store.storage);
+      breakRead(s, 'crisis:block', 'hang');
+      expect(await sendHandoff({ ...s.deps, patience: QUICK }, input({ earlierRecordHeld: true }))).toBe('unconfirmed');
+      expect(posts(s.calls)).toHaveLength(posted);
+      s.store.storage.get = get as typeof s.store.storage.get;
+      expect(await loadHandoffs(s.store.storage)).toEqual([first]);
+    });
+
+    it('a retry that could not read the earlier records once, and then cannot register the phone, says unconfirmed when the screen holds the record, and keeps it', async () => {
+      const { s, first } = await afterAnUnconfirmedAttempt();
+      const get = s.store.storage.get.bind(s.store.storage);
+      let reads = 0;
+      s.store.storage.get = ((key: string) => (key === 'crisis:handoff' && reads++ === 0 ? Promise.reject(new Error('storage read failed')) : get(key))) as typeof s.store.storage.get;
+      forgetRegistration(s.store.storage);
+      s.serverDeps.fetch = (async () => new Response('{}', { status: 503 })) as unknown as typeof fetch;
+      expect(await sendHandoff(s.deps, input({ earlierRecordHeld: true }))).toBe('unconfirmed');
+      s.store.storage.get = get as typeof s.store.storage.get;
+      expect(await loadHandoffs(s.store.storage)).toEqual([first]);
+    });
+
+    it('a first attempt whose record the store will not write, or whose store does not answer or fails a read, keeps its own words', async () => {
+      const refused = setup();
+      refuseRecordWrites(refused);
+      expect(await sendHandoff(refused.deps, input())).toBe('failed');
+      expect(posts(refused.calls)).toEqual([]);
+
+      const slow = setup();
+      breakRead(slow, 'crisis:handoff', 'hang');
+      expect(await sendHandoff({ ...slow.deps, patience: QUICK }, input())).toBe('failed');
+
+      const unreadable = setup();
+      breakRead(unreadable, 'crisis:handoff', 'throw');
+      expect(await sendHandoff({ ...unreadable.deps, isOnline: () => false }, input())).toBe('offline');
+
+      const crisisSlow = setup();
+      breakRead(crisisSlow, 'crisis:block', 'hang');
+      expect(await sendHandoff({ ...crisisSlow.deps, patience: QUICK }, input())).toBe('failed');
+    });
+
     it('still says offline for a first attempt at each of those exits (nothing predates it)', async () => {
       const first = setup();
       expect(await sendHandoff({ ...first.deps, isOnline: () => false }, input())).toBe('offline');
@@ -312,7 +400,6 @@ describe('sending the hand-off', () => {
 
 /** A promise that never settles: a store or a network that has stopped answering. */
 const never = <T,>(): Promise<T> => new Promise<T>(() => undefined);
-const QUICK = { storeMs: 25, networkMs: 40 };
 
 describe('a hand-off that waits on a store or a network that does not answer', () => {
   /** Makes the store never answer a read, or a write, of one key. */

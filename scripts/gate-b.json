@@ -2910,7 +2910,7 @@
   },
   {
     "id": "the-handoff-timeout-does-not-claim-nothing-was-sent",
-    "sentence": "When the hand-off request was issued and the phone has no answer to go by (no answer in time, a dropped connection, a lost reply, a server error), the crisis screen says the phone could not confirm the note arrived, that the numbers above still work and that the note can still be stopped, in Arabic and English, and offers the stop control; the outcomes where nothing was sent for certain (no network reported, a crisis queue that cannot be flushed, a phone that cannot register, the phone could not prepare the note, a hand-off already stopped, a refusal) keep their own words on a first attempt, while a retry that finds an earlier attempt's record says it could not confirm and keeps the record and its Stop, and the crisis screen never waits on any of it",
+    "sentence": "When the hand-off request was issued and the phone has no answer to go by (no answer in time, a dropped connection, a lost reply, a server error), the crisis screen says the phone could not confirm the note arrived, that the numbers above still work and that the note can still be stopped, in Arabic and English, and offers the stop control; the outcomes where nothing was sent for certain (no network reported, a crisis queue that cannot be flushed, a phone that cannot register, the phone could not prepare the note, a hand-off already stopped, a refusal) keep their own words on a first attempt, while a retry that finds an earlier attempt's record, or is told by the screen that it holds one, says it could not confirm and keeps the record and its Stop at the exits where nothing left the phone this time, including when the phone could not write its record or its store did not answer, and the crisis screen never waits on any of it",
     "project": "apps/person",
     "tests": [
       {
@@ -2936,6 +2936,30 @@
       {
         "file": "test/crisis-handoff.test.ts",
         "name": "still says offline for a first attempt at each of those exits"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "a retry whose record the store will not write says unconfirmed, not failed"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "a retry whose earlier records the store does not answer in time says unconfirmed"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "a retry whose earlier records the store fails to read says unconfirmed, not offline"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "a retry whose crisis record the store does not answer in time says unconfirmed"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "a retry that could not read the earlier records once, and then cannot register the phone, says unconfirmed"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "a first attempt whose record the store will not write, or whose store does not answer or fails a read, keeps its own words"
       },
       {
         "file": "test/crisis-handoff.test.ts",
