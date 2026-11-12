@@ -151,7 +151,7 @@ const inspect = createServer(async (request, response) => {
     response.end(JSON.stringify({ bundle: bundle.statusCode, ticket: ticket.statusCode, body: bundle.body }));
   } else if (/^\/persons\/[0-9a-f-]{36}$/.test(url.pathname)) {
     const [person] = await db.select().from(schema.persons).where(eq(schema.persons.id, url.pathname.split('/')[2]!));
-    response.end(JSON.stringify(person ? { equityOptIn: person.equityOptIn, outcomeStatsOptIn: person.outcomeStatsOptIn, lastSeenOn: person.lastSeenOn, ageBand: person.ageBand, gender: person.gender, language: person.language, region: person.region } : null));
+    response.end(JSON.stringify(person ? { equityOptIn: person.equityOptIn, outcomeStatsOptIn: person.outcomeStatsOptIn, lastSeenOn: person.lastSeenOn, serverToday: dayOf(systemClock.now()), ageBand: person.ageBand, gender: person.gender, language: person.language, region: person.region } : null));
   } else if (url.pathname === '/reminder-phones') {
     // Every stored reminder number: the raw ciphertext as the table holds it, and the number decrypted with this harness's key.
     const rows = await db.select().from(schema.reminderPhones);
