@@ -209,6 +209,112 @@ describe('sending the hand-off', () => {
   });
 });
 
+/** A promise that never settles: a store or a network that has stopped answering. */
+const never = <T,>(): Promise<T> => new Promise<T>(() => undefined);
+const QUICK = { storeMs: 25, networkMs: 40 };
+
+describe('a hand-off that waits on a store or a network that does not answer', () => {
+  /** Makes the store never answer a read, or a write, of one key. */
+  function hang(s: ReturnType<typeof setup>, key: string, kind: 'get' | 'set', when: (value: unknown) => boolean = () => true) {
+    const real = s.store.storage[kind].bind(s.store.storage) as (key: string, value?: unknown) => Promise<unknown>;
+    (s.store.storage as unknown as Record<string, unknown>)[kind] = (k: string, value?: unknown) => (k === key && when(value) ? never() : real(k, value));
+  }
+  /** Makes the hand-off POST (and only it) never answer. */
+  function hangPost(s: ReturnType<typeof setup>) {
+    const inner = s.serverDeps.fetch;
+    s.serverDeps.fetch = (async (url: string, init?: RequestInit) => (init?.method === 'POST' && new URL(url).pathname === '/me/crisis-handoffs' ? never() : inner(url, init))) as typeof fetch;
+    return inner;
+  }
+  const quick = (s: ReturnType<typeof setup>) => ({ ...s.deps, patience: QUICK });
+
+  it('says failed, and sends nothing, when the store does not answer the read of the crisis record', async () => {
+    const s = setup();
+    hang(s, 'crisis:block', 'get');
+    expect(await sendHandoff(quick(s), input())).toBe('failed');
+    expect(s.calls).toEqual([]);
+    expect(s.flushFn).not.toHaveBeenCalled();
+  });
+
+  it('says offline, and sends nothing, when the crisis queue does not flush in time', async () => {
+    const s = setup();
+    s.flushFn.mockImplementationOnce(() => never());
+    expect(await sendHandoff(quick(s), input())).toBe('offline');
+    expect(posts(s.calls)).toEqual([]);
+    expect(await loadHandoff(s.store.storage)).toBeNull();
+  });
+
+  it('says failed, and sends nothing, when the store does not take the record the send needs first', async () => {
+    const s = setup();
+    hang(s, 'crisis:handoff', 'set');
+    expect(await sendHandoff(quick(s), input())).toBe('failed');
+    expect(posts(s.calls)).toEqual([]);
+  });
+
+  it('says failed when the store does not answer the read of the earlier records, and a later send with a store that answers still works', async () => {
+    const s = setup();
+    const real = s.store.storage.get.bind(s.store.storage);
+    let stuck = true;
+    s.store.storage.get = ((key: string) => (key === 'crisis:handoff' && stuck ? never() : real(key))) as typeof s.store.storage.get;
+    expect(await sendHandoff(quick(s), input())).toBe('failed');
+    stuck = false;
+    expect(await sendHandoff(quick(s), input())).toBe('sent');
+    expect(posts(s.calls)).toHaveLength(1);
+  });
+
+  it('says offline when the call does not answer, keeps the "sending" record to stop from, and a retry reuses its id and is not marked sent by the abandoned call', async () => {
+    const s = setup();
+    const inner = hangPost(s);
+    expect(await sendHandoff(quick(s), input())).toBe('offline');
+    const waiting = (await loadHandoff(s.store.storage))!;
+    expect(waiting.state).toBe('sending');
+    s.serverDeps.fetch = inner;
+    expect(await sendHandoff(quick(s), input())).toBe('sent');
+    expect(new Set(posts(s.calls).map((call) => call.body!.handoffId))).toEqual(new Set([waiting.handoffId]));
+    expect((await loadHandoffs(s.store.storage)).map((record) => record.state)).toEqual(['sent']);
+  });
+
+  it('can stop the note whose send did not answer, because its record was written before the send', async () => {
+    const s = setup();
+    hangPost(s);
+    expect(await sendHandoff(quick(s), input())).toBe('offline');
+    const waiting = (await loadHandoff(s.store.storage))!;
+    expect(await stopHandoff({ server: s.serverDeps, patience: QUICK }, waiting)).toBe('stopped');
+    expect(await loadHandoff(s.store.storage)).toBeNull();
+  });
+
+  it('still says sent when the store does not answer the confirmation, leaving the "sending" record to stop from', async () => {
+    const s = setup();
+    hang(s, 'crisis:handoff', 'set', (value) => (value as HandoffRecord[]).some((record) => record.state === 'sent'));
+    expect(await sendHandoff(quick(s), input())).toBe('sent');
+    expect((await loadHandoff(s.store.storage))!.state).toBe('sending');
+  });
+
+  it('still answers rejected when the store does not take the removal of the refused record', async () => {
+    const s = setup('rejected');
+    hang(s, 'crisis:handoff', 'set', (value) => (value as HandoffRecord[]).length === 0);
+    expect(await sendHandoff(quick(s), input())).toBe('rejected');
+  });
+
+  it('says offline and keeps the record when the stop does not get an answer from the server', async () => {
+    const s = setup();
+    await sendHandoff(s.deps, input());
+    const record = (await loadHandoff(s.store.storage))!;
+    s.serverDeps.fetch = (() => never()) as unknown as typeof fetch;
+    expect(await stopHandoff({ server: s.serverDeps, patience: QUICK }, record)).toBe('offline');
+    expect(await loadHandoff(s.store.storage)).toEqual(record);
+  });
+
+  it('says failed and keeps the record when the server stopped it but the store does not take the removal, so the person can stop again', async () => {
+    const s = setup();
+    await sendHandoff(s.deps, input());
+    const record = (await loadHandoff(s.store.storage))!;
+    hang(s, 'crisis:handoff', 'set', (value) => (value as HandoffRecord[]).length === 0);
+    expect(await stopHandoff({ server: s.serverDeps, patience: QUICK }, record)).toBe('failed');
+    expect(s.server.stored).toBe(false);
+    expect(await loadHandoff(s.store.storage)).toEqual(record);
+  });
+});
+
 describe('stopping the hand-off', () => {
   async function sent() {
     const s = setup();
