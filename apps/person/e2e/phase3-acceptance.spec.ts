@@ -1226,6 +1226,41 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page.locator('[data-panel="equity"]')).toHaveCount(0);
   },
 
+  async 'opted-in-phone-reaches-the-server-once-a-day-so-the-idle-limit-does-not-clear-its-choices'({ page, locale }) {
+    const reads: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'GET' && new URL(request.url()).pathname === '/me/tickets' && request.url().startsWith(API)) reads.push(request.url());
+    });
+    await toConsent(page, locale);
+    await page.locator('#equity-on').check();
+    await page.locator('#equity-ageBand').selectOption('25_34');
+    await send(page, locale);
+    await expect(page).toHaveURL(ticketUrl(locale));
+    const { ticket } = await stored(ticketIdOf(page));
+    const person = async () => (await (await fetch(`${INSPECT}/persons/${ticket.personId}`)).json()) as { equityOptIn: boolean; lastSeenOn: string };
+    const today = new Date().toISOString().slice(0, 10);
+    const backdate = async (daysAgo: number) => expect((await fetch(`${INSPECT}/e2e/last-seen/${ticket.personId}?daysAgo=${daysAgo}`, { method: 'POST' })).ok).toBe(true);
+    expect(await person()).toMatchObject({ equityOptIn: true, lastSeenOn: today });
+
+    // The page loads that followed the choice may already have told the server today. A day later by the phone's own clock, with the
+    // server's last note of the phone ten days old: opening the app is use, so the phone reads the person's own tickets once (the
+    // home screen asks the server for nothing itself) and the server's date is today again.
+    await page.clock.setFixedTime(new Date(Date.now() + 86_400_000));
+    await backdate(10);
+    expect((await person()).lastSeenOn).not.toBe(today);
+    reads.length = 0;
+    await page.goto(`/${locale}/`);
+    await expect.poll(async () => (await person()).lastSeenOn).toBe(today);
+    expect(reads).toHaveLength(1);
+
+    // Another start the same day asks nothing more: the date the server holds stays where the test put it.
+    await backdate(10);
+    await page.goto(`/${locale}/`);
+    await page.waitForLoadState('networkidle');
+    expect((await person()).lastSeenOn).not.toBe(today);
+    expect(reads).toHaveLength(1);
+  },
+
   async 'reads-list-and-its-failure'({ page, locale, consoleGuard }) {
     const id = await issueTicket(page, locale);
     expect((await clinicRead(id)).bundle).toBe(200);

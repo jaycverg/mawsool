@@ -11,6 +11,7 @@ export const KEYS = {
   equity: 'equity',
   outcomeStatistics: 'outcome-statistics',
   footprint: 'server:footprint',
+  lastSeenSent: 'server:last-seen-sent',
   directory: 'directory',
   crisisBlock: 'crisis:block',
   crisisOutbox: 'crisis:outbox',

@@ -2624,7 +2624,7 @@
   },
   {
     "id": "request-log-carries-the-route-pattern-and-no-id-address-or-query",
-    "sentence": "The API's request log writes a request as its method and route pattern (a hand-off stop as /me/crisis-handoffs/:id) and a reply as its status and time: no id, query string, host or client address appears in any line, a route nobody registered is logged as unmatched with nothing of its address, an error is reduced to its type, message and stack, and a staff sign-in token or clinic-link credential sent in a request never reaches a request line",
+    "sentence": "The API's request log writes a request as its method and route pattern (a hand-off stop as /me/crisis-handoffs/:id) and a reply as its status and time: no id, query string, host or client address appears in any line, a route nobody registered is logged as unmatched with nothing of its address, an error is reduced to its type, message and stack frames, a failed database query is logged as a fixed message and its SQLSTATE with no SQL and no bound value, and a staff sign-in token or clinic-link credential sent in a request never reaches a request line",
     "project": "apps/api",
     "tests": [
       {
@@ -2641,7 +2641,11 @@
       },
       {
         "file": "test/request-log.test.ts",
-        "name": "reduces an error to its type, message and stack"
+        "name": "writes a failed query as a fixed message and its SQLSTATE"
+      },
+      {
+        "file": "test/request-log.test.ts",
+        "name": "reduces a real failed query to its SQLSTATE"
       },
       {
         "file": "test/request-log.test.ts",
@@ -2681,6 +2685,10 @@
       {
         "file": "test/opt-in-lifetime.test.ts",
         "name": "clears a person who held only one of the two choices"
+      },
+      {
+        "file": "test/opt-in-lifetime.test.ts",
+        "name": "counts the one read the app makes when it starts"
       },
       {
         "file": "test/opt-in-lifetime.test.ts",
@@ -2724,6 +2732,71 @@
       }
     ],
     "browser": "settings-turns-off-anonymous-statistics-and-shows-nothing-while-it-is-off"
+  },
+  {
+    "id": "an-opted-in-phone-in-use-keeps-the-idle-date-moving",
+    "sentence": "While the equity or the statistics choice is on, starting the app makes at most one authenticated read a day so a person who uses the phone every week is not timed out; it makes none in an anonymous session, while a crisis is open, when neither choice is on, or when the browser is offline, a failure is silent and retried at the next start, and the read moves the day the server last heard from the phone",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/presence.test.ts",
+        "name": "makes one authenticated read of the person’s own tickets when the equity choice is on"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "makes one authenticated read of the person’s own tickets when the statistics choice is on"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "makes no second call on the same day"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "counts the day in UTC on the clock it is given"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "makes no call and records nothing when neither choice is on"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "makes no call and does not open the store in an anonymous session"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "makes no call while a crisis is open"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "makes no request while the browser says it is offline"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "does not throw on a network failure, records nothing, and tries again at the next start"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "does not throw on a server error, records nothing, and tries again at the next start"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "does not throw on a refusal, records nothing, and tries again at the next start"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "does not throw when the phone’s store will not answer"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "shares one request between two overlapping checks"
+      },
+      {
+        "project": "apps/api",
+        "file": "test/opt-in-lifetime.test.ts",
+        "name": "counts the one read the app makes when it starts"
+      }
+    ],
+    "browser": "opted-in-phone-reaches-the-server-once-a-day-so-the-idle-limit-does-not-clear-its-choices"
   },
   {
     "id": "the-statistics-choice-says-it-covers-every-total-sent-or-to-be-sent",

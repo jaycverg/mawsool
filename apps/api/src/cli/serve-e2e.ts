@@ -20,6 +20,7 @@ import { createCipher } from '../crypto';
 import { schema, type Db } from '../db/client';
 import { MIGRATIONS_FOLDER } from '../db/migrate';
 import { crisisHandoffContext } from '../crisis-handoffs/service';
+import { dayOf } from '../persons/last-seen';
 import { reminderPhoneContext } from '../reminders/service';
 import { readStaffAccess, runSeed } from '../seed/run';
 import { startOfDubaiDay } from '../metrics/facts';
@@ -150,7 +151,7 @@ const inspect = createServer(async (request, response) => {
     response.end(JSON.stringify({ bundle: bundle.statusCode, ticket: ticket.statusCode, body: bundle.body }));
   } else if (/^\/persons\/[0-9a-f-]{36}$/.test(url.pathname)) {
     const [person] = await db.select().from(schema.persons).where(eq(schema.persons.id, url.pathname.split('/')[2]!));
-    response.end(JSON.stringify(person ? { equityOptIn: person.equityOptIn, outcomeStatsOptIn: person.outcomeStatsOptIn, ageBand: person.ageBand, gender: person.gender, language: person.language, region: person.region } : null));
+    response.end(JSON.stringify(person ? { equityOptIn: person.equityOptIn, outcomeStatsOptIn: person.outcomeStatsOptIn, lastSeenOn: person.lastSeenOn, ageBand: person.ageBand, gender: person.gender, language: person.language, region: person.region } : null));
   } else if (url.pathname === '/reminder-phones') {
     // Every stored reminder number: the raw ciphertext as the table holds it, and the number decrypted with this harness's key.
     const rows = await db.select().from(schema.reminderPhones);
@@ -194,6 +195,12 @@ const inspect = createServer(async (request, response) => {
     // Staff sign-ins are kept. Not a product route.
     await runSeed(db, cipher, startOfDubaiDay(systemClock.now()), await readStaffAccess(db));
     response.end('{}');
+  } else if (request.method === 'POST' && /^\/e2e\/last-seen\/[0-9a-f-]{36}$/.test(url.pathname)) {
+    // Puts a person's last-seen day back by N days from today, as if their phone had been silent that long. Not a product route.
+    const daysAgo = Number(url.searchParams.get('daysAgo') ?? '0');
+    const day = dayOf(new Date(systemClock.now().getTime() - daysAgo * 86_400_000));
+    await db.update(schema.persons).set({ lastSeenOn: day }).where(eq(schema.persons.id, url.pathname.split('/')[3]!));
+    response.end(JSON.stringify({ lastSeenOn: day }));
   } else if (url.pathname === '/persons/count') {
     response.end(JSON.stringify({ count: (await db.select({ id: schema.persons.id }).from(schema.persons)).length }));
   } else {

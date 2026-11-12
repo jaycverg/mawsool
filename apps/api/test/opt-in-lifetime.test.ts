@@ -108,6 +108,20 @@ describe('an opt-in does not outlive the device that could turn it off', () => {
     expect(await row(person)).toMatchObject({ outcomeStatsOptIn: false, equityOptIn: false, lastSeenOn: before });
   });
 
+  it('counts the one read the app makes when it starts (the person’s own tickets, no query) as the device being in use', async () => {
+    const person = await optedIn();
+    await lastSeenDaysAgo(person, OPT_IN_IDLE_LIMIT_DAYS - 1);
+    const read = await ctx.app.inject({ method: 'GET', url: '/me/tickets', headers: person.headers });
+    expect(read.statusCode).toBe(200);
+    expect(await seenOn(person)).toBe(dayOf(ctx.clock.now()));
+    ctx.clock.advance(2 * DAY);
+    expect((await sweep(testDb.db, ctx.clock)).optInsCleared).toBe(0);
+    expect(await row(person)).toMatchObject({ equityOptIn: true, outcomeStatsOptIn: true });
+    ctx.clock.set(TEST_START);
+    // Nobody is left on whom a later case's long clock jump would act.
+    await testDb.db.update(schema.persons).set({ equityOptIn: false, outcomeStatsOptIn: false, ageBand: null, gender: null, language: null, region: null }).where(eq(schema.persons.id, person.id));
+  });
+
   it('keeps the choices of a person whose device is in use, however long ago they chose', async () => {
     const person = await optedIn();
     ctx.clock.advance((OPT_IN_IDLE_LIMIT_DAYS - 1) * DAY);

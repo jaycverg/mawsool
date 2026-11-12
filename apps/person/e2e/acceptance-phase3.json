@@ -100,6 +100,10 @@
     "sentence": "The equity opt-in shows as on once given and can be turned off in Settings, which clears it on the server"
   },
   {
+    "id": "opted-in-phone-reaches-the-server-once-a-day-so-the-idle-limit-does-not-clear-its-choices",
+    "sentence": "While the equity or the statistics choice is on, starting the app on a new day reads the person's own tickets once, which moves the day the server last heard from the phone to today, and a second start the same day asks nothing more"
+  },
+  {
     "id": "reads-list-and-its-failure",
     "sentence": "The ticket shows who opened it, and says it could not be loaded rather than that nobody did"
   },
