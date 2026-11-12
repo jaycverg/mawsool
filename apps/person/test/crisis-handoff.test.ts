@@ -63,8 +63,9 @@ const posts = (calls: ReturnType<typeof setup>['calls']) => calls.filter((call) 
 describe('what the hand-off would send', () => {
   it('holds the language, the reason, the latest finished totals and the number typed, and no item answer', () => {
     const preview = buildHandoffPreview({ screenings: [phq9(), unfinishedPhq9()], language: 'ar', trigger: 'phq9_item9', callback: NUMBER });
-    expect(preview).toEqual({ language: 'ar', trigger: 'phq9_item9', scores: [{ instrument: 'phq9', total: 25, band: 'severe', takenAt: '2026-11-01T08:00:00+04:00' }], callbackNumber: NUMBER });
+    expect(preview).toEqual({ language: 'ar', trigger: 'phq9_item9', scores: [{ instrument: 'phq9', total: 25 }], callbackNumber: NUMBER });
     expect(JSON.stringify(preview)).not.toContain('answers');
+    expect(JSON.stringify(preview), 'no band and no time of the check-in').not.toMatch(/band|severe|takenAt|2026-11-01/);
   });
 
   it('sends no scores when no check-in was finished', () => {
@@ -121,6 +122,7 @@ describe('sending the hand-off', () => {
     expect(s.flushFn).toHaveBeenCalledTimes(1);
     const [post] = posts(s.calls);
     expect(post!.body).toMatchObject({ crisisEventId: EVENT_ID, consented: true, language: 'en', trigger: 'phq9_item9', callbackNumber: NUMBER, scores: [{ instrument: 'phq9', total: 25 }] });
+    expect(post!.body!.scores, 'an instrument and a total, with no band and no time').toEqual([{ instrument: 'phq9', total: 25 }]);
     expect(JSON.stringify(post!.body)).not.toContain('answers');
     const record = (await loadHandoff(s.store.storage))!;
     expect(record).toMatchObject({ crisisEventId: EVENT_ID, state: 'sent', handoffId: post!.body!.handoffId });

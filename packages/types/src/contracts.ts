@@ -455,15 +455,23 @@ export const ReminderSampleResultSchema = z.object({ sample: z.literal(true), no
 export type ReminderSampleResult = z.infer<typeof ReminderSampleResultSchema>;
 
 /**
+ * One total in a hand-off note: the instrument and the total, which is all the console shows or uses. The band and the time of
+ * the check-in are not sent or stored. A request from an older copy of the app that still carries them has them dropped on arrival
+ * (object keys not named here are stripped), and a note stored before this change is read back without them.
+ */
+export const HandoffScoreSchema = z.object({ instrument: z.enum(SHAREABLE_INSTRUMENTS), total: z.number().int().min(0).max(100) });
+export type HandoffScore = z.infer<typeof HandoffScoreSchema>;
+
+/**
  * The short template a person may hand to the crisis line: the language they use, the totals of their latest finished
- * check-ins (never item answers), which trigger fired (the console reads "item 9 positive" from `phq9_item9`) and, only if
+ * check-ins (an instrument and a total each; never item answers, a band or a time), which trigger fired (the console reads "item 9 positive" from `phq9_item9`) and, only if
  * they chose to give one, a number to call back on. Strict, so nothing else can ride along.
  */
 export const CrisisHandoffContentSchema = z
   .object({
     language: LocaleSchema,
     trigger: CrisisTriggerSchema,
-    scores: z.array(ScoreEntrySchema).max(REFERRAL_SCORES_MAX),
+    scores: z.array(HandoffScoreSchema).max(REFERRAL_SCORES_MAX),
     callbackNumber: PhoneNumberSchema.nullable(),
   })
   .strict();

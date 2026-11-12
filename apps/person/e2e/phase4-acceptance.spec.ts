@@ -1108,6 +1108,8 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect(handoff.content).toMatchObject({ language: locale, trigger: 'phq9_item9', callbackNumber: HANDOFF_NUMBER });
     expect(handoff.content.scores.map((score) => [score.instrument, score.total]).sort()).toEqual([['gad7', 9], ['phq9', 1]]);
     expect(JSON.stringify(handoff.content)).not.toContain('answers');
+    // Each total is an instrument and a total: the console shows nothing more, so no band and no time of the check-in is stored.
+    expect(handoff.content.scores.map((score) => Object.keys(score).sort())).toEqual([['instrument', 'total'], ['instrument', 'total']]);
     // The raw row is ciphertext: neither the number nor a total is readable in it.
     expect(handoff.ciphertext).toMatch(/^v1\./);
     expect(handoff.ciphertext).not.toContain('971501234567');
