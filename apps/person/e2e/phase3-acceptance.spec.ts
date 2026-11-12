@@ -1300,9 +1300,14 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
 
   async 'settings-says-once-that-the-idle-limit-switched-the-equity-choice-off-and-the-phone-then-sends-nothing-under-it'({ page, locale }) {
     const equityPuts: string[] = [];
+    /** Calls to the API this page has started and not yet seen answered or fail (the registration's body is never read, so its answer's headers count). */
+    const inFlight = new Set<Request>();
     page.on('request', (request) => {
+      if (request.url().startsWith(API)) inFlight.add(request);
       if (request.url() === `${API}/me/equity` && request.method() === 'PUT') equityPuts.push(request.postData() ?? '');
     });
+    page.on('response', (response) => inFlight.delete(response.request()));
+    page.on('requestfailed', (request) => inFlight.delete(request));
     await toConsent(page, locale);
     await page.locator('#equity-on').check();
     await page.locator('#equity-ageBand').selectOption('25_34');
@@ -1315,8 +1320,9 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     // Let the calls the ticket screen starts finish and leave it, or one lands after the server's note is put back and moves it.
     await expect(page.locator('[data-screen="ticket"] [data-ticket]')).toBeVisible();
     await waitForStored(page, 'server:last-seen-sent');
-    await page.waitForLoadState('networkidle');
+    await expect.poll(() => [...inFlight].map((request) => `${request.method()} ${request.url()}`)).toEqual([]);
     await page.goto('about:blank');
+    await expect.poll(() => [...inFlight].map((request) => `${request.method()} ${request.url()}`)).toEqual([]);
 
     // The phone is then silent for the idle limit: the server's note of it goes back 180 days and the real sweep runs, which turns the choice off there.
     expect((await fetch(`${INSPECT}/e2e/last-seen/${ticket.personId}?daysAgo=180`, { method: 'POST' })).ok).toBe(true);
@@ -1346,10 +1352,15 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
   },
 
   async 'a-background-read-that-gets-401-registers-nothing-and-records-no-day'({ page, locale, consoleGuard }) {
-    const registrations: string[] = [];
+    /** Every request for the phone's two choices. A read that registered the phone again after the 401 would ask a second time. */
+    const reads: string[] = [];
+    const inFlight = new Set<Request>();
     page.on('request', (request) => {
-      if (request.url() === `${API}/persons` && request.method() === 'POST') registrations.push(request.url());
+      if (request.url().startsWith(API)) inFlight.add(request);
+      if (request.url() === `${API}/me/opt-ins`) reads.push(request.method());
     });
+    page.on('response', (response) => inFlight.delete(response.request()));
+    page.on('requestfailed', (request) => inFlight.delete(request));
     consoleGuard.allow({ url: `${API}/me/opt-ins`, expect: 401, reason: 'the test answers the phone background read of its own choices with 401, as a server that forgot the phone would' });
     await page.route(`${API}/me/opt-ins`, (route) => route.fulfill({ status: 401, json: { error: 'unauthorized', message: 'Unknown device' } }));
     const refused = page.waitForResponse((response) => response.url() === `${API}/me/opt-ins`);
@@ -1360,11 +1371,13 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(page).toHaveURL(ticketUrl(locale));
     await expect(page.locator('[data-screen="ticket"] [data-ticket]')).toBeVisible();
 
-    // The background read on the ticket screen's start was refused: the phone registered once, for the send it made itself, and
-    // not again for the read; the day it keeps for the read was not written.
+    // The background read on the ticket screen's start was refused: it was not made again after registering the phone (the way a call the
+    // person makes would be), and the day it keeps for the read was not written.
     expect((await refused).status()).toBe(401);
-    await page.waitForLoadState('networkidle');
-    expect(registrations, 'only the send registered the phone').toHaveLength(1);
+    // A second registration, if the read made one, starts at once and is answered quickly: give it the time, then wait for everything to settle.
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 1000)));
+    await expect.poll(() => [...inFlight].map((request) => `${request.method()} ${request.url()}`)).toEqual([]);
+    expect(reads, 'the read was made once and not repeated after the 401').toEqual(['GET']);
     expect(await rawStoreKeys(page)).not.toContain('server:last-seen-sent');
     expect(await rawStoreKeys(page)).toContain('equity');
   },
@@ -1949,6 +1962,8 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     // Turn it on where the totals are sent.
     const id = await stubSeenTicket(page, locale);
     await page.route(`${API}/me/tickets/${id}/remeasure`, (route) => route.fulfill({ json: { state: 'closed', scoresShared: true, events: [] } }));
+    // The send is stubbed, so the real server never held the choice: this answer stands in for a server that counted it, which is what Settings must then show.
+    await page.route(`${API}/me/opt-ins`, (route) => route.fulfill({ json: { equityOptIn: false, outcomeStatsOptIn: true } }));
     await context.clock.setFixedTime(new Date(SEEN_AT_MS + SIX_WEEKS_MS));
     await page.goto(`/${locale}/ticket/?id=${id}`);
     await takeRepeatCheck(page, locale, id);
@@ -2078,6 +2093,8 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     const id = await stubSeenTicket(page, locale);
     consoleGuard.allow({ url: `${API}/me/tickets/${id}/remeasure`, expect: 'net::ERR_FAILED', reason: 'the test drops the reply of the send on purpose: the server may have counted the totals, so the phone must keep the choice it can turn off' });
     await page.route(`${API}/me/tickets/${id}/remeasure`, (route) => route.abort());
+    // The reply was lost, not the request: the server counted the choice, so its answer to the phone's read says it is on.
+    await page.route(`${API}/me/opt-ins`, (route) => route.fulfill({ json: { equityOptIn: false, outcomeStatsOptIn: true } }));
     await context.clock.setFixedTime(new Date(SEEN_AT_MS + SIX_WEEKS_MS));
     await page.goto(`/${locale}/ticket/?id=${id}`);
     await takeRepeatCheck(page, locale, id);
