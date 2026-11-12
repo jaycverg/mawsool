@@ -524,8 +524,13 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
       const lineHeight = parseFloat(await value.evaluate((node) => getComputedStyle(node).lineHeight));
       const box = (await value.boundingBox())!;
       expect(box.height, 'the value and its unit share one line').toBeLessThanOrEqual(lineHeight + 1);
-      const fits = await value.evaluate((node) => node.scrollWidth <= node.clientWidth + 1 && node.getBoundingClientRect().right <= node.closest('[data-outcome]')!.getBoundingClientRect().right + 1 && node.getBoundingClientRect().left >= node.closest('[data-outcome]')!.getBoundingClientRect().left - 1);
-      expect(fits, 'the value stays inside its block').toBe(true);
+      const measured = await value.evaluate((node) => {
+        const own = node.getBoundingClientRect();
+        const block = node.closest('[data-outcome]')!.getBoundingClientRect();
+        return { grid: getComputedStyle(node.closest('[data-outcome-stat]')!.parentElement!).gridTemplateColumns, cls: node.closest('[data-outcome-stat]')!.parentElement!.className, text: node.textContent, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth, left: Math.round(own.left - block.left), right: Math.round(block.right - own.right) };
+      });
+      expect(measured.scrollWidth, `the value stays inside its own column: ${JSON.stringify(measured)}`).toBeLessThanOrEqual(measured.clientWidth + 1);
+      expect(Math.min(measured.left, measured.right), `the value stays inside its block: ${JSON.stringify(measured)}`).toBeGreaterThanOrEqual(-1);
     }
   },
 
