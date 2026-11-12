@@ -827,5 +827,15 @@
     "id": "mw-707-info-panels-open-by-keyboard-and-touch-and-work-right-to-left",
     "sentence": "Every info panel opens by keyboard and touch, is announced as a collapsed or expanded button, closes on Escape and works right to left",
     "browser": "dashboard-info-panels-define-every-tile-by-keyboard-and-touch"
+  },
+  {
+    "id": "admin-panel-crisis-number-notes-are-labelled-english-only-on-the-arabic-page",
+    "sentence": "The admin panel's crisis-number source notes are the rules config's English text, marked as English, and on the Arabic page each carries an Arabic label saying it is English only, since no Arabic source for them exists",
+    "browser": "admin-panel-crisis-number-notes-say-english-only-on-the-arabic-page"
+  },
+  {
+    "id": "the-ops-dashboard-fits-a-phone-without-inner-scroll",
+    "sentence": "At 390 px the ops dashboard does not scroll sideways, no card scrolls inside itself, the timeliness figures reflow into one block per tier inside their card, and a symptom-change mean keeps its value and unit on one line, in both languages",
+    "browser": "dashboard-fits-a-phone-with-no-inner-scroll-and-keeps-a-value-and-its-unit-on-one-line"
   }
 ]

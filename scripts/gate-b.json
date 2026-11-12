@@ -2621,5 +2621,254 @@
         "name": "does not touch the note, and sends no choice, when the totals are not sent"
       }
     ]
+  },
+  {
+    "id": "request-log-carries-the-route-pattern-and-no-id-address-or-query",
+    "sentence": "The API's request log writes a request as its method and route pattern (a hand-off stop as /me/crisis-handoffs/:id) and a reply as its status and time: no id, query string, host or client address appears in any line, a route nobody registered is logged as unmatched with nothing of its address, an error is reduced to its type, message and stack, and a staff sign-in token or clinic-link credential sent in a request never reaches a request line",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/request-log.test.ts",
+        "name": "writes a hand-off stop and every other route by its pattern"
+      },
+      {
+        "file": "test/request-log.test.ts",
+        "name": "keeps a request line to the method and the route"
+      },
+      {
+        "file": "test/request-log.test.ts",
+        "name": "never writes a staff sign-in token or a clinic-link credential into a request line"
+      },
+      {
+        "file": "test/request-log.test.ts",
+        "name": "reduces an error to its type, message and stack"
+      },
+      {
+        "file": "test/request-log.test.ts",
+        "name": "stays silent when logging is off"
+      }
+    ]
+  },
+  {
+    "id": "an-opt-in-ends-when-the-device-that-could-turn-it-off-is-gone",
+    "sentence": "A person's equity and statistics opt-ins are turned off, with the equity buckets deleted, once the day their device last reached the server is 180 days behind the wall-clock day and not a day sooner; activity moves that day (once a day, never backwards), a demo clock jump does not, a seeded person with no device is left alone, Delete everything clears the date, and Settings says in both languages beside each choice that it turns itself off if the phone is not used for 6 months",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/opt-in-lifetime.test.ts",
+        "name": "has a limit of about six months"
+      },
+      {
+        "file": "test/opt-in-lifetime.test.ts",
+        "name": "records the day a device registers, on the wall clock"
+      },
+      {
+        "file": "test/opt-in-lifetime.test.ts",
+        "name": "moves the day when the device calls on a later day"
+      },
+      {
+        "file": "test/opt-in-lifetime.test.ts",
+        "name": "never moves the day back"
+      },
+      {
+        "file": "test/opt-in-lifetime.test.ts",
+        "name": "does not count a request that fails to authenticate"
+      },
+      {
+        "file": "test/opt-in-lifetime.test.ts",
+        "name": "keeps both choices up to the day before the limit and turns both off"
+      },
+      {
+        "file": "test/opt-in-lifetime.test.ts",
+        "name": "clears a person who held only one of the two choices"
+      },
+      {
+        "file": "test/opt-in-lifetime.test.ts",
+        "name": "keeps the choices of a person whose device is in use"
+      },
+      {
+        "file": "test/opt-in-lifetime.test.ts",
+        "name": "leaves a person with no date alone"
+      },
+      {
+        "file": "test/opt-in-lifetime.test.ts",
+        "name": "reads the wall clock for the limit, so a jump of the care clock clears nobody"
+      },
+      {
+        "file": "test/opt-in-lifetime.test.ts",
+        "name": "keeps the wall day after the demo clock is advanced"
+      },
+      {
+        "file": "test/consent.test.ts",
+        "name": "withdraws every live ticket, empties every bundle and draft, clears the equity buckets"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "says it is on, in its own words, with one button that turns it off"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "says nothing about turning itself off while the choice is off or just turned off"
+      }
+    ],
+    "browser": "settings-turns-off-anonymous-statistics-and-shows-nothing-while-it-is-off"
+  },
+  {
+    "id": "the-statistics-choice-says-it-covers-every-total-sent-or-to-be-sent",
+    "sentence": "The repeat check's statistics box and Settings' statistics note say in both languages that the choice covers every total the person has sent or will send their clinics, and the Settings turn-off button and its confirmation use the same all-referrals scope, not two totals",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "says the totals count only in groups of 10 or more and that a clinic never sees the choice"
+      },
+      {
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "turns off and confirms in the same all-referrals scope"
+      }
+    ]
+  },
+  {
+    "id": "a-handoff-send-and-stop-do-not-wait-for-ever-on-a-store-or-a-network",
+    "sentence": "The hand-off send and stop on the phone end in an outcome the screen already has when the phone's store or the network stops answering, and never wait for ever: a store that does not answer before the send means failed and nothing sent, a network that does not answer means offline with the sending record kept so the note can still be stopped, a step that runs out after the answer leaves the sent or refused outcome, and a stop that cannot finish keeps its record",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "says failed, and sends nothing, when the store does not answer the read of the crisis record"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "says offline, and sends nothing, when the crisis queue does not flush in time"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "says failed, and sends nothing, when the store does not take the record the send needs first"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "says failed when the store does not answer the read of the earlier records"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "says offline when the call does not answer, keeps the \"sending\" record to stop from"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "can stop the note whose send did not answer"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "still says sent when the store does not answer the confirmation"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "still answers rejected when the store does not take the removal of the refused record"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "says offline and keeps the record when the stop does not get an answer from the server"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "says failed and keeps the record when the server stopped it but the store does not take the removal"
+      }
+    ]
+  },
+  {
+    "id": "the-handoff-note-holds-an-instrument-and-a-total-and-no-band-or-time",
+    "sentence": "The crisis-line note carries each total as an instrument and a total only, which is all the console shows: the phone sends no band and no time of the check-in, the server drops them from a request of an older app and does not store them, and a note stored before the change is read back without them",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "stores a total as an instrument and a total only"
+      },
+      {
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "still reads a note stored before the band and the time were dropped"
+      },
+      {
+        "file": "test/crisis-handoffs.test.ts",
+        "name": "lets the crisis-line role read a consented hand-off, in the list and singly"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/crisis-handoff.test.ts",
+        "name": "holds the language, the reason, the latest finished totals and the number typed, and no item answer"
+      },
+      {
+        "project": "apps/person",
+        "file": "test/crisis-handoff.test.ts",
+        "name": "sends the crisis record first, then the note with the consent flag"
+      }
+    ],
+    "delegated": {
+      "gate": "gate:phase4",
+      "id": "crisis-line-console-reads-a-consented-handoff-and-marks-contact"
+    }
+  },
+  {
+    "id": "a-refused-statistics-note-sends-nothing-and-a-lost-reply-keeps-the-turn-off",
+    "sentence": "When the phone cannot write its note that the statistics choice may be on, Finish sends nothing, the screen says so and stays in view at 390 by 844; when the reply to a send with the choice is lost, Settings still offers the turn-off",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "tells the person nothing was sent when the phone could not keep its note of the choice"
+      }
+    ],
+    "browser": "statistics-note-refused-write-sends-nothing-shows-the-message-and-keeps-finish-in-view"
+  },
+  {
+    "id": "a-lost-statistics-reply-keeps-the-settings-turn-off",
+    "sentence": "When the reply to a repeat check sent with the statistics choice never arrives, the phone keeps its note that the choice may be on and Settings still shows the statistics panel with its turn-off",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/outcome-statistics.test.tsx",
+        "name": "writes the note before a send that carries true, and keeps it when the reply is lost"
+      }
+    ],
+    "browser": "statistics-note-lost-reply-keeps-the-settings-turn-off-visible"
+  },
+  {
+    "id": "the-reminder-notifier-is-mounted-once-by-the-layout-and-a-tap-reopens-the-app",
+    "sentence": "The reminder notifier is mounted once, by the locale layout and inside the intl provider, and shows a due reminder as a notification when the app opens; tapping a notification closes it, brings the first open window of the app forward or opens the app at its root when none is open",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/reminder-notifier-mount.test.ts",
+        "name": "is imported from its component and rendered exactly once"
+      },
+      {
+        "file": "test/reminder-notifier-mount.test.ts",
+        "name": "sits inside the intl provider"
+      },
+      {
+        "file": "test/reminder-notifier-mount.test.ts",
+        "name": "is the only layout or page that mounts it"
+      },
+      {
+        "file": "test/service-worker.test.ts",
+        "name": "closes the notification and opens the app at its root when no window of it is open"
+      },
+      {
+        "file": "test/service-worker.test.ts",
+        "name": "brings the first open window of the app forward instead of opening another"
+      },
+      {
+        "file": "test/service-worker.test.ts",
+        "name": "keeps the worker alive until the window is focused or opened"
+      }
+    ],
+    "browser": "reminder-notifier-shows-a-due-reminder-as-a-notification-when-the-app-opens"
+  },
+  {
+    "id": "the-disabled-statistics-box-keeps-its-text-readable",
+    "sentence": "While the box to send the totals is unticked, the statistics box on the repeat check screen reads as unavailable (flat ground, dashed edge, not-allowed cursor, the box disabled) while its title and help text keep a contrast of 4.5:1 or better, with no fading by opacity",
+    "browser": "repeat-check-statistics-help-stays-readable-while-the-box-is-disabled"
   }
 ]
