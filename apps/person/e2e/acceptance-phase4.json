@@ -101,7 +101,7 @@
   },
   {
     "id": "crisis-handoff-failure-leaves-the-crisis-screen-alone",
-    "sentence": "When the hand-off cannot be sent the panel says so, nothing is stored, and the crisis screen still shows every number, the block survives a reload and a direct visit to the options, and \"I'm safe right now\" still releases it"
+    "sentence": "When the hand-off request is answered with a server error the panel says the phone could not confirm the note arrived (not that nothing was sent), nothing is stored, and the crisis screen still shows every number, the block survives a reload and a direct visit to the options, and \"I'm safe right now\" still releases it"
   },
   {
     "id": "crisis-handoff-timeout-says-it-could-not-confirm-and-offers-the-stop",
