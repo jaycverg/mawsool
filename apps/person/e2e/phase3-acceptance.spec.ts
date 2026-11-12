@@ -1552,14 +1552,23 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
   },
 
   async 'reminder-notifier-shows-a-due-reminder-as-a-notification-when-the-app-opens'({ page, context, locale }) {
-    await context.grantPermissions(['notifications']);
-    // Records every notification the page asks the service worker's registration to show, and still shows it.
+    // The test browser cannot be relied on to hold the notification permission, and a notification cannot be read back from it. So the
+    // page is told that permission is granted, and every notification it is asked to show, by either way the adapter has (the
+    // service worker's registration, or the constructor when none is registered), is recorded instead of shown.
     await page.addInitScript(() => {
-      const show = ServiceWorkerRegistration.prototype.showNotification;
-      ServiceWorkerRegistration.prototype.showNotification = function (this: ServiceWorkerRegistration, title: string, options?: NotificationOptions) {
+      const record = (title: string, options?: NotificationOptions) =>
         sessionStorage.setItem('e2e.shown', JSON.stringify([...JSON.parse(sessionStorage.getItem('e2e.shown') ?? '[]'), { title, body: options?.body, tag: options?.tag }]));
-        return show.call(this, title, options);
+      ServiceWorkerRegistration.prototype.showNotification = async function (title: string, options?: NotificationOptions) {
+        record(title, options);
       };
+      class Recording {
+        static permission: NotificationPermission = 'granted';
+        static requestPermission = async (): Promise<NotificationPermission> => 'granted';
+        constructor(title: string, options?: NotificationOptions) {
+          record(title, options);
+        }
+      }
+      window.Notification = Recording as unknown as typeof Notification;
     });
     const shown = async (): Promise<{ title: string; body: string; tag: string }[]> => JSON.parse((await page.evaluate(() => sessionStorage.getItem('e2e.shown'))) ?? '[]');
     await visitOnline(page, locale);
