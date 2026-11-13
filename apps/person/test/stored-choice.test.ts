@@ -2,10 +2,11 @@ import type { Demographics } from '@mawsool/types';
 import { createDeviceIdentity } from '@mawsool/ui';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { KEYS } from '../lib/keys';
+import { withStoreLock } from '../lib/lock';
 import { loadOutcomeStatistics } from '../lib/outcome-statistics';
 import { finishRepeatCheck } from '../lib/remeasure';
 import { forgetRegistration } from '../lib/server';
-import { learnServerChoices, readSendMarks, sendEquityChoice, takeClearedNote, withChoiceSend } from '../lib/server-choices';
+import { learnServerChoices, readSendMarks, reconcileChoices, sendEquityChoice, takeClearedNote, withChoiceSend } from '../lib/server-choices';
 import ar from '../messages/ar.json';
 import en from '../messages/en.json';
 import { loadEquity } from '../lib/share';
@@ -313,6 +314,77 @@ describe('a read of the server’s choices that overlaps a send cannot turn the 
     const during = await withChoiceSend(w.storage, 'statistics', async () => (await readSendMarks(w.storage)).statistics);
     expect(during).toMatchObject({ started: true, value: { tick: expect.any(String) } });
     expect(Object.values((during as { value: { pending: Record<string, number> } }).value.pending)).toEqual([NOW.getTime()]);
+  });
+
+  describe('in one tab the send’s marks are written under the store lock, so a reconcile that holds it is never interrupted by them', () => {
+    const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 10));
+
+    it('lets a repeat check that starts while a reconcile is in its locked section mark itself only after it, so the reconcile cannot turn off the note the send writes', async () => {
+      const w = world();
+      const before = await readSendMarks(w.storage);
+      // The reconcile's read of the equity note is slow, as any store read can be.
+      const slow = deferred();
+      const read = w.storage.get.bind(w.storage);
+      let slowed = false;
+      w.storage.get = (async (key: string) => {
+        if (key === KEYS.equity && !slowed) {
+          slowed = true;
+          await slow.promise;
+        }
+        return read(key);
+      }) as typeof w.storage.get;
+      const reconcile = reconcileChoices(w.storage, { equityOptIn: false, outcomeStatsOptIn: false }, { ...READ, before });
+      await vi.waitFor(() => expect(slowed).toBe(true));
+
+      // The person presses Finish with the statistics box ticked: the note goes on before the request, as finishRepeatCheck does.
+      w.hold.post = deferred();
+      const send = finishRepeatCheck(w.server, TICKET_ID, SCORES, true, { statisticsSource: 'ticked', now });
+      await settle();
+      expect((await readSendMarks(w.storage)).statistics, 'the send has not marked itself while the reconcile holds the lock').toEqual({ tick: null, pending: {} });
+
+      slow.release();
+      expect(await reconcile, 'the reconcile found nothing to turn off').toEqual({ equity: false, statistics: false });
+      await vi.waitFor(() => expect(w.calls.some((call) => call.path.endsWith('/remeasure'))).toBe(true));
+      w.hold.post.release();
+      expect(await send).toBe('done');
+      expect(w.state.server.outcomeStatsOptIn, 'the server holds the choice').toBe(true);
+      expect(await loadOutcomeStatistics(w.storage), 'and so does the phone: Settings can turn it off').toBe(true);
+    });
+
+    it('writes the start marks only when the lock is free, and runs nothing before them', async () => {
+      const w = world();
+      const lock = deferred();
+      const held = withStoreLock(w.storage, () => lock.promise);
+      const sent = vi.fn(async () => 'sent');
+      const send = withChoiceSend(w.storage, 'equity', sent);
+      await settle();
+      expect(await readSendMarks(w.storage), 'nothing is marked while the lock is held').toEqual({ equity: { tick: null, pending: {} }, statistics: { tick: null, pending: {} } });
+      expect(sent).not.toHaveBeenCalled();
+      lock.release();
+      await held;
+      expect(await send).toEqual({ started: true, value: 'sent' });
+    });
+
+    it('writes the end marks only when the lock is free, so the pending mark stays until then', async () => {
+      const w = world();
+      const finish = deferred();
+      const send = withChoiceSend(w.storage, 'equity', () => finish.promise.then(() => 'sent'));
+      await vi.waitFor(async () => expect(Object.keys((await readSendMarks(w.storage)).equity.pending)).toHaveLength(1));
+      const startedTick = (await readSendMarks(w.storage)).equity.tick;
+      const lock = deferred();
+      const held = withStoreLock(w.storage, () => lock.promise);
+      finish.release();
+      await settle();
+      const during = (await readSendMarks(w.storage)).equity;
+      expect(Object.keys(during.pending), 'the pending mark stays while the lock is held').toHaveLength(1);
+      expect(during.tick, 'and the tick has not changed').toBe(startedTick);
+      lock.release();
+      await held;
+      expect(await send).toEqual({ started: true, value: 'sent' });
+      const ended = (await readSendMarks(w.storage)).equity;
+      expect(ended.pending).toEqual({});
+      expect(ended.tick).not.toBe(startedTick);
+    });
   });
 });
 
