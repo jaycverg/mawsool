@@ -313,7 +313,7 @@ export function SettingsScreen() {
 
         {(cleared.equity || cleared.statistics) && (
           <section className="flex flex-col gap-2.5 rounded-card border border-border bg-surface p-5" data-panel="opt-ins-cleared">
-            <p role="status" className="t-body" data-opt-ins-cleared={cleared.equity && cleared.statistics ? 'both' : cleared.equity ? 'equity' : 'statistics'}>
+            <p role="status" className="t-body text-muted" data-opt-ins-cleared={cleared.equity && cleared.statistics ? 'both' : cleared.equity ? 'equity' : 'statistics'}>
               {t(cleared.equity && cleared.statistics ? 'optInsClearedBoth' : cleared.equity ? 'optInsClearedEquity' : 'optInsClearedStatistics')}
             </p>
           </section>

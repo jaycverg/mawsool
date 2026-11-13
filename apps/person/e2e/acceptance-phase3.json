@@ -105,7 +105,7 @@
   },
   {
     "id": "settings-says-once-that-the-idle-limit-switched-the-equity-choice-off-and-the-phone-then-sends-nothing-under-it",
-    "sentence": "After the server has switched the equity choice off for a phone silent for the idle limit, opening Settings online shows the choice off with no panel for it and says once, in the page's language, that it was turned off because the phone was not used for 6 months; the next visit says nothing about it, the consent screen starts with the choice unticked, and the phone made no equity request on the way"
+    "sentence": "After the server has switched the equity choice off for a phone silent for the idle limit, opening Settings online shows the choice off with no panel for it and says once, in the page's language, that it was turned off because the phone was not used for 6 months, in the muted text colour of the help text beside it and at a contrast of 4.5 to 1 or better; the next visit says nothing about it, the consent screen starts with the choice unticked, and the phone made no equity request on the way"
   },
   {
     "id": "consent-screen-sends-no-group-totals-true-the-server-has-off-and-says-the-referral-has-not-gone",
@@ -182,6 +182,10 @@
   {
     "id": "statistics-note-refused-write-sends-nothing-shows-the-message-and-keeps-finish-in-view",
     "sentence": "When the phone cannot write its note that the statistics choice may be on, Finish sends nothing, the repeat check screen says that nothing was sent, no note is recorded and Finish stays in view at 390 by 844 with the message shown; once the phone can write again the same Finish sends the choice and the note is kept"
+  },
+  {
+    "id": "repeat-check-privacy-line-stays-in-view-with-a-message-in-the-finish-bar",
+    "sentence": "On the repeat check's totals screen at 390 by 844, with the message that the choice's note could not be kept shown in the Finish bar, the line that says the answers stay on the phone is in view at first render with no scroll, at its own text size, with the bar over no part of it, and the message and the Finish button (at its 44 px height) are in view too, in Arabic and English"
   },
   {
     "id": "repeat-check-note-failed-message-is-not-covered-by-the-finish-bar",

@@ -192,6 +192,8 @@ export function Totals({ check, ticket, bandNames, names, share, setShare, stati
   return (
     <>
       <h1 className="t-h1">{t('summaryTitle')}</h1>
+      {/* Under the title, not above the bar: a message in the Finish bar (up to five lines) covers whatever ends the page at first render, and this line has to stay in view with it. */}
+      <p className="t-small text-muted" data-stays-note>{t('stays')}</p>
       <ul className="m-0 flex list-none flex-col gap-2 p-0" data-totals>
         {([check.phq9, check.gad7] as const).map((screening) => (
           <li key={screening.id} className="flex flex-col gap-0.5 rounded-card border border-border bg-surface p-4" data-total={screening.instrument}>
@@ -231,7 +233,6 @@ export function Totals({ check, ticket, bandNames, names, share, setShare, stati
       ) : (
         <p className="t-small text-muted" data-share-unavailable>{t('shareUnavailable')}</p>
       )}
-      <p className="t-small text-muted">{t('stays')}</p>
       {/* Finish stays at the foot of the screen, so a longer text above it (the help under a choice) never pushes it out of view. The answer to pressing it is part of the bar, above the button: left in the page, the bar sat over it. */}
       <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex flex-col gap-2 border-t border-border bg-ground px-4 pb-4 pt-3" data-finish-bar>
         {send === 'failed' && <p role="alert" className="t-body text-danger">{t('failed')}</p>}
