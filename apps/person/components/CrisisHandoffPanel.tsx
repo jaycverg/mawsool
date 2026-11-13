@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { API_URL } from '../lib/api';
 import { deviceFetch } from '../lib/net';
 import { deviceNow } from '../lib/clock';
-import { buildHandoffPreview, handoffFor, offerState, reloadHandoffs, sendHandoff, stopHandoff, type HandoffRecord, type SendOutcome } from '../lib/crisis-handoff';
+import { buildHandoffPreview, HandoffMemory, handoffFor, offerState, reloadHandoffs, sendHandoff, stopHandoff, type HandoffRecord, type SendOutcome } from '../lib/crisis-handoff';
 import { flushOutbox } from '../lib/crisis-outbox';
 import { parsePhone } from '../lib/reminders';
 import { loadScreenings } from '../lib/screening-store';
@@ -58,10 +58,13 @@ export function CrisisHandoffPanel({ device, lang, mode, open }: { device: Devic
   const [phase, setPhase] = useState<Phase>('idle');
 
   // The list last read is kept when a later read fails or stalls: dropping it would hide Stop and make the next retry look like a first attempt.
+  // The attempts this panel made itself are kept in memory beside it and shown with whatever the store says, so a store that breaks between an
+  // attempt's record and the first read of it (or never answers a read again) cannot hide Stop or make a retry say nothing was sent.
   const lastRead = useRef<readonly HandoffRecord[]>([]);
+  const memory = useRef(new HandoffMemory());
   const show = (list: readonly HandoffRecord[]) => {
     lastRead.current = list;
-    setRecords([...list]);
+    setRecords(memory.current.merge(list));
   };
   const reload = () => reloadHandoffs(device.storage, lastRead.current).then(show);
   useEffect(() => {
@@ -77,10 +80,14 @@ export function CrisisHandoffPanel({ device, lang, mode, open }: { device: Devic
   async function send() {
     if (!open || !agreed) return;
     setPhase('sending');
+    const held = memory.current;
     const outcome = await sendHandoff(
-      { server, flush: () => flushOutbox({ storage: device.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, random: window.crypto }), now: deviceNow, newId: () => crypto.randomUUID(), isOnline: () => navigator.onLine },
-      { crisisEventId: open.eventId, screenings, language: lang, trigger: open.trigger, callbackInput: callback, earlierRecordHeld: handoffFor(records, open.eventId) !== null },
+      { server, flush: () => flushOutbox({ storage: device.storage, fetch: deviceFetch(), apiUrl: API_URL, locale: lang, random: window.crypto }), now: deviceNow, newId: () => crypto.randomUUID(), isOnline: () => navigator.onLine, onIssue: held.issued },
+      // An earlier attempt is known from the store's last answer and from what this panel itself sent, so a store that stopped answering cannot make a retry look like a first attempt.
+      { crisisEventId: open.eventId, screenings, language: lang, trigger: open.trigger, callbackInput: callback, earlierRecordHeld: handoffFor(held.merge(lastRead.current), open.eventId) !== null },
     );
+    held.settled(open.eventId, outcome);
+    setRecords(held.merge(lastRead.current));
     setPhase(outcome);
     // A note the person stopped is not offered again as it stands: the form stays open with its answer, but a new send needs a fresh tick.
     if (outcome === 'stopped') {
@@ -95,6 +102,13 @@ export function CrisisHandoffPanel({ device, lang, mode, open }: { device: Devic
     setStopped(false);
     const outcome = await stopHandoff({ server }, record);
     setStopping(null);
+    if (outcome === 'stopped') {
+      // The server confirmed and the store dropped it: neither copy kept here may bring it back if the next read fails.
+      memory.current.stopped(record.handoffId);
+      lastRead.current = lastRead.current.filter((other) => other.handoffId !== record.handoffId);
+      // A new send after a stop needs a fresh tick, as after a send the server said was stopped.
+      setAgreed(false);
+    }
     setPhase(outcome === 'stopped' ? 'idle' : 'stop_failed');
     setStopped(outcome === 'stopped');
     await reload();
