@@ -3434,7 +3434,7 @@
   },
   {
     "id": "a-phone-the-server-forgot-is-not-read-again-until-the-person-registers-it",
-    "sentence": "After a background read of the phone's two choices is answered 401, the phone notes it and makes no further background read, at any start or when Settings opens, until a call the person makes has registered the phone again; a background read never registers the phone; Delete everything clears the note",
+    "sentence": "After a background read of the phone's two choices is answered 401, the phone notes it and makes no further background read, at any start or when Settings opens, until a call the person makes has registered the phone again (a 401 answered after such a call registered the phone in the same page load leaves no note, whichever finished first); a background read never registers the phone; Delete everything clears the note",
     "project": "apps/person",
     "tests": [
       {
@@ -3448,6 +3448,18 @@
       {
         "file": "test/presence.test.ts",
         "name": "keeps the note when the registration the person’s call tried failed"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "leaves no note when the person’s own call registered the phone while the read was on its way, and reads again at the next start"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "writes the note when the 401 is answered first, and the person’s own call then registers the phone and clears it"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "keeps the note of a 401 when the phone was registered by the person’s call before the read began, since the registration says nothing of a later reset"
       },
       {
         "file": "test/presence.test.ts",

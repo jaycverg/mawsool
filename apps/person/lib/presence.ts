@@ -2,7 +2,7 @@ import type { StorageAdapter } from '@mawsool/ui';
 import { z } from 'zod';
 import { KEYS } from './keys';
 import { loadOutcomeStatistics } from './outcome-statistics';
-import type { ServerDeps } from './server';
+import { registrationCount, type ServerDeps } from './server';
 import { learnServerChoices } from './server-choices';
 import { loadEquity } from './share';
 
@@ -83,8 +83,11 @@ async function check(deps: PresenceDeps, mode: 'daily' | 'open'): Promise<Presen
     const stored = StoredDaySchema.safeParse(await storage.get<unknown>(KEYS.lastSeenSent));
     if (mode === 'daily' && stored.success && stored.data.day === today) return 'not_due';
     if (!deps.isOnline()) return 'offline';
+    const registrationsBefore = registrationCount(storage);
     const learned = await learnServerChoices(deps.server, { lastReached: stored.success ? stored.data.day : null, now: deps.now() });
-    if (learned === 'not_recognised') await storage.set(KEYS.serverForgotPhone, { since: today }).catch(() => undefined);
+    // A call the person made registered the phone while this read was on its way: the 401 is about the phone as it was, so it leaves no note,
+    // whether it was answered before or after that registration cleared the note (written first, the note is cleared; written last, it is not written).
+    if (learned === 'not_recognised' && registrationCount(storage) === registrationsBefore) await storage.set(KEYS.serverForgotPhone, { since: today }).catch(() => undefined);
     if (learned === 'not_recognised' || learned === 'failed') return learned;
     if (mode === 'daily') await storage.set(KEYS.lastSeenSent, { day: today }).catch(() => undefined);
     return learned === 'turned_off' ? 'turned_off' : 'sent';
