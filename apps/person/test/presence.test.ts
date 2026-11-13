@@ -315,17 +315,52 @@ describe('a phone the server has forgotten is not asked again until the person�
 
   it('leaves no note when the person’s own call registered the phone while the read was on its way, and reads again at the next start', async () => {
     const { p, deps, asked, answer401 } = onePageLoad();
+    const noteWrites: string[] = [];
+    const set = p.storage.set.bind(p.storage);
+    p.storage.set = async (key, value) => {
+      if (key === KEYS.serverForgotPhone) noteWrites.push(key);
+      return set(key, value);
+    };
     const read = keepSeenToday(deps);
     await asked;
     expect((await callServer(deps.server, 'GET', '/me/tickets')).ok).toBe(true);
     expect(p.requests).toEqual(['GET /me/opt-ins', 'POST /persons', 'GET /me/tickets']);
     answer401();
     expect(await read).toBe('not_recognised');
-    expect(p.data.has(KEYS.serverForgotPhone), 'the registration came first, so the late 401 writes no note').toBe(false);
+    expect(noteWrites, 'the registration came first, so the late 401 does not even try to write the note').toEqual([]);
+    expect(p.data.has(KEYS.serverForgotPhone)).toBe(false);
     expect(p.data.has(KEYS.lastSeenSent)).toBe(false);
 
     p.state.status = 200;
     expect(await keepSeenToday(p.deps)).toBe('sent');
+  });
+
+  it('removes the note again when the person’s own call registered the phone while the write of the note was on its way', async () => {
+    const { p, deps, asked, answer401 } = onePageLoad();
+    let landNote!: () => void;
+    const landing = new Promise<void>((resolve) => {
+      landNote = resolve;
+    });
+    let noteStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      noteStarted = resolve;
+    });
+    const set = p.storage.set.bind(p.storage);
+    // The phone's store encrypts before it writes while a removal does not, so a write that began first can land last.
+    p.storage.set = async (key, value) => {
+      if (key !== KEYS.serverForgotPhone) return set(key, value);
+      noteStarted();
+      await landing;
+      return set(key, value);
+    };
+    const read = keepSeenToday(deps);
+    await asked;
+    answer401();
+    await started;
+    expect((await callServer(deps.server, 'GET', '/me/tickets')).ok).toBe(true);
+    landNote();
+    expect(await read).toBe('not_recognised');
+    expect(p.data.has(KEYS.serverForgotPhone), 'the note landed after the registration cleared it, so the read removes it').toBe(false);
   });
 
   it('writes the note when the 401 is answered first, and the person’s own call then registers the phone and clears it', async () => {

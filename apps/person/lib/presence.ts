@@ -85,13 +85,23 @@ async function check(deps: PresenceDeps, mode: 'daily' | 'open'): Promise<Presen
     if (!deps.isOnline()) return 'offline';
     const registrationsBefore = registrationCount(storage);
     const learned = await learnServerChoices(deps.server, { lastReached: stored.success ? stored.data.day : null, now: deps.now() });
-    // A call the person made registered the phone while this read was on its way: the 401 is about the phone as it was, so it leaves no note,
-    // whether it was answered before or after that registration cleared the note (written first, the note is cleared; written last, it is not written).
-    if (learned === 'not_recognised' && registrationCount(storage) === registrationsBefore) await storage.set(KEYS.serverForgotPhone, { since: today }).catch(() => undefined);
+    if (learned === 'not_recognised') await noteForgottenPhone(storage, today, registrationsBefore);
     if (learned === 'not_recognised' || learned === 'failed') return learned;
     if (mode === 'daily') await storage.set(KEYS.lastSeenSent, { day: today }).catch(() => undefined);
     return learned === 'turned_off' ? 'turned_off' : 'sent';
   } catch {
     return 'failed';
   }
+}
+
+/**
+ * Writes the note that the server answered 401, unless a call the person made registered the phone since `registrationsBefore`: the 401
+ * is then about the phone as it was, and the note must not outlast that registration whichever of the two finished first. The registration
+ * clears the note the moment it succeeds, but a write that was already on its way (the phone's store encrypts before it writes, the clear
+ * does not) can land after that clear, so a registration seen once the write has ended removes the note again. A write or a removal the store
+ * refuses changes nothing else.
+ */
+async function noteForgottenPhone(storage: StorageAdapter, today: string, registrationsBefore: number): Promise<void> {
+  if (registrationCount(storage) === registrationsBefore) await storage.set(KEYS.serverForgotPhone, { since: today }).catch(() => undefined);
+  if (registrationCount(storage) !== registrationsBefore) await storage.remove(KEYS.serverForgotPhone).catch(() => undefined);
 }
