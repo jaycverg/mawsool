@@ -2,7 +2,7 @@ import type { StorageAdapter } from '@mawsool/ui';
 import { z } from 'zod';
 import { KEYS } from './keys';
 import { loadOutcomeStatistics } from './outcome-statistics';
-import { registrationCount, type ServerDeps } from './server';
+import { registeredThisPageLoad, type ServerDeps } from './server';
 import { learnServerChoices } from './server-choices';
 import { loadEquity } from './share';
 
@@ -83,9 +83,8 @@ async function check(deps: PresenceDeps, mode: 'daily' | 'open'): Promise<Presen
     const stored = StoredDaySchema.safeParse(await storage.get<unknown>(KEYS.lastSeenSent));
     if (mode === 'daily' && stored.success && stored.data.day === today) return 'not_due';
     if (!deps.isOnline()) return 'offline';
-    const registrationsBefore = registrationCount(storage);
     const learned = await learnServerChoices(deps.server, { lastReached: stored.success ? stored.data.day : null, now: deps.now() });
-    if (learned === 'not_recognised') await noteForgottenPhone(storage, today, registrationsBefore);
+    if (learned === 'not_recognised') await noteForgottenPhone(storage, today);
     if (learned === 'not_recognised' || learned === 'failed') return learned;
     if (mode === 'daily') await storage.set(KEYS.lastSeenSent, { day: today }).catch(() => undefined);
     return learned === 'turned_off' ? 'turned_off' : 'sent';
@@ -95,13 +94,13 @@ async function check(deps: PresenceDeps, mode: 'daily' | 'open'): Promise<Presen
 }
 
 /**
- * Writes the note that the server answered 401, unless a call the person made registered the phone since `registrationsBefore`: the 401
- * is then about the phone as it was, and the note must not outlast that registration whichever of the two finished first. The registration
- * clears the note the moment it succeeds, but a write that was already on its way (the phone's store encrypts before it writes, the clear
- * does not) can land after that clear, so a registration seen once the write has ended removes the note again. A write or a removal the store
- * refuses changes nothing else.
+ * Writes the note that the server answered 401, unless a call the person made has registered the phone in this page load, before the read
+ * or while it was on its way: the note must not outlast that registration whichever of the two finished first. The registration clears the
+ * note the moment it succeeds, but a write that was already on its way (the phone's store encrypts before it writes, the clear does not) can
+ * land after that clear, so a registration seen once the write has ended removes the note again. A write or a removal the store refuses
+ * changes nothing else.
  */
-async function noteForgottenPhone(storage: StorageAdapter, today: string, registrationsBefore: number): Promise<void> {
-  if (registrationCount(storage) === registrationsBefore) await storage.set(KEYS.serverForgotPhone, { since: today }).catch(() => undefined);
-  if (registrationCount(storage) !== registrationsBefore) await storage.remove(KEYS.serverForgotPhone).catch(() => undefined);
+async function noteForgottenPhone(storage: StorageAdapter, today: string): Promise<void> {
+  if (!registeredThisPageLoad(storage)) await storage.set(KEYS.serverForgotPhone, { since: today }).catch(() => undefined);
+  if (registeredThisPageLoad(storage)) await storage.remove(KEYS.serverForgotPhone).catch(() => undefined);
 }

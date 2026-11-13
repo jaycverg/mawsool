@@ -1570,10 +1570,10 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect(reads, 'the read was made once and not repeated after the 401').toEqual(['GET']);
     expect(await rawStoreKeys(page)).not.toContain('server:last-seen-sent');
     expect(await rawStoreKeys(page)).toContain('equity');
-    expect(await rawStoreKeys(page), 'the phone was registered by the page load’s own call, so the 401 left no note, in whichever order the two finished').not.toContain('server:not-recognised');
+    expect(await rawStoreKeys(page), 'the phone was registered by the page load’s own call, so the 401 left no note, whether it was answered before, during or after that registration').not.toContain('server:not-recognised');
 
     // The ticket screen's own calls registered the phone again on their page load. Whether the refused read was answered before that registration (its note is
-    // cleared by it) or after (no note is written), the phone is left without a note. The home screen makes no call of the person's own: its start reads once
+    // cleared by it), during it or after it (no note is written), the phone is left without a note. The home screen makes no call of the person's own: its start reads once
     // more, is refused again and the phone notes it, and the start after that makes no read at all.
     await page.goto(`/${locale}/`);
     await expect.poll(() => reads.length).toBe(2);
