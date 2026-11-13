@@ -7,10 +7,10 @@ import { sweep } from './sweep';
 
 export const SWEEP_QUEUE = 'ticket-sweep';
 
-/** What the job queue's tables say when the sweep fails: this message and, for a database error, its SQLSTATE. */
+/** What the job queue's tables say when the sweep fails: this message and, for a database error, its SQLSTATE, and nothing else. */
 export const SWEEP_FAILED_MESSAGE = 'ticket sweep failed';
 
-/** The only error the job queue is ever given for a failed sweep. It carries no cause, query, bound value or message of the original. */
+/** The only error the job queue is ever given for a failed sweep. It carries no cause, query, bound value or message of the original, and stores only what `toJSON` returns. */
 export class SweepFailedError extends Error {
   /** The SQLSTATE of the database error the sweep failed with, when it was one. */
   declare readonly code?: string;
@@ -20,11 +20,20 @@ export class SweepFailedError extends Error {
     this.name = 'SweepFailedError';
     if (code) this.code = code;
   }
+
+  /**
+   * What the job queue stores. pg-boss serialises a thrown error with `serialize-error`, which writes its name, message, stack (our file paths) and
+   * every own property, but calls an error's `toJSON` instead when it has one. This is therefore exactly what lands in `pgboss.job.output`:
+   * the fixed message and, for a database error, its SQLSTATE; no name, no stack.
+   */
+  toJSON(): { message: string; code?: string } {
+    return this.code ? { message: this.message, code: this.code } : { message: this.message };
+  }
 }
 
 /**
  * Reduces whatever a failed sweep threw to the one error pg-boss may store. pg-boss writes the thrown error (name, message, stack and every own
- * property, `cause` and a database error's `detail` and bound values included) into `pgboss.job.output`, which no erase path reaches, and a failed query's
+ * property, `cause` and a database error's `detail` and bound values included, unless the error has a `toJSON`) into `pgboss.job.output`, which no erase path reaches, and a failed query's
  * message carries the ids it was bound to. The original is logged by the caller through the request log's serializer, never handed to the queue.
  */
 export function sweepFailure(error: unknown): SweepFailedError {

@@ -3402,12 +3402,16 @@
   },
   {
     "id": "a-failed-sweep-leaves-only-a-fixed-message-and-the-database-code-in-the-job-queue",
-    "sentence": "When the scheduled sweep fails, the job queue's tables hold only the fixed message 'ticket sweep failed', the error's name and, for a database error, its SQLSTATE: no ticket id, no query, no bound value, no constraint name. The unit cases here prove the error handed to the queue; case 2b of gate:postgres proves what pg-boss stored, on real Postgres",
+    "sentence": "When the scheduled sweep fails, the job queue's tables hold only the fixed message 'ticket sweep failed' and, for a database error, its SQLSTATE, and nothing else: no error name, no stack, no ticket id, no query, no bound value, no constraint name. The unit cases here prove the error handed to the queue; case 2b of gate:postgres proves what pg-boss stored, on real Postgres",
     "project": "apps/api",
     "tests": [
       {
         "file": "test/sweep-failure.test.ts",
         "name": "is a fixed message and the database error code"
+      },
+      {
+        "file": "test/sweep-failure.test.ts",
+        "name": "is stored by pg-boss as exactly the fixed message and the code: no error name, no stack, nothing else"
       },
       {
         "file": "test/sweep-failure.test.ts",
