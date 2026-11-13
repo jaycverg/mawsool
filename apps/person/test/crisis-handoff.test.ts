@@ -352,6 +352,50 @@ describe('sending the hand-off', () => {
       expect(await sendHandoff({ ...crisisSlow.deps, patience: QUICK }, input())).toBe('failed');
     });
 
+    /** From now on the hand-off route answers every request with `status` and `error`, as a server that refuses the retry. */
+    function refuseFromNow(s: ReturnType<typeof setup>, status: number, error?: string) {
+      const real = s.serverDeps.fetch;
+      s.serverDeps.fetch = (async (url: string, init?: RequestInit) =>
+        (init?.method ?? 'GET') === 'POST' && new URL(url).pathname === '/me/crisis-handoffs' ? new Response(JSON.stringify(error ? { error } : {}), { status }) : real(url, init)) as unknown as typeof fetch;
+    }
+
+    it('a retry the server refuses with a plain 4xx says unconfirmed, not rejected, and keeps the earlier record so Stop is still offered and still stops the note', async () => {
+      const { s, first } = await afterAnUnconfirmedAttempt();
+      refuseFromNow(s, 400);
+      const memory = new HandoffMemory();
+      const outcome = await sendHandoff({ ...s.deps, onIssue: memory.issued }, input({ earlierRecordHeld: true }));
+      memory.settled(EVENT_ID, outcome);
+      expect(outcome).toBe('unconfirmed');
+      expect(await loadHandoffs(s.store.storage), 'the earlier record is kept').toEqual([first]);
+      expect(memory.merge([]), 'and so is the screen’s memory of the attempt').toEqual([{ ...first, state: 'sending' }]);
+      expect(s.server.stored, 'the first attempt’s note is still at the server').toBe(true);
+      expect(await stopHandoff({ server: s.serverDeps }, memory.merge([])[0]!), 'Stop reaches it').toBe('stopped');
+      expect(s.server.stored).toBe(false);
+    });
+
+    it('a retry the server refuses as not ready says unconfirmed, not not_ready, and keeps the earlier record: its answer does not say what the server held when the first request arrived', async () => {
+      const { s, first } = await afterAnUnconfirmedAttempt();
+      refuseFromNow(s, 409, 'crisis_event_unknown');
+      expect(await sendHandoff(s.deps, input({ earlierRecordHeld: true }))).toBe('unconfirmed');
+      expect(await loadHandoffs(s.store.storage)).toEqual([first]);
+    });
+
+    it('a retry the server refuses as stopped still says stopped and drops the record: that id was stopped, so nothing is held under it', async () => {
+      const { s } = await afterAnUnconfirmedAttempt();
+      refuseFromNow(s, 409, 'handoff_stopped');
+      expect(await sendHandoff(s.deps, input({ earlierRecordHeld: true }))).toBe('stopped');
+      expect(await loadHandoffs(s.store.storage)).toEqual([]);
+    });
+
+    it('a first attempt the server refuses keeps its words: rejected, or not ready, and no record left', async () => {
+      const refused = setup('rejected');
+      expect(await sendHandoff(refused.deps, input())).toBe('rejected');
+      expect(await loadHandoffs(refused.store.storage)).toEqual([]);
+      const early = setup('unknown-event');
+      expect(await sendHandoff(early.deps, input())).toBe('not_ready');
+      expect(await loadHandoffs(early.store.storage)).toEqual([]);
+    });
+
     it('still says offline for a first attempt at each of those exits (nothing predates it)', async () => {
       const first = setup();
       expect(await sendHandoff({ ...first.deps, isOnline: () => false }, input())).toBe('offline');

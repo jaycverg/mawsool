@@ -60,9 +60,10 @@ export class HandoffMemory {
   };
 
   /**
-   * Settles the attempt for one crisis by its outcome: `sent` confirms it, `unconfirmed` keeps it as it is, and a refusal (`offline`, which on a first attempt
-   * is a phone that could not register, `not_ready`, `rejected`, `stopped`) forgets it, since the server holds nothing and the send removed the stored record
-   * too. `failed` and `invalid_number` end before anything is issued and leave an earlier attempt alone.
+   * Settles the attempt for one crisis by its outcome: `sent` confirms it, `unconfirmed` keeps it as it is, and a refusal of a first attempt
+   * (`offline`, a phone that could not register, `not_ready`, `rejected`) or a `stopped` forgets it, since the server holds nothing and the send removed the stored record too. A retry never ends in the first three (`sendHandoff` says `unconfirmed` for them, as an earlier
+   * attempt may be held), so this never forgets an attempt that may still be at the server. `failed` and `invalid_number` end before anything is
+   * issued and leave an earlier attempt alone.
    */
   settled(crisisEventId: string, outcome: SendOutcome): void {
     const held = this.attempts.get(crisisEventId);
@@ -148,9 +149,10 @@ export interface HandoffPatience {
  * - `unconfirmed`: the request was issued and the phone has no answer to go by (no answer in time, a dropped connection, a server error, the
  *   call's own time limit), so the server may well hold the note. The `sending` record stays, so the person can stop it and a retry reuses
  *   its id. The screen says the phone could not confirm it arrived, never that nothing was sent.
- * - `not_ready`: the server does not yet hold the crisis record this belongs to.
- * - `rejected`: the server refused the request for good.
- * - `stopped`: the server says this hand-off was already stopped, so it was not stored. Nothing is offered again.
+ * - `not_ready`: the server does not yet hold the crisis record this belongs to. Only for a first attempt: on a retry the answer does not say what the
+ *   server held when the earlier request arrived, so it is `unconfirmed`.
+ * - `rejected`: the server refused the request for good. Only for a first attempt, like `not_ready`.
+ * - `stopped`: the server says this hand-off was already stopped, so it was not stored. Nothing is offered again. The one refusal a retry reports as such.
  * - `invalid_number`: the number typed is not an international number; nothing was sent.
  * - `failed`: the phone could not write its own record, or its store did not answer in time, so nothing was sent. Only for a first attempt, like `offline`.
  */
@@ -223,13 +225,16 @@ export async function sendHandoff(
     // Once the request was issued, a dropped connection, a server error or a call that ran out of time all leave it unknown whether the note
     // arrived: the same outcome as no answer in time, so the screen never says "nothing was sent" for them. The record stays to stop from.
     if (sent.reason === 'offline') return 'unconfirmed';
-    // A phone that could not register or has no credential sent nothing this time; a refusal means nothing was stored. Either way a record made by
-    // THIS attempt has nothing to stop, but one that predates it is kept (an earlier attempt may have arrived). If the store will not take the change,
-    // the record stays and a stop finds the server has none.
-    if (sent.reason === 'not_registered' && earlier) return 'unconfirmed';
+    // A phone that could not register or has no credential sent nothing this time, and a refusal means this request stored nothing. A record made by
+    // THIS attempt then has nothing to stop. But on a retry an earlier attempt may have arrived, and neither answer says it did not: only the server's
+    // own `handoff_stopped` (that very id was stopped, so nothing is held under it) does. Every other exit of a retry, `not_ready` included (a crisis
+    // record the server lacks now says nothing of what it held when the earlier request arrived), keeps the record and the screen's memory of the attempt
+    // and says `unconfirmed`, so Stop stays. If the store will not take the change, the record stays and a stop finds the server has none.
+    const idStopped = sent.reason === 'rejected' && sent.status === 409 && sent.error === 'handoff_stopped';
+    if (earlier && !idStopped) return 'unconfirmed';
     await within(changeHandoffs(storage, (records) => records.filter((other) => other.handoffId !== record.handoffId)).catch(() => undefined), storeMs, undefined);
     if (sent.reason === 'not_registered') return 'offline';
-    if (sent.status === 409 && sent.error === 'handoff_stopped') return 'stopped';
+    if (idStopped) return 'stopped';
     return sent.status === 409 ? 'not_ready' : 'rejected';
   }
   // The record stays `sending` if the store will not confirm it, which is enough to stop it from.
