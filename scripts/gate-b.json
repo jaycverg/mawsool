@@ -3455,6 +3455,10 @@
       },
       {
         "file": "test/presence.test.ts",
+        "name": "removes the note again when the person’s own call registered the phone while the write of the note was on its way"
+      },
+      {
+        "file": "test/presence.test.ts",
         "name": "writes the note when the 401 is answered first, and the person’s own call then registers the phone and clears it"
       },
       {
