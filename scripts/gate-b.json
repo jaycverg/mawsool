@@ -3285,5 +3285,201 @@
     "id": "the-disabled-statistics-box-keeps-its-text-readable",
     "sentence": "While the box to send the totals is unticked, the statistics box on the repeat check screen reads as unavailable (flat ground, dashed edge, not-allowed cursor, the box disabled) while its title and help text keep a contrast of 4.5:1 or better, with no fading by opacity",
     "browser": "repeat-check-statistics-help-stays-readable-while-the-box-is-disabled"
+  },
+  {
+    "id": "the-handoff-panel-keeps-its-own-attempt-so-a-store-that-stops-answering-cannot-hide-stop",
+    "sentence": "Whenever a hand-off request may have left the phone in this crisis, every later outcome on the crisis screen says it could not be confirmed (never that nothing was sent) and offers Stop, whatever the phone's store does afterwards, including when it breaks before the screen has read the first attempt's record and when it never answers a read again; Stop asks the server to delete exactly the note that was sent; the screen keeps what it sent in memory only, and the crisis screen never waits on it",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "is told of the record just before the request is issued"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "is not told when nothing was issued"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "keeps the first attempt when the store breaks before the screen ever reads it"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "forgets the attempt when it ends in offline, since the server holds nothing"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "forgets the attempt when it ends in not_ready, since the server holds nothing"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "forgets the attempt when it ends in rejected, since the server holds nothing"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "forgets the attempt when it ends in stopped, since the server holds nothing"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "keeps the attempt when a later press ends in unconfirmed, which says nothing about the earlier request"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "keeps the attempt when a later press ends in failed, which says nothing about the earlier request"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "keeps the attempt when a later press ends in invalid_number, which says nothing about the earlier request"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "marks the attempt sent when the server confirmed"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "ignores an outcome for a crisis it holds no attempt for"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "forgets only the note the server confirmed stopped"
+      },
+      {
+        "file": "test/crisis-handoff.test.ts",
+        "name": "shows the store’s own record for a crisis it lists and its own attempts for the rest"
+      },
+      {
+        "file": "test/crisis-handoff-panel.test.tsx",
+        "name": "panel (en) keeps Stop and never says nothing was sent after an attempt whose record the panel could not read back"
+      },
+      {
+        "file": "test/crisis-handoff-panel.test.tsx",
+        "name": "panel (ar) keeps Stop and never says nothing was sent after an attempt whose record the panel could not read back"
+      }
+    ]
+  },
+  {
+    "id": "after-a-confirmed-stop-the-consent-box-is-unticked",
+    "sentence": "After the person stops a hand-off note and the server confirms it, the consent box on the crisis screen is unticked and Send is disabled until it is ticked again, in Arabic and English",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/crisis-handoff-panel.test.tsx",
+        "name": "panel (en) unticks the consent box after a confirmed Stop"
+      },
+      {
+        "file": "test/crisis-handoff-panel.test.tsx",
+        "name": "panel (ar) unticks the consent box after a confirmed Stop"
+      }
+    ]
+  },
+  {
+    "id": "a-failed-sweep-leaves-only-a-fixed-message-and-the-database-code-in-the-job-queue",
+    "sentence": "When the scheduled sweep fails, the job queue's tables hold only the fixed message 'ticket sweep failed', the error's name and, for a database error, its SQLSTATE: no ticket id, no query, no bound value, no constraint name. The unit cases here prove the error handed to the queue; case 2b of gate:postgres proves what pg-boss stored, on real Postgres",
+    "project": "apps/api",
+    "tests": [
+      {
+        "file": "test/sweep-failure.test.ts",
+        "name": "is a fixed message and the database error code"
+      },
+      {
+        "file": "test/sweep-failure.test.ts",
+        "name": "shows the original error to the log through the request log’s serializer"
+      },
+      {
+        "file": "test/sweep-failure.test.ts",
+        "name": "carries no code for an error that is not a database error"
+      },
+      {
+        "file": "test/sweep-failure.test.ts",
+        "name": "runs a sweep that succeeds without an error"
+      }
+    ]
+  },
+  {
+    "id": "the-repeat-check-privacy-line-stays-in-view-with-a-message-in-the-finish-bar",
+    "sentence": "On the repeat check's totals screen at 390 by 844, with a message in the Finish bar, the line that says the answers stay on the phone, the message and the Finish button are all in view at first render without scrolling, at the same text size and the 44 px target",
+    "browser": "repeat-check-privacy-line-stays-in-view-with-a-message-in-the-finish-bar"
+  },
+  {
+    "id": "a-phone-the-server-forgot-is-not-read-again-until-the-person-registers-it",
+    "sentence": "After a background read of the phone's two choices is answered 401, the phone notes it and makes no further background read, at any start or when Settings opens, until a call the person makes has registered the phone again; a background read never registers the phone; Delete everything clears the note",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/presence.test.ts",
+        "name": "records the 401, and then makes no read on any later start"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "reads again once a call the person makes has registered the phone"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "keeps the note when the registration the person’s call tried failed"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "still answers not_recognised when the phone cannot keep the note, and makes no request when it cannot read it"
+      },
+      {
+        "file": "test/presence.test.ts",
+        "name": "checks the note after whether any choice is on"
+      },
+      {
+        "file": "test/prefs-and-data.test.ts",
+        "name": "leaves an empty store after a wipe with a value under every name in KEYS"
+      }
+    ],
+    "browser": "a-background-read-that-gets-401-registers-nothing-and-records-no-day"
+  },
+  {
+    "id": "registering-the-phone-inside-a-send-has-a-time-limit",
+    "sentence": "A server that accepts the connection for the phone's registration and never answers ends the call after the call limit as a failed send: nothing is sent as on, the send ends in the outcome its screen already has for a failed send, and the send's mark is removed",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/registration-limit.test.ts",
+        "name": "ends the call as not registered once the call limit has passed"
+      },
+      {
+        "file": "test/registration-limit.test.ts",
+        "name": "ends the group-totals send as a refused send, sends nothing, leaves the note as it was and clears the send’s mark"
+      },
+      {
+        "file": "test/registration-limit.test.ts",
+        "name": "ends the repeat check’s send as failed, sends no choice, and clears the send’s mark"
+      },
+      {
+        "file": "test/registration-limit.test.ts",
+        "name": "does not slow a registration that answers"
+      }
+    ]
+  },
+  {
+    "id": "two-tabs-cannot-erase-each-others-send-marks",
+    "sentence": "A second tab's start or end of a send for the same choice cannot erase the first tab's pending mark, so a read of the server's choices in either tab still leaves the phone's note alone while the first send is on its way; every start and end changes the snapshot a read compares with, and an end whose tick cannot be written keeps its pending mark",
+    "project": "apps/person",
+    "tests": [
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "keeps the first tab’s pending mark through a second tab’s whole send"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "keeps every mark when many sends in both tabs start together and end in any order"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "changes the tick on every start and every end"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "keeps the pending mark when the end tick cannot be written"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "does not start the send, and leaves no mark behind, when the tick cannot be written after the pending mark"
+      }
+    ]
   }
 ]

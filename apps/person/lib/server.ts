@@ -1,6 +1,7 @@
 import type { Locale } from '@mawsool/types';
-import { loadDeviceIdentity, loadOrCreateIdentity, personAuthorization, registerDevice, type DeviceIdentity, type RandomSource, type StorageAdapter } from '@mawsool/ui';
+import { loadDeviceIdentity, loadOrCreateIdentity, personAuthorization, registerDevice, type DeviceIdentity, type RandomSource, type RegistrationResult, type StorageAdapter } from '@mawsool/ui';
 import { KEYS } from './keys';
+import { within } from './within';
 
 export interface ServerDeps {
   storage: StorageAdapter;
@@ -40,11 +41,26 @@ export async function hasServerFootprint(storage: StorageAdapter): Promise<boole
   return (await storage.get<unknown>(KEYS.footprint)) !== undefined;
 }
 
+/** How long the registration of the phone, and then the call itself, may each take before the call ends as a failure (`offline`, or `not_registered` for the registration). */
+export const SERVER_CALL_PATIENCE_MS = 10_000;
+
+/**
+ * Registers the phone unless this page load already has. The registration has the same limit as the call it comes before: without it a server
+ * that accepts the connection and never answers would hold a choice send (and the mark that brackets it) for as long as the browser waits.
+ * A registration that runs out of time is a failed one, so nothing the call was to send is sent.
+ */
 async function ensureRegistered(deps: ServerDeps, identity: DeviceIdentity): Promise<boolean> {
   if (registered.get(deps.storage) === identity.id) return true;
-  const result = await registerDevice({ fetch: deps.fetch, apiUrl: deps.apiUrl, identity, locale: deps.locale });
+  const signal = AbortSignal.timeout(SERVER_CALL_PATIENCE_MS);
+  const result = await within<RegistrationResult>(
+    registerDevice({ fetch: (url, init) => deps.fetch(url, { ...init, signal }), apiUrl: deps.apiUrl, identity, locale: deps.locale }),
+    SERVER_CALL_PATIENCE_MS,
+    'failed',
+  );
   if (result === 'registered' || result === 'already_registered') {
     registered.set(deps.storage, identity.id);
+    // The person's own action has registered the phone: the server knows it again, so the background reads that stopped at a 401 may resume.
+    await deps.storage.remove(KEYS.serverForgotPhone).catch(() => undefined);
     return true;
   }
   return false;
@@ -96,7 +112,7 @@ async function callOnce<T>(deps: ServerDeps, method: 'GET' | 'POST' | 'PUT' | 'D
       method,
       headers: { authorization: personAuthorization(identity), ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(SERVER_CALL_PATIENCE_MS),
     });
   } catch {
     return { ok: false, reason: 'offline', status: null };

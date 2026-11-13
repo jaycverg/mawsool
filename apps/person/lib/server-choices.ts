@@ -32,53 +32,70 @@ export type LearnResult = 'unchanged' | 'turned_off' | 'not_recognised' | 'faile
  * was off. If the phone then turned its own note off from that answer, the choice would be on at the server with no way to turn it
  * off from Settings. So a send brackets itself with these marks, and a read that began before a send started, or that meets one still
  * pending, leaves that choice's note alone (`reconcileChoices`).
- *  - `gen` goes up when a send starts and again when it ends, whatever way it ends;
- *  - `pendingSince` (ms, wall clock) is set while a send is under way. A mark older than `PENDING_MS` is taken as abandoned (a tab
- *    closed mid-send), so a mark that could not be cleared never blocks the idle limit for ever.
+ *
+ * Two tabs share one store and each page has its own lock, so a mark that several sends update by reading it, changing it and writing it
+ * back would let one tab's write erase another's. Every write here therefore touches a key of its own and reads nothing first:
+ *  - a send writes `pending:<its random id>` (the time it started, ms, wall clock) when it starts and removes exactly that key when it ends, whatever
+ *    way it ends, so no other send's pending mark is ever touched. A mark older than `PENDING_MS` is taken as abandoned (a tab closed
+ *    mid-send), so a mark that could not be removed never blocks the idle limit for ever;
+ *  - `tick` is replaced by a fresh random value when any send starts and again when it ends, so a snapshot taken before either differs from the
+ *    store afterwards, whichever tab wrote last.
  */
-const MarkSchema = z.object({ gen: z.number().int().default(0), pendingSince: z.number().nullable().default(null) });
-const MarksSchema = z.object({ equity: MarkSchema.default({ gen: 0, pendingSince: null }), statistics: MarkSchema.default({ gen: 0, pendingSince: null }) });
-export type SendMarks = z.infer<typeof MarksSchema>;
+export interface ChoiceMark {
+  tick: string | null;
+  /** Send id to the time (ms) the send started, for every send that has marked its start and not removed the mark. */
+  pending: Record<string, number>;
+}
+export type SendMarks = Record<Choice, ChoiceMark>;
 const PENDING_MS = 2 * 60 * 1000;
+const tickKey = (choice: Choice) => `${KEYS.choiceSends}:${choice}:tick`;
+const pendingPrefix = (choice: Choice) => `${KEYS.choiceSends}:${choice}:pending:`;
 
 /** The marks as stored; none stored (or an unreadable value) reads as no send ever made. A store that will not answer throws. */
 export async function readSendMarks(storage: StorageAdapter): Promise<SendMarks> {
-  const parsed = MarksSchema.safeParse((await storage.get<unknown>(KEYS.choiceSends)) ?? {});
-  return parsed.success ? parsed.data : MarksSchema.parse({});
-}
-
-function changeMark(storage: StorageAdapter, choice: Choice, change: (mark: SendMarks[Choice]) => SendMarks[Choice]): Promise<void> {
-  return withStoreLock(storage, async () => {
-    const marks = await readSendMarks(storage);
-    await storage.set(KEYS.choiceSends, { ...marks, [choice]: change(marks[choice]) });
-  });
+  const keys = await storage.keys();
+  const read = async (choice: Choice): Promise<ChoiceMark> => {
+    const tick = z.string().safeParse(await storage.get<unknown>(tickKey(choice)));
+    const pending: Record<string, number> = {};
+    for (const key of keys.filter((name) => name.startsWith(pendingPrefix(choice)))) {
+      const started = z.number().safeParse(await storage.get<unknown>(key));
+      if (started.success) pending[key.slice(pendingPrefix(choice).length)] = started.data;
+    }
+    return { tick: tick.success ? tick.data : null, pending };
+  };
+  return { equity: await read('equity'), statistics: await read('statistics') };
 }
 
 /**
  * Runs `send`, a request that may turn `choice` on at the server together with the phone's note of it, between the two marks. When the
  * start mark cannot be written nothing is run (`started: false`): a send that cannot be marked could be undone by a read that
- * is answered a moment before it. The end mark is written however the send ends; if it cannot be, the start mark times out.
+ * is answered a moment before it. The end mark is written however the send ends; if it cannot be, the start mark stays and times out.
  */
 export async function withChoiceSend<T>(storage: StorageAdapter, choice: Choice, send: () => Promise<T>): Promise<{ started: true; value: T } | { started: false }> {
+  const pendingKey = `${pendingPrefix(choice)}${globalThis.crypto.randomUUID()}`;
+  const tick = () => storage.set(tickKey(choice), globalThis.crypto.randomUUID());
   try {
     // The wall clock, always: the screens' clocks can be the demo's care clock, and a mark stamped on one clock and read on another could
     // stay pending for ever or look abandoned while its send is live.
-    await changeMark(storage, choice, (mark) => ({ gen: mark.gen + 1, pendingSince: Date.now() }));
+    await storage.set(pendingKey, Date.now());
+    await tick();
   } catch {
+    await storage.remove(pendingKey).catch(() => undefined);
     return { started: false };
   }
   try {
     return { started: true, value: await send() };
   } finally {
-    await changeMark(storage, choice, (mark) => ({ gen: mark.gen + 1, pendingSince: null })).catch(() => undefined);
+    // The tick first: if it cannot be written the pending mark is kept, so a read that began before the send still meets it (until it times out).
+    if (await tick().then(() => true, () => false)) await storage.remove(pendingKey).catch(() => undefined);
   }
 }
 
 /** True when `choice` has had a send start, end or still under way since `before` was read: the answer of a read begun then is not to be trusted for it. */
 function sendSince(marks: SendMarks, before: SendMarks, choice: Choice): boolean {
   const mark = marks[choice];
-  const pending = mark.pendingSince !== null && Date.now() - mark.pendingSince < PENDING_MS;
-  return mark.gen !== before[choice].gen || pending;
+  const pending = Object.values(mark.pending).some((startedAt) => Date.now() - startedAt < PENDING_MS);
+  return mark.tick !== before[choice].tick || pending;
 }
 
 /** True when the UTC day `lastReached` is `OPT_IN_IDLE_LIMIT_DAYS` or more before the day of `now`, the server's own idle rule. */

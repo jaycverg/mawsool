@@ -211,6 +211,89 @@ describe('a background read never registers or re-registers the phone', () => {
   });
 });
 
+describe('a phone the server has forgotten is not asked again until the person’s own action registers it', () => {
+  it('records the 401, and then makes no read on any later start, on the same day or a later one, nor when Settings opens', async () => {
+    const p = phone({ equity: true, status: 401 });
+    expect(await keepSeenToday(p.deps)).toBe('not_recognised');
+    expect(p.data.get(KEYS.serverForgotPhone)).toEqual({ since: '2026-11-02' });
+    expect(p.requests).toEqual(['GET /me/opt-ins']);
+
+    p.state.now = new Date(MORNING.getTime() + 3 * DAY);
+    expect(await keepSeenToday(p.deps)).toBe('still_not_recognised');
+    expect(await keepSeenToday(p.deps)).toBe('still_not_recognised');
+    expect(await learnChoicesOnOpen(p.deps)).toBe('still_not_recognised');
+    expect(p.requests, 'not one more request, registration included').toEqual(['GET /me/opt-ins']);
+    expect(p.data.has(KEYS.lastSeenSent)).toBe(false);
+  });
+
+  it('reads again once a call the person makes has registered the phone, by its 401 retry or on a fresh page load, and not before', async () => {
+    const p = phone({ equity: true, status: 401 });
+    expect(await keepSeenToday(p.deps)).toBe('not_recognised');
+    expect(await keepSeenToday(p.deps)).toBe('still_not_recognised');
+
+    // The person sends something: the server answers 401 to the first call, the phone registers again and asks again, and the note goes.
+    let answers = 0;
+    const foreground = { ...p.deps.server, fetch: (async (url: string, init?: RequestInit) => {
+      const path = new URL(url).pathname;
+      p.requests.push(`${init?.method ?? 'GET'} ${path}`);
+      if (path === '/persons') return new Response('{}', { status: 201 });
+      answers += 1;
+      return new Response('{}', { status: answers === 1 ? 401 : 200 });
+    }) as unknown as typeof fetch };
+    forgetRegistration(p.storage);
+    expect((await callServer(foreground, 'POST', '/tickets', {})).ok).toBe(true);
+    expect(p.data.has(KEYS.serverForgotPhone), 'registered again, so the note is gone').toBe(false);
+
+    p.state.status = 200;
+    expect(await keepSeenToday(p.deps)).toBe('sent');
+    expect(p.requests.at(-1)).toBe('GET /me/opt-ins');
+
+    // A phone that is forgotten again is recorded again, and a fresh page load whose first call registers it clears the note too.
+    p.state.status = 401;
+    p.state.now = new Date(MORNING.getTime() + DAY);
+    expect(await keepSeenToday(p.deps)).toBe('not_recognised');
+    forgetRegistration(p.storage);
+    const fresh = { ...p.deps.server, fetch: (async () => new Response('{}', { status: 200 })) as unknown as typeof fetch };
+    expect((await callServer(fresh, 'GET', '/me/tickets')).ok).toBe(true);
+    expect(p.data.has(KEYS.serverForgotPhone)).toBe(false);
+  });
+
+  it('keeps the note when the registration the person’s call tried failed, so nothing is read for a phone the server still does not know', async () => {
+    const p = phone({ equity: true, status: 401 });
+    await keepSeenToday(p.deps);
+    forgetRegistration(p.storage);
+    const refused = { ...p.deps.server, fetch: (async () => new Response('{}', { status: 500 })) as unknown as typeof fetch };
+    expect((await callServer(refused, 'GET', '/me/tickets')).ok).toBe(false);
+    expect(p.data.has(KEYS.serverForgotPhone)).toBe(true);
+  });
+
+  it('still answers not_recognised when the phone cannot keep the note, and makes no request when it cannot read it', async () => {
+    const unwritable = phone({ equity: true, status: 401 });
+    const set = unwritable.storage.set.bind(unwritable.storage);
+    unwritable.storage.set = async (key, value) => {
+      if (key === KEYS.serverForgotPhone) throw new Error('storage write failed');
+      return set(key, value);
+    };
+    expect(await keepSeenToday(unwritable.deps)).toBe('not_recognised');
+    expect(unwritable.data.has(KEYS.serverForgotPhone)).toBe(false);
+
+    const unreadable = phone({ equity: true });
+    const get = unreadable.storage.get.bind(unreadable.storage);
+    unreadable.storage.get = (async (key: string) => {
+      if (key === KEYS.serverForgotPhone) throw new Error('storage read failed');
+      return get(key);
+    }) as typeof unreadable.storage.get;
+    expect(await keepSeenToday(unreadable.deps)).toBe('failed');
+    expect(unreadable.requests).toEqual([]);
+  });
+
+  it('checks the note after whether any choice is on, so a phone with none reads nothing either way', async () => {
+    const p = phone({ equity: false, statistics: false });
+    p.data.set(KEYS.serverForgotPhone, { since: '2026-11-01' });
+    expect(await keepSeenToday(p.deps)).toBe('no_opt_in');
+  });
+});
+
 describe('learning that the server switched a choice off', () => {
   /** 2026-11-02 is 180 days after this day: the day the server's idle rule falls on. */
   const IDLE_DAY = '2026-05-06';
