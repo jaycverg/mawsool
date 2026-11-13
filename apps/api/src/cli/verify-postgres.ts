@@ -1,6 +1,7 @@
 // What PGlite cannot show, checked against the real Compose Postgres (`pnpm gate:postgres`):
 //   1. several connections sweeping at once leave exactly one `overdue` event per ticket, and every due ticket gets one;
 //   2. pg-boss starts, the sweep's schedule exists, and one fire of the queue runs the sweep;
+//   2b. a sweep that fails leaves only a fixed message and the SQLSTATE in the job queue's tables, with no ticket id, query or constraint name;
 //   3. every migration, through the invite tables, is applied and leaves the tables, checks and indexes the code relies on;
 //   4. two connections spending the same signed-request nonce at once leave exactly one invite and one nonce;
 //   5. one real "Stop sharing" through the app: the log rows made from the note go, the others and the approved summary stay;
@@ -25,7 +26,7 @@ import { ManualClock } from '../clock';
 import { loadConfig } from '../config';
 import { connect, schema, type Db } from '../db/client';
 import { MIGRATIONS_FOLDER } from '../db/migrate';
-import { SWEEP_QUEUE, startJobs } from '../jobs';
+import { SWEEP_FAILED_MESSAGE, SWEEP_QUEUE, startJobs } from '../jobs';
 import { moveAdverseEvent, recordAdverseEvent } from '../adverse-events/service';
 import { actOnClinicLink, type ClinicLinkDeps } from '../clinic-links/service';
 import { acceptScreen, formatInviteCode } from '../inbound/service';
@@ -143,6 +144,32 @@ try {
     check((await overdue()).length - eventsBefore === dueAgain, `one fire of the queue ran the sweep: ${dueAgain} tickets marked overdue by the worker`);
   } finally {
     await jobs.stop();
+  }
+
+  // 2b. A sweep that fails leaves only the fixed message and the SQLSTATE in pg-boss's tables: the database refuses every overdue event, with the ticket
+  // id in the failing row and in the bound values, and no table of the queue's schema holds an id or a query afterwards.
+  await runSeed(db, cipher);
+  const dueForFailure = await open();
+  await db.execute(sql.raw("ALTER TABLE ticket_events ADD CONSTRAINT gate_no_overdue_events CHECK (to_state <> 'overdue') NOT VALID"));
+  const failureLog: unknown[] = [];
+  const failing = await startJobs({ databaseUrl: gateUrl.toString(), db, clock, log: { error: (...args: unknown[]) => failureLog.push(args), info: () => undefined } as never });
+  try {
+    await failing.boss.send(SWEEP_QUEUE, {});
+    const deadline = performance.now() + 40_000;
+    const stored = async () => (await migrationPool.query("SELECT output::text AS output FROM pgboss.job WHERE name = $1 AND output IS NOT NULL", [SWEEP_QUEUE])).rows.map((row) => row.output as string);
+    while (performance.now() < deadline && (await stored()).length === 0) await new Promise((resolve) => setTimeout(resolve, 500));
+    const outputs = await stored();
+    check(outputs.length > 0, 'the failed sweep left an output on its job row');
+    const queueTables = (await migrationPool.query("SELECT table_name FROM information_schema.columns WHERE table_schema = 'pgboss' AND column_name = 'output'")).rows.map((row) => row.table_name as string);
+    const queueText = (await Promise.all(queueTables.map(async (table) => (await migrationPool.query(`SELECT t::text AS row FROM pgboss."${table}" t WHERE t.name = $1`, [SWEEP_QUEUE])).rows.map((row) => row.row as string)))).flat().join('\n');
+    say(`failed sweep: ${outputs.length} job output(s), ${queueTables.join(', ')} searched, ${due.length} ticket ids looked for`);
+    check(outputs.every((output) => JSON.parse(output).message === SWEEP_FAILED_MESSAGE && JSON.parse(output).code === '23514' && JSON.parse(output).name === 'SweepFailedError'), 'every stored output is the fixed message, the error name and the SQLSTATE 23514');
+    check(!dueForFailure.some((id) => queueText.includes(id)), 'no table of the job queue holds a ticket id');
+    check(!/Failed query|params:|ticket_events|gate_no_overdue_events|Failing row/.test(queueText), 'and none holds a query, a table or constraint name or a failing row');
+    check(failureLog.length > 0, 'the failure was logged for the operator, through the logger the API gives the queue');
+  } finally {
+    await failing.stop();
+    await db.execute(sql.raw('ALTER TABLE ticket_events DROP CONSTRAINT gate_no_overdue_events'));
   }
 
   // 3. Migrations: all of them applied, the invite tables and their checks in place.

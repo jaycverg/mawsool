@@ -56,6 +56,11 @@ function sqlStateOf(error: unknown): string | undefined {
   return undefined;
 }
 
+/** The SQLSTATE of a database error, and undefined for any other error. */
+export function databaseErrorCode(error: unknown): string | undefined {
+  return isDatabaseError(error) ? sqlStateOf(error) : undefined;
+}
+
 /** The frame lines of a stack (`    at ...`); its header repeats the message, which may be the one that must not be logged. */
 function stackFrames(stack: string | undefined): string {
   return (stack ?? '')

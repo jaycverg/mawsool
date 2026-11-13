@@ -401,6 +401,7 @@ describe('nothing else writes the log with a number or a reminder\'s text', () =
         "cli/verify-postgres.ts: const say = (message: string) => console.log(`[gate:postgres] ${message}`);",
         "cli/verify-postgres.ts: const jobs = await startJobs({ databaseUrl: gateUrl.toString(), db, clock, log: { error: console.error, info: () => undefined } as never });",
         "jobs.ts: boss.on('error', (error) => options.log.error({ err: error }, 'job queue error'));",
+        "jobs.ts: options.log.error({ err: error }, 'ticket sweep failed');",
         "jobs.ts: if (result.marked > 0) options.log.info(result, 'tickets marked overdue');",
         "routes/auth.ts: deps.log.error({ err: error }, 'could not deliver the staff sign-in link');",
       ].sort(),
