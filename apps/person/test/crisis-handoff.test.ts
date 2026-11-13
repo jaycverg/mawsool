@@ -3,7 +3,7 @@ import type { Screening } from '@mawsool/types';
 import { describe, expect, it, vi } from 'vitest';
 import type { StorageAdapter } from '@mawsool/ui';
 import { createCrisisStore, isCrisisMark, type CrisisMark } from '../lib/crisis';
-import { buildHandoffPreview, handoffFor, handoffOffer, loadHandoffs, offerState, reloadHandoffs, sendHandoff, stopHandoff, type HandoffRecord } from '../lib/crisis-handoff';
+import { buildHandoffPreview, HandoffMemory, handoffFor, handoffOffer, loadHandoffs, offerState, reloadHandoffs, sendHandoff, stopHandoff, type HandoffRecord } from '../lib/crisis-handoff';
 import type { FlushResult } from '../lib/crisis-outbox';
 import { deleteDeviceData } from '../lib/device-data';
 import { forgetRegistration, hasServerFootprint } from '../lib/server';
@@ -610,6 +610,113 @@ describe('the records a screen keeps when a re-read of the store fails', () => {
 
     restore();
     expect(await loadHandoffs(s.store.storage), 'the store still holds the record the server has a note for').toEqual([first]);
+  });
+});
+
+describe('the attempts a screen remembers in memory', () => {
+  const record = (overrides: Partial<HandoffRecord> = {}): HandoffRecord => ({ handoffId: '22222222-2222-4222-8222-222222222222', crisisEventId: EVENT_ID, state: 'sending', startedAt: '2026-11-01T04:00:00.000Z', ...overrides });
+  /** The reads of the hand-off records throw from here on. */
+  const breakReads = (storage: StorageAdapter) => {
+    const get = storage.get.bind(storage);
+    storage.get = ((key: string) => (key === 'crisis:handoff' ? Promise.reject(new Error('storage read failed')) : get(key))) as typeof storage.get;
+  };
+
+  it('is told of the record just before the request is issued, with the id the request carries, and on a retry with the same id', async () => {
+    const s = setup('lost-reply');
+    const issued: HandoffRecord[] = [];
+    const deps = { ...s.deps, onIssue: (made: HandoffRecord) => void issued.push(made) };
+    expect(await sendHandoff(deps, input())).toBe('unconfirmed');
+    expect(await sendHandoff(deps, input({ earlierRecordHeld: true }))).toBe('unconfirmed');
+    expect(issued.map((made) => made.handoffId)).toEqual(posts(s.calls).map((call) => call.body!.handoffId));
+    expect(new Set(issued.map((made) => made.handoffId)).size, 'one id for both presses').toBe(1);
+  });
+
+  it('is not told when nothing was issued: no network, a queue that did not flush, a record the store would not take, an invalid number', async () => {
+    const issued = vi.fn();
+    const offline = setup();
+    expect(await sendHandoff({ ...offline.deps, onIssue: issued, isOnline: () => false }, input())).toBe('offline');
+    const notFlushed = setup('created', 'offline');
+    expect(await sendHandoff({ ...notFlushed.deps, onIssue: issued }, input())).toBe('offline');
+    const noRecord = setup();
+    noRecord.store.failures.write = true;
+    expect(await sendHandoff({ ...noRecord.deps, onIssue: issued }, input())).toBe('failed');
+    const badNumber = setup();
+    expect(await sendHandoff({ ...badNumber.deps, onIssue: issued }, input({ callbackInput: 'abc' }))).toBe('invalid_number');
+    expect(issued).not.toHaveBeenCalled();
+  });
+
+  it('keeps the first attempt when the store breaks before the screen ever reads it: Stop is still offered, every press says unconfirmed, and Stop works from the remembered id', async () => {
+    const s = setup('lost-reply');
+    const memory = new HandoffMemory();
+    const press = async (list: readonly HandoffRecord[], deps: typeof s.deps & { isOnline?: () => boolean }) => {
+      const outcome = await sendHandoff({ ...deps, patience: QUICK, onIssue: memory.issued }, input({ earlierRecordHeld: handoffFor(memory.merge(list), EVENT_ID) !== null }));
+      memory.settled(EVENT_ID, outcome);
+      return outcome;
+    };
+    // The screen read the store before any record existed.
+    const lastRead: HandoffRecord[] = [];
+    expect(await press(lastRead, s.deps)).toBe('unconfirmed');
+    const written = (await loadHandoff(s.store.storage))!;
+    expect(s.server.stored, 'the server did get the note').toBe(true);
+
+    breakReads(s.store.storage);
+    // The re-read after the press fails, so the screen falls back to the list it last read: empty.
+    const shown = memory.merge(await reloadHandoffs(s.store.storage, lastRead, QUICK.storeMs));
+    expect(shown, 'Stop is still offered, with the id the request carried').toEqual([{ ...written, state: 'sending' }]);
+
+    const second = await press(lastRead, { ...s.deps, isOnline: () => false });
+    const third = await press(lastRead, s.deps);
+    expect([second, third], 'neither says nothing was sent').toEqual(['unconfirmed', 'unconfirmed']);
+
+    expect(await stopHandoff({ server: s.serverDeps, patience: QUICK }, shown[0]!), 'the store cannot drop its record, so the person is told to try again').toBe('failed');
+    expect(s.server.stored, 'but the server deleted the note, which is what stops it').toBe(false);
+    expect(posts(s.calls), 'only the first press sent a request, the third could not write its record').toHaveLength(1);
+  });
+
+  it.each(['offline', 'not_ready', 'rejected', 'stopped'] as const)('forgets the attempt when it ends in %s, since the server holds nothing', (outcome) => {
+    const memory = new HandoffMemory();
+    memory.issued(record());
+    memory.settled(EVENT_ID, outcome);
+    expect(memory.merge([])).toEqual([]);
+  });
+
+  it.each(['unconfirmed', 'failed', 'invalid_number'] as const)('keeps the attempt when a later press ends in %s, which says nothing about the earlier request', (outcome) => {
+    const memory = new HandoffMemory();
+    memory.issued(record());
+    memory.settled(EVENT_ID, outcome);
+    expect(memory.merge([])).toEqual([record()]);
+  });
+
+  it('marks the attempt sent when the server confirmed, and a record from an earlier press is shown as sending until then', () => {
+    const memory = new HandoffMemory();
+    memory.issued(record({ state: 'sent' }));
+    expect(memory.merge([])[0]!.state, 'what is issued is not yet confirmed').toBe('sending');
+    memory.settled(EVENT_ID, 'sent');
+    expect(memory.merge([])[0]!.state).toBe('sent');
+  });
+
+  it('ignores an outcome for a crisis it holds no attempt for', () => {
+    const memory = new HandoffMemory();
+    memory.settled(EVENT_ID, 'sent');
+    expect(memory.merge([])).toEqual([]);
+  });
+
+  it('forgets only the note the server confirmed stopped', () => {
+    const memory = new HandoffMemory();
+    const other = record({ handoffId: '44444444-4444-4444-8444-444444444444', crisisEventId: OTHER_EVENT_ID });
+    memory.issued(record());
+    memory.issued(other);
+    memory.stopped(record().handoffId);
+    expect(memory.merge([])).toEqual([other]);
+  });
+
+  it('shows the store’s own record for a crisis it lists and its own attempts for the rest', () => {
+    const memory = new HandoffMemory();
+    memory.issued(record());
+    const stored = record({ state: 'sent', startedAt: '2026-11-01T04:30:00.000Z' });
+    const another = record({ handoffId: '44444444-4444-4444-8444-444444444444', crisisEventId: OTHER_EVENT_ID, state: 'sent' });
+    expect(memory.merge([stored, another])).toEqual([stored, another]);
+    expect(memory.merge([another])).toEqual([another, record()]);
   });
 });
 

@@ -45,6 +45,43 @@ export function reloadHandoffs(storage: StorageAdapter, previous: readonly Hando
   return within<readonly HandoffRecord[]>(loadHandoffs(storage), storeMs, previous);
 }
 
+/**
+ * What a screen remembers in memory about its own sends, per crisis event: the record of an attempt that was taken past the point where a request may have left
+ * the phone, until the attempt ends in a refusal or the note is stopped. The screen shows the records the store holds together with these (`merge`), so a store
+ * that breaks, or never answers a read again, after the attempt cannot hide Stop or make the next retry look like a first attempt. It is the screen's own copy
+ * and never written anywhere: the store stays the record, this only covers what the store can no longer be asked.
+ */
+export class HandoffMemory {
+  private readonly attempts = new Map<string, HandoffRecord>();
+
+  /** Wired to `SendDeps.onIssue`: the record the send is about to issue its request with. */
+  readonly issued = (record: HandoffRecord): void => {
+    this.attempts.set(record.crisisEventId, { ...record, state: 'sending' });
+  };
+
+  /**
+   * Settles the attempt for one crisis by its outcome: `sent` confirms it, `unconfirmed` keeps it as it is, and a refusal (`offline`, which on a first attempt
+   * is a phone that could not register, `not_ready`, `rejected`, `stopped`) forgets it, since the server holds nothing and the send removed the stored record
+   * too. `failed` and `invalid_number` end before anything is issued and leave an earlier attempt alone.
+   */
+  settled(crisisEventId: string, outcome: SendOutcome): void {
+    const held = this.attempts.get(crisisEventId);
+    if (!held) return;
+    if (outcome === 'sent') this.attempts.set(crisisEventId, { ...held, state: 'sent' });
+    else if (outcome === 'offline' || outcome === 'not_ready' || outcome === 'rejected' || outcome === 'stopped') this.attempts.delete(crisisEventId);
+  }
+
+  /** The person stopped this note and the server confirmed it. */
+  stopped(handoffId: string): void {
+    for (const [eventId, held] of this.attempts) if (held.handoffId === handoffId) this.attempts.delete(eventId);
+  }
+
+  /** What the store read, plus the attempts it does not show: the store's own record wins for a crisis it lists. */
+  merge(read: readonly HandoffRecord[]): HandoffRecord[] {
+    return [...read, ...[...this.attempts.values()].filter((held) => !read.some((record) => record.crisisEventId === held.crisisEventId))];
+  }
+}
+
 /** The record for one crisis event, or null. */
 export function handoffFor(records: readonly HandoffRecord[], crisisEventId: string | null): HandoffRecord | null {
   return crisisEventId === null ? null : (records.find((record) => record.crisisEventId === crisisEventId) ?? null);
@@ -128,6 +165,11 @@ export interface SendDeps {
   patience?: HandoffPatience;
   /** Whether the browser reports a network; when it says there is none the send stops before it writes or sends anything. */
   isOnline?: () => boolean;
+  /**
+   * Called with the record just before the request is issued: from here on the server may hold the note, whatever the store answers later.
+   * The screen keeps it in memory (`HandoffMemory.issued`), so it does not depend on a re-read of the store to know an attempt was made.
+   */
+  onIssue?: (record: HandoffRecord) => void;
 }
 
 /**
@@ -173,6 +215,7 @@ export async function sendHandoff(
   const record = await within(recordBeforeSend(deps, input.crisisEventId), storeMs, null);
   if (record === null) return earlier ? 'unconfirmed' : 'failed';
 
+  deps.onIssue?.(record);
   const sent = await within(callServer<CrisisHandoffReceipt>(deps.server, 'POST', '/me/crisis-handoffs', { handoffId: record.handoffId, crisisEventId: record.crisisEventId, consented: true, ...preview }), networkMs, null);
   // No answer in time: the server may or may not hold the note. The `sending` record stays, so the person can stop it and a retry reuses its id.
   if (sent === null) return 'unconfirmed';
