@@ -1570,6 +1570,12 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect(reads, 'the read was made once and not repeated after the 401').toEqual(['GET']);
     expect(await rawStoreKeys(page)).not.toContain('server:last-seen-sent');
     expect(await rawStoreKeys(page)).toContain('equity');
+    // The phone notes that the server did not know it, so the next start makes no further read until the person's own action registers it.
+    expect(await rawStoreKeys(page)).toContain('server:not-recognised');
+    await page.goto(`/${locale}/`);
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 1000)));
+    await expect.poll(() => [...inFlight].map((request) => `${request.method()} ${request.url()}`)).toEqual([]);
+    expect(reads, 'the next start made no read').toEqual(['GET']);
   },
 
   async 'reads-list-and-its-failure'({ page, locale, consoleGuard }) {

@@ -13,6 +13,8 @@ import { loadEquity } from './share';
  *  - `turned_off`: the server answered and had a choice off that the phone had on, which the phone now has off too;
  *  - `not_recognised`: the server answered 401, so it no longer knows this phone. Nothing on the phone changed, no day was
  *    recorded, and the phone was not registered again: a background read never makes the phone a new person;
+ *  - `still_not_recognised`: an earlier background read was answered 401 and no action of the person has registered the phone since
+ *    (`server:not-recognised`), so no request is made; each start would otherwise make one more that cannot succeed;
  *  - `anonymous`: an anonymous session sends nothing, so it is checked before the store is opened;
  *  - `crisis_open`: a crisis is open, and nothing here sits on or beside that screen;
  *  - `no_opt_in`: neither the equity nor the statistics choice is on, so there is nothing the server could turn off;
@@ -20,7 +22,7 @@ import { loadEquity } from './share';
  *  - `offline`: the browser says there is no network, so no request is made that would fail;
  *  - `failed`: the call did not go through, or the store would not answer; the day is not recorded, so the next start tries again.
  */
-export type PresenceResult = 'sent' | 'turned_off' | 'not_recognised' | 'anonymous' | 'crisis_open' | 'no_opt_in' | 'not_due' | 'offline' | 'failed';
+export type PresenceResult = 'sent' | 'turned_off' | 'not_recognised' | 'still_not_recognised' | 'anonymous' | 'crisis_open' | 'no_opt_in' | 'not_due' | 'offline' | 'failed';
 
 const StoredDaySchema = z.object({ day: z.string() });
 
@@ -75,11 +77,14 @@ async function check(deps: PresenceDeps, mode: 'daily' | 'open'): Promise<Presen
     if (await deps.crisisOpen(storage)) return 'crisis_open';
     const [equity, statistics] = await Promise.all([loadEquity(storage), loadOutcomeStatistics(storage)]);
     if (!equity.optIn && !statistics) return 'no_opt_in';
+    // A phone the server has forgotten stays forgotten until the person's own action registers it again (`ensureRegistered` clears the note): the read itself never registers.
+    if ((await storage.get<unknown>(KEYS.serverForgotPhone)) !== undefined) return 'still_not_recognised';
     const today = utcDay(deps.now());
     const stored = StoredDaySchema.safeParse(await storage.get<unknown>(KEYS.lastSeenSent));
     if (mode === 'daily' && stored.success && stored.data.day === today) return 'not_due';
     if (!deps.isOnline()) return 'offline';
     const learned = await learnServerChoices(deps.server, { lastReached: stored.success ? stored.data.day : null, now: deps.now() });
+    if (learned === 'not_recognised') await storage.set(KEYS.serverForgotPhone, { since: today }).catch(() => undefined);
     if (learned === 'not_recognised' || learned === 'failed') return learned;
     if (mode === 'daily') await storage.set(KEYS.lastSeenSent, { day: today }).catch(() => undefined);
     return learned === 'turned_off' ? 'turned_off' : 'sent';

@@ -14,6 +14,7 @@ export const KEYS = {
   lastSeenSent: 'server:last-seen-sent',
   optInsCleared: 'server:opt-ins-cleared',
   choiceSends: 'server:choice-sends',
+  serverForgotPhone: 'server:not-recognised',
   directory: 'directory',
   crisisBlock: 'crisis:block',
   crisisOutbox: 'crisis:outbox',

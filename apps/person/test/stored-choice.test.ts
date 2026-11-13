@@ -129,7 +129,7 @@ describe('the group-totals choice the phone only remembers is checked with the s
     const unmarkable = world();
     const set = unmarkable.storage.set.bind(unmarkable.storage);
     unmarkable.storage.set = async (key, value) => {
-      if (key === KEYS.choiceSends) throw new Error('storage write failed');
+      if (key.startsWith(KEYS.choiceSends)) throw new Error('storage write failed');
       return set(key, value);
     };
     await expect(sendEquityChoice(unmarkable.server, equityInput(true))).rejects.toThrow();
@@ -183,7 +183,7 @@ describe('the statistics choice the phone only remembers is checked with the ser
     const w = world({ statistics: true });
     const set = w.storage.set.bind(w.storage);
     w.storage.set = async (key, value) => {
-      if (key === KEYS.choiceSends) throw new Error('storage write failed');
+      if (key.startsWith(KEYS.choiceSends)) throw new Error('storage write failed');
       return set(key, value);
     };
     expect(await finishRepeatCheck(w.server, TICKET_ID, SCORES, true, TICKED)).toBe('note_failed');
@@ -243,8 +243,7 @@ describe('a read of the server’s choices that overlaps a send cannot turn the 
 
   it('does not let a mark left behind by a tab that closed mid-send block the idle limit for ever', async () => {
     const w = world({ statistics: true });
-    const marks = await readSendMarks(w.storage);
-    w.data.set(KEYS.choiceSends, { ...marks, statistics: { gen: marks.statistics.gen, pendingSince: NOW.getTime() - 3 * 60_000 } });
+    w.data.set(`${KEYS.choiceSends}:statistics:pending:abandoned`, NOW.getTime() - 3 * 60_000);
     expect(await learnServerChoices(w.server, READ)).toBe('turned_off');
     expect(await loadOutcomeStatistics(w.storage)).toBe(false);
   });
@@ -307,9 +306,106 @@ describe('a read of the server’s choices that overlaps a send cannot turn the 
   it('brackets a send with a start and an end mark whatever way it ends, and marks only the choice it can turn on', async () => {
     const w = world();
     await expect(withChoiceSend(w.storage, 'equity', async () => { throw new Error('boom'); })).rejects.toThrow('boom');
-    expect(await readSendMarks(w.storage)).toEqual({ equity: { gen: 2, pendingSince: null }, statistics: { gen: 0, pendingSince: null } });
+    const ended = await readSendMarks(w.storage);
+    expect(ended.equity.pending, 'the end mark removed the send’s own pending mark').toEqual({});
+    expect(ended.equity.tick, 'and the tick changed').not.toBeNull();
+    expect(ended.statistics, 'the other choice is not marked').toEqual({ tick: null, pending: {} });
     const during = await withChoiceSend(w.storage, 'statistics', async () => (await readSendMarks(w.storage)).statistics);
-    expect(during).toEqual({ started: true, value: { gen: 1, pendingSince: NOW.getTime() } });
+    expect(during).toMatchObject({ started: true, value: { tick: expect.any(String) } });
+    expect(Object.values((during as { value: { pending: Record<string, number> } }).value.pending)).toEqual([NOW.getTime()]);
+  });
+});
+
+describe('two tabs on one store cannot erase each other’s marks of a send', () => {
+  const READ = { lastReached: IDLE_DAY, now: NOW };
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  /** A second tab: the same stored data under an adapter of its own, so it shares no lock or memory with the first. */
+  const secondTab = (w: ReturnType<typeof world>) => ({ ...w.storage });
+
+  it('keeps the first tab’s pending mark through a second tab’s whole send, so a read in either tab still leaves the note alone', async () => {
+    const w = world({ statistics: true });
+    const tabB = secondTab(w);
+    w.hold.post = deferred();
+    const first = finishRepeatCheck(w.server, TICKET_ID, SCORES, true, { statisticsSource: 'ticked', now });
+    await vi.waitFor(() => expect(w.calls.some((call) => call.path.endsWith('/remeasure'))).toBe(true));
+    expect(Object.keys((await readSendMarks(w.storage)).statistics.pending)).toHaveLength(1);
+
+    // The second tab starts and ends a send of its own while the first is on its way.
+    expect(await withChoiceSend(tabB, 'statistics', async () => 'second')).toEqual({ started: true, value: 'second' });
+    expect(Object.keys((await readSendMarks(tabB)).statistics.pending), 'the first tab’s mark is still there').toHaveLength(1);
+
+    w.state.server.outcomeStatsOptIn = false; // a read answered "off" before the first tab's send reaches the server
+    expect(await learnServerChoices({ ...w.server, storage: tabB }, READ)).toBe('unchanged');
+    expect(await loadOutcomeStatistics(w.storage), 'the note stays on').toBe(true);
+
+    w.hold.post.release();
+    expect(await first).toBe('done');
+    expect((await readSendMarks(w.storage)).statistics.pending, 'the first send removes its own mark and only that').toEqual({});
+  });
+
+  it('keeps every mark when many sends in both tabs start together and end in any order', async () => {
+    const w = world();
+    const tabs = [w.storage, secondTab(w)];
+    // Every write waits a different moment, so the writes of the two tabs interleave.
+    tabs.forEach((tab, index) => {
+      const set = tab.set.bind(tab);
+      tab.set = async (key, value) => {
+        await new Promise((resolve) => setTimeout(resolve, ((key.length * 7 + index * 3) % 5) + 1));
+        return set(key, value);
+      };
+    });
+    const gates = Array.from({ length: 8 }, () => deferred());
+    const sends = gates.map((gate, index) => withChoiceSend(tabs[index % 2]!, 'equity', () => gate.promise));
+    await vi.waitFor(async () => expect(Object.keys((await readSendMarks(w.storage)).equity.pending)).toHaveLength(8));
+    [3, 0, 7, 1].forEach((index) => gates[index]!.release());
+    await vi.waitFor(async () => expect(Object.keys((await readSendMarks(w.storage)).equity.pending)).toHaveLength(4));
+    [2, 4, 5, 6].forEach((index) => gates[index]!.release());
+    await Promise.all(sends);
+    expect((await readSendMarks(w.storage)).equity.pending).toEqual({});
+  });
+
+  it('changes the tick on every start and every end, so a snapshot taken before either is never equal to the store after it', async () => {
+    const w = world();
+    const ticks = [(await readSendMarks(w.storage)).equity.tick];
+    const gate = deferred();
+    const send = withChoiceSend(w.storage, 'equity', () => gate.promise);
+    await vi.waitFor(async () => expect((await readSendMarks(w.storage)).equity.tick).not.toBe(ticks[0]));
+    ticks.push((await readSendMarks(w.storage)).equity.tick);
+    gate.release();
+    await send;
+    ticks.push((await readSendMarks(w.storage)).equity.tick);
+    expect(new Set(ticks).size).toBe(3);
+  });
+
+  it('keeps the pending mark when the end tick cannot be written, so a read that began earlier still meets it', async () => {
+    const w = world({ statistics: true });
+    const set = w.storage.set.bind(w.storage);
+    let writes = 0;
+    w.storage.set = async (key, value) => {
+      if (key.startsWith(KEYS.choiceSends) && (writes += 1) > 2) throw new Error('storage write failed');
+      return set(key, value);
+    };
+    expect(await withChoiceSend(w.storage, 'statistics', async () => 'sent')).toEqual({ started: true, value: 'sent' });
+    expect(Object.keys((await readSendMarks(w.storage)).statistics.pending), 'left to time out').toHaveLength(1);
+  });
+
+  it('does not start the send, and leaves no mark behind, when the tick cannot be written after the pending mark', async () => {
+    const w = world({ statistics: true });
+    const set = w.storage.set.bind(w.storage);
+    w.storage.set = async (key, value) => {
+      if (key.endsWith(':tick')) throw new Error('storage write failed');
+      return set(key, value);
+    };
+    const send = vi.fn(async () => 'sent');
+    expect(await withChoiceSend(w.storage, 'statistics', send)).toEqual({ started: false });
+    expect(send).not.toHaveBeenCalled();
+    expect((await readSendMarks(w.storage)).statistics.pending).toEqual({});
   });
 });
 
