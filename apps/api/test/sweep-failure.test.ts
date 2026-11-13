@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { DrizzleQueryError, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ManualClock } from '../src/clock';
@@ -10,6 +12,16 @@ import { createTestDb, type TestDb } from './helpers/db';
 function everythingOf(error: Error): string {
   const fields = (value: object) => Object.fromEntries(Object.getOwnPropertyNames(value).map((name) => [name, (value as Record<string, unknown>)[name]]));
   return JSON.stringify({ ...fields(error), cause: error.cause === undefined ? undefined : fields(error.cause as object), string: String(error) });
+}
+
+/**
+ * What pg-boss writes into `pgboss.job.output` for a handler that threw `error`: its own serialiser (`serialize-error`, resolved from pg-boss so it is the
+ * version pg-boss uses), the call `mapCompletionDataArg` makes for an object. Not a copy of pg-boss's rules, the library itself.
+ */
+async function storedByPgBoss(error: Error): Promise<Record<string, unknown>> {
+  const fromPgBoss = createRequire(createRequire(import.meta.url).resolve('pg-boss'));
+  const { serializeError } = (await import(pathToFileURL(fromPgBoss.resolve('serialize-error')).href)) as { serializeError: (value: object) => Record<string, unknown> };
+  return JSON.parse(JSON.stringify(serializeError(error))) as Record<string, unknown>;
 }
 
 describe('what a failed sweep hands the job queue', () => {
@@ -50,6 +62,11 @@ describe('what a failed sweep hands the job queue', () => {
     }
   });
 
+  it('is stored by pg-boss as exactly the fixed message and the code: no error name, no stack, nothing else', async () => {
+    const { rejected } = await realFailure();
+    expect(await storedByPgBoss(rejected!)).toEqual({ message: SWEEP_FAILED_MESSAGE, code: '23514' });
+  });
+
   it('shows the original error to the log through the request log’s serializer, which keeps no bound value either', async () => {
     const { log, rejected } = await realFailure();
     expect(log.error).toHaveBeenCalledTimes(1);
@@ -59,12 +76,13 @@ describe('what a failed sweep hands the job queue', () => {
     expect(rejected).toBeInstanceOf(SweepFailedError);
   });
 
-  it('carries no code for an error that is not a database error, and still no part of its message', () => {
+  it('carries no code for an error that is not a database error, and still no part of its message', async () => {
     const failure = sweepFailure(new TypeError('cannot read the ticket 5f0d0f0e-0000-4000-8000-000000000000'));
     expect(failure.message).toBe(SWEEP_FAILED_MESSAGE);
     expect('code' in failure).toBe(false);
     expect(everythingOf(failure)).not.toContain('5f0d0f0e');
     expect(everythingOf(sweepFailure('a string, not an error'))).not.toContain('a string');
+    expect(await storedByPgBoss(failure), 'a failure with no code is stored as the message alone').toEqual({ message: SWEEP_FAILED_MESSAGE });
   });
 
   it('runs a sweep that succeeds without an error and says how many it marked', async () => {

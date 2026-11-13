@@ -1,7 +1,7 @@
 // What PGlite cannot show, checked against the real Compose Postgres (`pnpm gate:postgres`):
 //   1. several connections sweeping at once leave exactly one `overdue` event per ticket, and every due ticket gets one;
 //   2. pg-boss starts, the sweep's schedule exists, and one fire of the queue runs the sweep;
-//   2b. a sweep that fails leaves only a fixed message and the SQLSTATE in the job queue's tables, with no ticket id, query or constraint name;
+//   2b. a sweep that fails leaves only a fixed message and the SQLSTATE in the job queue's tables, with no ticket id, query, constraint name, error name or stack;
 //   3. every migration, through the invite tables, is applied and leaves the tables, checks and indexes the code relies on;
 //   4. two connections spending the same signed-request nonce at once leave exactly one invite and one nonce;
 //   5. one real "Stop sharing" through the app: the log rows made from the note go, the others and the approved summary stay;
@@ -163,9 +163,13 @@ try {
     const queueTables = (await migrationPool.query("SELECT table_name FROM information_schema.columns WHERE table_schema = 'pgboss' AND column_name = 'output'")).rows.map((row) => row.table_name as string);
     const queueText = (await Promise.all(queueTables.map(async (table) => (await migrationPool.query(`SELECT t::text AS row FROM pgboss."${table}" t WHERE t.name = $1`, [SWEEP_QUEUE])).rows.map((row) => row.row as string)))).flat().join('\n');
     say(`failed sweep: ${outputs.length} job output(s), ${queueTables.join(', ')} searched, ${due.length} ticket ids looked for`);
-    check(outputs.every((output) => JSON.parse(output).message === SWEEP_FAILED_MESSAGE && JSON.parse(output).code === '23514' && JSON.parse(output).name === 'SweepFailedError'), 'every stored output is the fixed message, the error name and the SQLSTATE 23514');
+    // jsonb does not keep key order, so the output is read back and compared by its sorted entries.
+    const entriesOf = (output: string) => JSON.stringify(Object.entries(JSON.parse(output) as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)));
+    const expectedEntries = JSON.stringify([['code', '23514'], ['message', SWEEP_FAILED_MESSAGE]]);
+    check(outputs.every((output) => entriesOf(output) === expectedEntries), 'every stored output is exactly the fixed message and the SQLSTATE 23514, with no other key');
     check(!dueForFailure.some((id) => queueText.includes(id)), 'no table of the job queue holds a ticket id');
     check(!/Failed query|params:|ticket_events|gate_no_overdue_events|Failing row/.test(queueText), 'and none holds a query, a table or constraint name or a failing row');
+    check(!/SweepFailedError|\.[jt]s:\d+|\n\s+at /.test(queueText), 'and none holds the error name or a stack frame');
     check(failureLog.length > 0, 'the failure was logged for the operator, through the logger the API gives the queue');
   } finally {
     await failing.stop();
