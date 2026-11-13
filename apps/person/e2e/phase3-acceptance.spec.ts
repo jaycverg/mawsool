@@ -171,6 +171,24 @@ async function stubSeenTicket(page: Page, locale: Locale, ticketConsentLive = tr
   return id;
 }
 
+/** WCAG contrast of an element's text against the background it is drawn on, with any fading by opacity of it or an ancestor counted. */
+const contrastOf = (page: Page, selector: string) =>
+  page.evaluate((text) => {
+    const channels = (value: string) => value.match(/[\d.]+/g)!.map(Number) as [number, number, number];
+    const linear = (value: number) => (value / 255 <= 0.03928 ? value / 255 / 12.92 : ((value / 255 + 0.055) / 1.055) ** 2.4);
+    const luminance = ([r, g, b]: [number, number, number]) => 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+    const element = document.querySelector(text)!;
+    let opacity = 1;
+    for (let node: Element | null = element; node; node = node.parentElement) opacity *= Number(getComputedStyle(node).opacity);
+    let backdrop: Element | null = element;
+    while (backdrop && getComputedStyle(backdrop).backgroundColor === 'rgba(0, 0, 0, 0)') backdrop = backdrop.parentElement;
+    const back = channels(getComputedStyle(backdrop!).backgroundColor);
+    const fore = channels(getComputedStyle(element).color);
+    const shown = fore.map((value, i) => value * opacity + back[i]! * (1 - opacity)) as [number, number, number];
+    const [light, dark] = [luminance(shown), luminance(back)].sort((a, b) => b - a);
+    return { ratio: (light! + 0.05) / (dark! + 0.05), opacity };
+  }, selector);
+
 /** The repeat check taken through the screens: the PHQ-9 and the GAD-7, every answer "not at all", ending on the totals. */
 async function takeRepeatCheck(page: Page, locale: Locale, id: string): Promise<void> {
   await page.getByRole('link', { name: msg(locale, 'ticket.remeasureStart'), exact: true }).click();
@@ -1347,6 +1365,10 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await page.goto(`/${locale}/settings/`);
     await expect(page.locator('[data-opt-ins-cleared="equity"]')).toHaveText(msg(locale, 'settings.optInsClearedEquity'));
     await expect(page.locator('[data-panel="equity"]')).toHaveCount(0);
+    // The note takes the muted colour of the help text beside it, and reads at 4.5:1 or better on its card.
+    const helpText = page.locator('[data-panel="reminders"] p.t-body.text-muted').first();
+    await expect(page.locator('[data-opt-ins-cleared="equity"]')).toHaveCSS('color', await helpText.evaluate((node) => getComputedStyle(node).color));
+    expect((await contrastOf(page, '[data-opt-ins-cleared="equity"]')).ratio, 'the note reads at 4.5:1 or better').toBeGreaterThanOrEqual(4.5);
 
     // It is said once: the next visit shows nothing about it, and the choice is still off.
     await page.goto(`/${locale}/settings/`);
@@ -2258,6 +2280,49 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     expect(button.height, 'the button keeps its 44 px target').toBeGreaterThanOrEqual(44);
   },
 
+  async 'repeat-check-privacy-line-stays-in-view-with-a-message-in-the-finish-bar'({ page, context, locale }) {
+    await installFailingIndexedDb(page);
+    await visitOnline(page, locale);
+    const id = await stubSeenTicket(page, locale);
+    await context.clock.setFixedTime(new Date(SEEN_AT_MS + SIX_WEEKS_MS));
+    await page.goto(`/${locale}/ticket/?id=${id}`);
+    await takeRepeatCheck(page, locale, id);
+    await page.locator('[data-control="share-totals"]').check();
+    await page.locator('[data-control="count-in-statistics"]').check();
+    await setIdbMode(page, 'refuse-writes');
+    await page.locator('[data-control="finish-remeasure"]').click();
+    const message = page.locator('[data-note-failed]');
+    await expect(message).toHaveText(msg(locale, 'remeasure.statisticsNoteFailed'));
+
+    // At first render, with no scrolling, the line that says the answers stay on the phone, the message and Finish are all on the screen, and the bar covers none of the line.
+    const seen = await page.evaluate(() => {
+      const line = document.querySelector('[data-stays-note]')!;
+      const bar = document.querySelector('[data-finish-bar]')!.getBoundingClientRect();
+      const box = line.getBoundingClientRect();
+      const hit = (x: number, y: number) => line.contains(document.elementFromPoint(x, y));
+      return {
+        scrolled: window.scrollY,
+        height: window.innerHeight,
+        line: { top: box.top, bottom: box.bottom, text: line.textContent, fontSize: parseFloat(getComputedStyle(line).fontSize) },
+        barTop: bar.top,
+        barHeight: bar.height,
+        reachable: [hit(box.left + 2, box.top + 2), hit(box.right - 2, box.top + 2), hit((box.left + box.right) / 2, (box.top + box.bottom) / 2), hit(box.left + 2, box.bottom - 2), hit(box.right - 2, box.bottom - 2)],
+      };
+    });
+    expect(seen.scrolled, 'the page was not scrolled to show it').toBe(0);
+    expect(seen.line.text).toBe(msg(locale, 'remeasure.stays'));
+    expect(seen.line.top, 'the line starts inside the viewport').toBeGreaterThanOrEqual(0);
+    expect(seen.line.bottom, 'the line ends above the bar').toBeLessThanOrEqual(seen.barTop);
+    expect(seen.reachable, 'nothing sits over any part of the line').toEqual([true, true, true, true, true]);
+    expect(seen.line.fontSize, 'the line keeps its text size').toBe(13);
+    const note = (await message.boundingBox())!;
+    expect(note.y, 'the message starts inside the bar, in view').toBeGreaterThanOrEqual(seen.barTop);
+    expect(note.y + note.height, 'the message ends inside the viewport').toBeLessThanOrEqual(seen.height);
+    const button = (await page.locator('[data-control="finish-remeasure"]').boundingBox())!;
+    expect(button.y + button.height, 'Finish ends inside the viewport').toBeLessThanOrEqual(seen.height);
+    expect(button.height, 'Finish keeps its 44 px target').toBeGreaterThanOrEqual(44);
+  },
+
   async 'statistics-note-lost-reply-keeps-the-settings-turn-off-visible'({ page, context, locale, consoleGuard }) {
     await visitOnline(page, locale);
     const id = await stubSeenTicket(page, locale);
@@ -2298,23 +2363,7 @@ const CASES: Record<string, (ctx: Context) => Promise<void>> = {
     await expect(box).toBeDisabled();
     await expect(choice).toHaveCSS('cursor', 'not-allowed');
     await expect(choice).toHaveAttribute('data-disabled', '');
-    /** WCAG contrast of an element's text against the background it is drawn on, with any fading by opacity of it or an ancestor counted. */
-    const contrast = (selector: string) =>
-      page.evaluate((text) => {
-        const channels = (value: string) => value.match(/[\d.]+/g)!.map(Number) as [number, number, number];
-        const linear = (value: number) => (value / 255 <= 0.03928 ? value / 255 / 12.92 : ((value / 255 + 0.055) / 1.055) ** 2.4);
-        const luminance = ([r, g, b]: [number, number, number]) => 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
-        const element = document.querySelector(text)!;
-        let opacity = 1;
-        for (let node: Element | null = element; node; node = node.parentElement) opacity *= Number(getComputedStyle(node).opacity);
-        let backdrop: Element | null = element;
-        while (backdrop && getComputedStyle(backdrop).backgroundColor === 'rgba(0, 0, 0, 0)') backdrop = backdrop.parentElement;
-        const back = channels(getComputedStyle(backdrop!).backgroundColor);
-        const fore = channels(getComputedStyle(element).color);
-        const shown = fore.map((value, i) => value * opacity + back[i]! * (1 - opacity)) as [number, number, number];
-        const [light, dark] = [luminance(shown), luminance(back)].sort((a, b) => b - a);
-        return { ratio: (light! + 0.05) / (dark! + 0.05), opacity };
-      }, selector);
+    const contrast = (selector: string) => contrastOf(page, selector);
     const help = await contrast('label:has([data-control="count-in-statistics"]) .t-small');
     const title = await contrast('label:has([data-control="count-in-statistics"]) .font-semibold');
     expect(help.opacity, 'the help is not faded').toBe(1);
