@@ -27,15 +27,14 @@ export type CallResult<T> =
     };
 
 const registered = new WeakMap<StorageAdapter, string>();
-const registrations = new WeakMap<StorageAdapter, number>();
 
 /**
- * How many times this page load has registered the phone (a call the person made, never a background read). A background read
- * takes the number before it asks and compares it after a 401: a different number means the person's own call registered the
- * phone meanwhile, so the 401 is about the phone as it was before and says nothing about it now, whichever of the two finished first.
+ * Whether the person's own calls have registered the phone in this page load. A background read that is answered 401 in such a page load
+ * says nothing the person's registration did not just answer: the server knew the phone a moment ago, or the read overtook the registration
+ * at the server, so the read does not note the phone as forgotten, whichever of the two finished first.
  */
-export function registrationCount(storage: StorageAdapter): number {
-  return registrations.get(storage) ?? 0;
+export function registeredThisPageLoad(storage: StorageAdapter): boolean {
+  return registered.has(storage);
 }
 
 /**
@@ -69,7 +68,6 @@ async function ensureRegistered(deps: ServerDeps, identity: DeviceIdentity): Pro
   );
   if (result === 'registered' || result === 'already_registered') {
     registered.set(deps.storage, identity.id);
-    registrations.set(deps.storage, registrationCount(deps.storage) + 1);
     // The person's own action has registered the phone: the server knows it again, so the background reads that stopped at a 401 may resume.
     await deps.storage.remove(KEYS.serverForgotPhone).catch(() => undefined);
     return true;

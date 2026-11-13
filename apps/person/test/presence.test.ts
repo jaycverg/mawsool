@@ -251,7 +251,9 @@ describe('a phone the server has forgotten is not asked again until the personâ€
     // A phone that is forgotten again is recorded again, and a fresh page load whose first call registers it clears the note too.
     p.state.status = 401;
     p.state.now = new Date(MORNING.getTime() + DAY);
+    forgetRegistration(p.storage);
     expect(await keepSeenToday(p.deps)).toBe('not_recognised');
+    expect(p.data.get(KEYS.serverForgotPhone), 'a page load whose own calls have not registered the phone notes the 401').toEqual({ since: '2026-11-03' });
     forgetRegistration(p.storage);
     const fresh = { ...p.deps.server, fetch: (async () => new Response('{}', { status: 200 })) as unknown as typeof fetch };
     expect((await callServer(fresh, 'GET', '/me/tickets')).ok).toBe(true);
@@ -374,11 +376,20 @@ describe('a phone the server has forgotten is not asked again until the personâ€
     expect(p.data.has(KEYS.serverForgotPhone), 'the registration clears it').toBe(false);
   });
 
-  it('keeps the note of a 401 when the phone was registered by the personâ€™s call before the read began, since the registration says nothing of a later reset', async () => {
+  it('leaves no note either when the personâ€™s own call had registered the phone before the read began in the same page load', async () => {
     const p = phone({ equity: true, status: 401 });
-    expect((await callServer({ ...p.deps.server, fetch: (async (url: string) => new Response('{}', { status: new URL(url).pathname === '/persons' ? 201 : 200 })) as unknown as typeof fetch }, 'GET', '/me/tickets')).ok).toBe(true);
+    const noteWrites: string[] = [];
+    const set = p.storage.set.bind(p.storage);
+    p.storage.set = async (key, value) => {
+      if (key === KEYS.serverForgotPhone) noteWrites.push(key);
+      return set(key, value);
+    };
+    const registering = { ...p.deps.server, fetch: (async (url: string) => new Response('{}', { status: new URL(url).pathname === '/persons' ? 201 : 200 })) as unknown as typeof fetch };
+    expect((await callServer(registering, 'GET', '/me/tickets')).ok).toBe(true);
     expect(await keepSeenToday(p.deps)).toBe('not_recognised');
-    expect(p.data.get(KEYS.serverForgotPhone)).toEqual({ since: '2026-11-02' });
+    expect(noteWrites).toEqual([]);
+    expect(p.data.has(KEYS.serverForgotPhone)).toBe(false);
+    expect(p.data.has(KEYS.lastSeenSent)).toBe(false);
   });
 
   it('checks the note after whether any choice is on, so a phone with none reads nothing either way', async () => {
