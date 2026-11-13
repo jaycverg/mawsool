@@ -3126,7 +3126,7 @@
   },
   {
     "id": "a-lost-statistics-reply-keeps-the-settings-turn-off",
-    "sentence": "When the reply to a repeat check sent with the statistics choice never arrives but the server did take the choice, the phone keeps its note that the choice may be on and Settings, which asks the real server, still shows the statistics panel with its turn-off; and a read of the server's choices that overlaps a send never leaves the choice on at the server and off on the phone",
+    "sentence": "When the reply to a repeat check sent with the statistics choice never arrives but the server did take the choice, the phone keeps its note that the choice may be on and Settings, which asks the real server, still shows the statistics panel with its turn-off; and a read of the server's choices that overlaps a send never leaves the choice on at the server and off on the phone, in one tab too: a send that starts while a read is being brought into line marks itself only after it",
     "project": "apps/person",
     "tests": [
       {
@@ -3168,6 +3168,18 @@
       {
         "file": "test/stored-choice.test.ts",
         "name": "brackets a send with a start and an end mark whatever way it ends"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "lets a repeat check that starts while a reconcile is in its locked section mark itself only after it, so the reconcile cannot turn off the note the send writes"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "writes the start marks only when the lock is free, and runs nothing before them"
+      },
+      {
+        "file": "test/stored-choice.test.ts",
+        "name": "writes the end marks only when the lock is free, so the pending mark stays until then"
       }
     ],
     "browser": "statistics-note-lost-reply-keeps-the-settings-turn-off-visible"

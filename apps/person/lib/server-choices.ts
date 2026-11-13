@@ -70,24 +70,33 @@ export async function readSendMarks(storage: StorageAdapter): Promise<SendMarks>
  * Runs `send`, a request that may turn `choice` on at the server together with the phone's note of it, between the two marks. When the
  * start mark cannot be written nothing is run (`started: false`): a send that cannot be marked could be undone by a read that
  * is answered a moment before it. The end mark is written however the send ends; if it cannot be, the start mark stays and times out.
+ *
+ * Both mark writes (the start and the end) run inside `withStoreLock`, as `reconcileChoices` does for its whole read of the marks, the
+ * notes and its turn-off: in one tab a send that starts while a reconcile is under way therefore marks itself only after it, so
+ * the reconcile never turns off a note the send is about to be written on. `send` itself runs outside the lock (it makes a request).
+ * The marks are keys of the send's own so that a second tab, which has a lock of its own, cannot erase them.
  */
 export async function withChoiceSend<T>(storage: StorageAdapter, choice: Choice, send: () => Promise<T>): Promise<{ started: true; value: T } | { started: false }> {
   const pendingKey = `${pendingPrefix(choice)}${globalThis.crypto.randomUUID()}`;
   const tick = () => storage.set(tickKey(choice), globalThis.crypto.randomUUID());
   try {
-    // The wall clock, always: the screens' clocks can be the demo's care clock, and a mark stamped on one clock and read on another could
-    // stay pending for ever or look abandoned while its send is live.
-    await storage.set(pendingKey, Date.now());
-    await tick();
+    await withStoreLock(storage, async () => {
+      // The wall clock, always: the screens' clocks can be the demo's care clock, and a mark stamped on one clock and read on another could
+      // stay pending for ever or look abandoned while its send is live.
+      await storage.set(pendingKey, Date.now());
+      await tick();
+    });
   } catch {
-    await storage.remove(pendingKey).catch(() => undefined);
+    await withStoreLock(storage, () => storage.remove(pendingKey)).catch(() => undefined);
     return { started: false };
   }
   try {
     return { started: true, value: await send() };
   } finally {
     // The tick first: if it cannot be written the pending mark is kept, so a read that began before the send still meets it (until it times out).
-    if (await tick().then(() => true, () => false)) await storage.remove(pendingKey).catch(() => undefined);
+    await withStoreLock(storage, async () => {
+      if (await tick().then(() => true, () => false)) await storage.remove(pendingKey).catch(() => undefined);
+    });
   }
 }
 
