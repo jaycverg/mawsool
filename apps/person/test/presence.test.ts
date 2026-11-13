@@ -287,6 +287,65 @@ describe('a phone the server has forgotten is not asked again until the person�
     expect(unreadable.requests).toEqual([]);
   });
 
+  /** A page load whose background read is held until `answer401` is called, and whose person's own call is a ticket read that registers the phone. */
+  function onePageLoad() {
+    const p = phone({ equity: true });
+    let answer401!: () => void;
+    const held = new Promise<void>((resolve) => {
+      answer401 = resolve;
+    });
+    let readAsked!: () => void;
+    const asked = new Promise<void>((resolve) => {
+      readAsked = resolve;
+    });
+    const fetchFn = (async (url: string, init?: RequestInit) => {
+      const path = new URL(url).pathname;
+      p.requests.push(`${init?.method ?? 'GET'} ${path}`);
+      if (path === '/persons') return new Response('{}', { status: 201 });
+      if (path === '/me/opt-ins') {
+        readAsked();
+        await held;
+        return new Response('{}', { status: 401 });
+      }
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const server = { ...p.deps.server, fetch: fetchFn };
+    return { p, deps: { ...p.deps, server }, asked, answer401 };
+  }
+
+  it('leaves no note when the person’s own call registered the phone while the read was on its way, and reads again at the next start', async () => {
+    const { p, deps, asked, answer401 } = onePageLoad();
+    const read = keepSeenToday(deps);
+    await asked;
+    expect((await callServer(deps.server, 'GET', '/me/tickets')).ok).toBe(true);
+    expect(p.requests).toEqual(['GET /me/opt-ins', 'POST /persons', 'GET /me/tickets']);
+    answer401();
+    expect(await read).toBe('not_recognised');
+    expect(p.data.has(KEYS.serverForgotPhone), 'the registration came first, so the late 401 writes no note').toBe(false);
+    expect(p.data.has(KEYS.lastSeenSent)).toBe(false);
+
+    p.state.status = 200;
+    expect(await keepSeenToday(p.deps)).toBe('sent');
+  });
+
+  it('writes the note when the 401 is answered first, and the person’s own call then registers the phone and clears it', async () => {
+    const { p, deps, asked, answer401 } = onePageLoad();
+    const read = keepSeenToday(deps);
+    await asked;
+    answer401();
+    expect(await read).toBe('not_recognised');
+    expect(p.data.get(KEYS.serverForgotPhone), 'no call of the person’s own yet, so the note stands').toEqual({ since: '2026-11-02' });
+    expect((await callServer(deps.server, 'GET', '/me/tickets')).ok).toBe(true);
+    expect(p.data.has(KEYS.serverForgotPhone), 'the registration clears it').toBe(false);
+  });
+
+  it('keeps the note of a 401 when the phone was registered by the person’s call before the read began, since the registration says nothing of a later reset', async () => {
+    const p = phone({ equity: true, status: 401 });
+    expect((await callServer({ ...p.deps.server, fetch: (async (url: string) => new Response('{}', { status: new URL(url).pathname === '/persons' ? 201 : 200 })) as unknown as typeof fetch }, 'GET', '/me/tickets')).ok).toBe(true);
+    expect(await keepSeenToday(p.deps)).toBe('not_recognised');
+    expect(p.data.get(KEYS.serverForgotPhone)).toEqual({ since: '2026-11-02' });
+  });
+
   it('checks the note after whether any choice is on, so a phone with none reads nothing either way', async () => {
     const p = phone({ equity: false, statistics: false });
     p.data.set(KEYS.serverForgotPhone, { since: '2026-11-01' });
