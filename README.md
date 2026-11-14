@@ -13,6 +13,7 @@ real people**: see [Limitations](docs/limitations.md).
 
 | Document                                                     | What it covers                                                                     |
 | ------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| [Presentation deck](https://claude.ai/artifact/KGqvadTVZmvEAYxm1veNDB) | The 15-slide pitch: problem, idea, the three apps, safety, privacy, AI use, architecture, checks, limits |
 | [Technical documentation](docs/technical-documentation.md)   | Architecture, flows, ticket lifecycle, privacy, AI use, security, API, testing, how to run it |
 | [Assumptions](docs/assumptions.md)                           | What the prototype takes for granted: clinical, local services, privacy, technology, demo |
 | [Limitations](docs/limitations.md)                           | What stands between it and real use, what is mocked, and the known gaps            |
