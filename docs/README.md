@@ -1,5 +1,13 @@
 # Docs
 
+Submission documents:
+
+- [`technical-documentation.md`](technical-documentation.md): architecture, flows, ticket lifecycle, privacy, AI use, security, API, testing and how to run it.
+- [`assumptions.md`](assumptions.md): what the prototype takes for granted, and what would change if an assumption were wrong.
+- [`limitations.md`](limitations.md): what stands between the prototype and real use, what is mocked, and the known gaps.
+
+Topic notes:
+
 - [`safe-messaging-checklist.md`](safe-messaging-checklist.md): a self-check of the crisis copy, and the copy still waiting for clinical review.
 - [`inbound-screens.md`](inbound-screens.md): how a front door (TAMM, a health centre, a school) signs and sends a positive screen, and what comes back.
 
