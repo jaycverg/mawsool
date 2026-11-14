@@ -2,6 +2,7 @@
 
 Submission documents:
 
+- [Presentation deck](https://claude.ai/artifact/KGqvadTVZmvEAYxm1veNDB): the 15-slide pitch, with speaker notes.
 - [`technical-documentation.md`](technical-documentation.md): architecture, flows, ticket lifecycle, privacy, AI use, security, API, testing and how to run it.
 - [`assumptions.md`](assumptions.md): what the prototype takes for granted, and what would change if an assumption were wrong.
 - [`limitations.md`](limitations.md): what stands between the prototype and real use, what is mocked, and the known gaps.
