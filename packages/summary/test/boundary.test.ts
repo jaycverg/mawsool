@@ -2,17 +2,28 @@ import { ESLint } from 'eslint';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 const ROOT = resolve(__dirname, '..', '..', '..');
 
+/**
+ * One ESLint for every case, loaded before them: the first load of the repo's config (typescript-eslint and the React
+ * plugins) is the slow part, and on a cold CI runner it alone passed a test's 5-second limit.
+ */
+let eslint: ESLint;
+
 async function boundaryErrors(code: string, filePath: string) {
-  const eslint = new ESLint({ cwd: ROOT });
   const [result] = await eslint.lintText(code, { filePath: resolve(ROOT, filePath) });
   return result!.messages.filter((message) => message.ruleId === 'no-restricted-imports');
 }
 
 describe('the LLM import boundary', () => {
+  beforeAll(async () => {
+    eslint = new ESLint({ cwd: ROOT });
+    // Loads the config and its plugins now, so no case pays for it.
+    await eslint.calculateConfigForFile(resolve(ROOT, 'apps/api/src/example.ts'));
+  }, 60_000);
+
   for (const sdk of ['@anthropic-ai/sdk', '@anthropic-ai/bedrock-sdk', 'openai', '@google/genai', 'ai', '@langchain/core']) {
     it(`fails the lint when code outside packages/summary imports ${sdk}`, async () => {
       for (const file of ['apps/api/src/example.ts', 'apps/person/lib/example.ts', 'packages/rules/src/example.ts', 'packages/consent/src/example.ts']) {
