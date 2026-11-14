@@ -1,4 +1,4 @@
-import { DEFAULT_SUMMARY_MODEL } from '@mawsool/summary';
+import { DEFAULT_SUMMARY_MODEL, type SummaryProviderSettings } from '@mawsool/summary';
 import type { InboundSource } from '@mawsool/types';
 import { z } from 'zod';
 import { NOTIFIER_DRIVERS, type NotifierDriverName } from './notifier';
@@ -33,6 +33,22 @@ const DemoFlag = z
  */
 const NotifierDriver = z.preprocess((value) => (value === '' ? undefined : value), z.enum(NOTIFIER_DRIVERS, { error: 'NOTIFIER_DRIVER must be console or log (or be left unset)' }).default('log'));
 
+/**
+ * `SUMMARY_PROVIDER` says which client sends the referral-summary request: `anthropic` (Anthropic's API) or `foundry` (Claude on
+ * Microsoft Foundry). Unset or empty means not chosen, and there is no default, so where a person's consented details go and
+ * which account pays is never decided silently. Anything else stops the API from starting; the message never repeats the value.
+ */
+const SummaryProviderName = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.enum(['anthropic', 'foundry'], { error: 'SUMMARY_PROVIDER must be anthropic or foundry (or be left unset)' }).optional(),
+);
+
+/** The Foundry resource is its name only, as the portal shows it. A host name or address would build a wrong address. */
+const FoundryResource = z
+  .string()
+  .regex(/^[A-Za-z0-9-]+$/, { error: 'SUMMARY_FOUNDRY_RESOURCE must be the resource name only, as shown in the Foundry portal (for example my-resource), not a host name or address' })
+  .optional();
+
 const EnvSchema = z
   .object({
     DEMO_MODE: DemoFlag,
@@ -50,12 +66,29 @@ const EnvSchema = z
     BUNDLE_ENCRYPTION_KEY: EncryptionKey,
     SUMMARY_LLM_ENABLED: Flag,
     SUMMARY_MODEL: z.string().min(1).default(DEFAULT_SUMMARY_MODEL),
+    SUMMARY_PROVIDER: SummaryProviderName,
     ANTHROPIC_API_KEY: z.string().min(1).optional(),
+    // Deliberately not the ANTHROPIC_FOUNDRY_* names the Foundry SDK and Claude Code read: a value exported in the shell would
+    // silently win over .env and send consented content to a resource nobody configured for this app.
+    SUMMARY_FOUNDRY_API_KEY: z.string().min(1).optional(),
+    SUMMARY_FOUNDRY_RESOURCE: FoundryResource,
   })
-  .refine((env) => !env.SUMMARY_LLM_ENABLED || env.ANTHROPIC_API_KEY !== undefined, {
-    message: 'SUMMARY_LLM_ENABLED is on but ANTHROPIC_API_KEY is not set',
-    path: ['ANTHROPIC_API_KEY'],
+  .superRefine((env, ctx) => {
+    if (!env.SUMMARY_LLM_ENABLED) return;
+    const missing = (path: string, message: string) => ctx.addIssue({ code: 'custom', message, path: [path] });
+    if (env.SUMMARY_PROVIDER === undefined) missing('SUMMARY_PROVIDER', 'SUMMARY_LLM_ENABLED is on, so SUMMARY_PROVIDER must be set to anthropic or foundry');
+    if (env.SUMMARY_PROVIDER === 'anthropic' && env.ANTHROPIC_API_KEY === undefined) missing('ANTHROPIC_API_KEY', 'SUMMARY_LLM_ENABLED is on but ANTHROPIC_API_KEY is not set');
+    if (env.SUMMARY_PROVIDER === 'foundry' && env.SUMMARY_FOUNDRY_API_KEY === undefined) missing('SUMMARY_FOUNDRY_API_KEY', 'SUMMARY_PROVIDER is foundry but SUMMARY_FOUNDRY_API_KEY is not set');
+    if (env.SUMMARY_PROVIDER === 'foundry' && env.SUMMARY_FOUNDRY_RESOURCE === undefined) missing('SUMMARY_FOUNDRY_RESOURCE', 'SUMMARY_PROVIDER is foundry but SUMMARY_FOUNDRY_RESOURCE is not set');
   });
+
+/** The settings of the chosen provider, or `null` when the assistant is off or no provider is chosen (the checks above refuse the second when it is on). */
+function summaryProviderSettings(env: z.infer<typeof EnvSchema>): SummaryProviderSettings | null {
+  if (!env.SUMMARY_LLM_ENABLED) return null;
+  if (env.SUMMARY_PROVIDER === 'anthropic') return { kind: 'anthropic', apiKey: env.ANTHROPIC_API_KEY!, model: env.SUMMARY_MODEL };
+  if (env.SUMMARY_PROVIDER === 'foundry') return { kind: 'foundry', apiKey: env.SUMMARY_FOUNDRY_API_KEY!, resource: env.SUMMARY_FOUNDRY_RESOURCE!, model: env.SUMMARY_MODEL };
+  return null;
+}
 
 export interface AppConfig {
   port: number;
@@ -72,8 +105,8 @@ export interface AppConfig {
   encryptionKey: string;
   /** Off by default. When off, no summary text ever goes to a provider. */
   summaryLlmEnabled: boolean;
-  summaryModel: string;
-  anthropicApiKey: string | undefined;
+  /** The chosen provider and its own settings. `null` whenever the flag is off, whatever else is set. */
+  summaryProvider: SummaryProviderSettings | null;
   /** Registers the demo routes (clock and reset). Off unless `DEMO_MODE` is `true` or `1`. */
   demoMode: boolean;
   /** Which mock "delivers" outbound messages. */
@@ -98,8 +131,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     },
     encryptionKey: parsed.BUNDLE_ENCRYPTION_KEY,
     summaryLlmEnabled: parsed.SUMMARY_LLM_ENABLED,
-    summaryModel: parsed.SUMMARY_MODEL,
-    anthropicApiKey: parsed.ANTHROPIC_API_KEY,
+    summaryProvider: summaryProviderSettings(parsed),
     demoMode: parsed.DEMO_MODE,
     notifierDriver: parsed.NOTIFIER_DRIVER,
   };

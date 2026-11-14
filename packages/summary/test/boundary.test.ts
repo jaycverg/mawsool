@@ -24,7 +24,7 @@ describe('the LLM import boundary', () => {
     await eslint.calculateConfigForFile(resolve(ROOT, 'apps/api/src/example.ts'));
   }, 60_000);
 
-  for (const sdk of ['@anthropic-ai/sdk', '@anthropic-ai/bedrock-sdk', 'openai', '@google/genai', 'ai', '@langchain/core']) {
+  for (const sdk of ['@anthropic-ai/sdk', '@anthropic-ai/bedrock-sdk', '@anthropic-ai/foundry-sdk', 'openai', '@google/genai', 'ai', '@langchain/core']) {
     it(`fails the lint when code outside packages/summary imports ${sdk}`, async () => {
       for (const file of ['apps/api/src/example.ts', 'apps/person/lib/example.ts', 'packages/rules/src/example.ts', 'packages/consent/src/example.ts']) {
         const errors = await boundaryErrors(`import X from '${sdk}';\nexport default X;\n`, file);

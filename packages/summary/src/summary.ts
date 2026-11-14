@@ -1,7 +1,7 @@
 import type { BundleContent, ConsentElement, Locale } from '@mawsool/types';
 import { buildPrompt, capWords, templateSummary, type SummaryPrompt } from './prompt';
 
-/** Anything that can turn a prompt into text. The real one calls the Anthropic API; tests pass a stub. */
+/** Anything that can turn a prompt into text. The real ones call Claude through Anthropic's API or Microsoft Foundry; tests pass a stub. */
 export interface SummaryProvider {
   complete(prompt: SummaryPrompt): Promise<string>;
 }

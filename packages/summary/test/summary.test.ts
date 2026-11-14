@@ -1,6 +1,6 @@
 import type { BundleContent, ConsentElement } from '@mawsool/types';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SUMMARY_MODEL, buildPrompt, capWords, createAnthropicProvider, draftSummary, templateSummary, type SummaryPrompt, type SummaryProvider } from '../src';
+import { DEFAULT_SUMMARY_MODEL, buildPrompt, capWords, createAnthropicProvider, createFoundryProvider, createSummaryProvider, draftSummary, templateSummary, type SummaryPrompt, type SummaryProvider } from '../src';
 
 const CONTENT: BundleContent = {
   scores: [{ instrument: 'phq9', total: 12, band: 'moderate', takenAt: '2026-10-29T08:00:00+04:00' }],
@@ -115,5 +115,87 @@ describe('the live provider, with the network replaced', () => {
     });
     await expect(provider.complete(prompt)).rejects.toThrow(/declined/);
     expect(model).toBe('claude-sonnet-5-5');
+  });
+});
+
+describe('the Foundry provider and the factory, with the network replaced', () => {
+  const message = (stop_reason: string, content: unknown[]) => ({ id: 'msg_1', type: 'message', role: 'assistant', model: DEFAULT_SUMMARY_MODEL, content, stop_reason, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } });
+  const prompt = { system: 's', user: 'u' };
+  type Seen = { url: string; apiKey: string | null; body: Record<string, unknown> };
+
+  /** A stand-in for `fetch` that records what was asked and answers with one canned message. */
+  function recordingFetch(answer: unknown): { fetch: typeof fetch; seen: Seen[] } {
+    const seen: Seen[] = [];
+    const stub = async (url: string | URL | Request, init?: RequestInit) => {
+      seen.push({ url: String(url), apiKey: new Headers(init?.headers).get('x-api-key'), body: JSON.parse(String(init?.body)) });
+      return new Response(JSON.stringify(answer), { status: 200, headers: { 'content-type': 'application/json' } });
+    };
+    return { fetch: stub as typeof fetch, seen };
+  }
+
+  /** Runs `body` with environment variables set (or deleted, when `undefined`) and puts every one back afterwards. */
+  async function withEnv(vars: Record<string, string | undefined>, body: () => Promise<void>): Promise<void> {
+    const before = Object.fromEntries(Object.keys(vars).map((name) => [name, process.env[name]]));
+    try {
+      for (const [name, value] of Object.entries(vars)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+      await body();
+    } finally {
+      for (const [name, value] of Object.entries(before)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  }
+
+  it('sends the request to the resource address with the key, the deployment name and no sampling parameters', async () => {
+    const { fetch, seen } = recordingFetch(message('end_turn', [{ type: 'text', text: 'Foundry note.' }]));
+    const provider = createFoundryProvider({ apiKey: 'test-key-not-real', resource: 'mawsool-test', model: 'a-deployment', fetch });
+    expect(await provider.complete(prompt)).toBe('Foundry note.');
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.url).toBe('https://mawsool-test.services.ai.azure.com/anthropic/v1/messages');
+    expect(seen[0]!.apiKey).toBe('test-key-not-real');
+    expect(seen[0]!.body).toMatchObject({ model: 'a-deployment', output_config: { effort: 'low' }, system: 's', messages: [{ role: 'user', content: 'u' }] });
+    expect(Object.keys(seen[0]!.body)).not.toContain('temperature');
+  });
+
+  it('ignores the SDK environment variables: a shell base address neither redirects the request nor stops the client', async () => {
+    const { fetch, seen } = recordingFetch(message('end_turn', [{ type: 'text', text: 'Foundry note.' }]));
+    await withEnv(
+      { ANTHROPIC_FOUNDRY_BASE_URL: 'https://elsewhere.example.test/anthropic/', ANTHROPIC_FOUNDRY_RESOURCE: 'elsewhere', ANTHROPIC_FOUNDRY_API_KEY: 'other-key-not-real' },
+      async () => {
+        const provider = createFoundryProvider({ apiKey: 'test-key-not-real', resource: 'mawsool-test', fetch });
+        expect(await provider.complete(prompt)).toBe('Foundry note.');
+      },
+    );
+    expect(seen[0]!.url).toBe('https://mawsool-test.services.ai.azure.com/anthropic/v1/messages');
+    expect(seen[0]!.apiKey).toBe('test-key-not-real');
+  });
+
+  it('defaults the model and treats a refusal as a failure', async () => {
+    const { fetch, seen } = recordingFetch(message('refusal', []));
+    const provider = createFoundryProvider({ apiKey: 'test-key-not-real', resource: 'mawsool-test', fetch });
+    await expect(provider.complete(prompt)).rejects.toThrow(/declined/);
+    expect(seen[0]!.body.model).toBe('claude-sonnet-5-5');
+  });
+
+  it('builds the Anthropic client for kind anthropic, ignoring a base address in the shell', async () => {
+    const { fetch, seen } = recordingFetch(message('end_turn', [{ type: 'text', text: 'Anthropic note.' }]));
+    await withEnv({ ANTHROPIC_BASE_URL: undefined }, async () => {
+      const provider = createSummaryProvider({ kind: 'anthropic', apiKey: 'test-key-not-real', model: 'a-model' }, { fetch });
+      expect(await provider.complete(prompt)).toBe('Anthropic note.');
+    });
+    expect(seen[0]!.url).toBe('https://api.anthropic.com/v1/messages');
+    expect(seen[0]!.body.model).toBe('a-model');
+  });
+
+  it('builds the Foundry client for kind foundry', async () => {
+    const { fetch, seen } = recordingFetch(message('end_turn', [{ type: 'text', text: 'Foundry note.' }]));
+    const provider = createSummaryProvider({ kind: 'foundry', apiKey: 'test-key-not-real', resource: 'mawsool-test', model: 'a-deployment' }, { fetch });
+    expect(await provider.complete(prompt)).toBe('Foundry note.');
+    expect(seen[0]!.url).toBe('https://mawsool-test.services.ai.azure.com/anthropic/v1/messages');
+    expect(seen[0]!.body.model).toBe('a-deployment');
   });
 });

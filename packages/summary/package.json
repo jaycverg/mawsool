@@ -12,6 +12,7 @@
     "test": "vitest run --coverage"
   },
   "dependencies": {
+    "@anthropic-ai/foundry-sdk": "1.1.1",
     "@anthropic-ai/sdk": "1.3.0",
     "@mawsool/consent": "workspace:*",
     "@mawsool/types": "workspace:*"

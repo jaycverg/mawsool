@@ -1,4 +1,4 @@
-import { createAnthropicProvider } from '@mawsool/summary';
+import { createSummaryProvider } from '@mawsool/summary';
 import { buildApp } from './app';
 import { loadConfig } from './config';
 import { connect } from './db/client';
@@ -8,7 +8,7 @@ import { systemClock } from './clock';
 // Config is read first: with no encryption key (or a bad one) this throws before a database is touched.
 const config = loadConfig();
 const { db, close } = connect(config.databaseUrl);
-const summaryProvider = config.summaryLlmEnabled ? createAnthropicProvider({ apiKey: config.anthropicApiKey!, model: config.summaryModel }) : null;
+const summaryProvider = config.summaryProvider ? createSummaryProvider(config.summaryProvider) : null;
 const app = await buildApp({ db, config, logger: true, summaryProvider });
 const jobs = await startJobs({ databaseUrl: config.databaseUrl, db, clock: app.careClock, securityClock: systemClock, log: app.log });
 
