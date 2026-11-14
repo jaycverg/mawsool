@@ -1,10 +1,12 @@
-import type { SummaryPrompt, SummaryProvider } from '@mawsool/summary';
+import { createSummaryProvider, type SummaryPrompt, type SummaryProvider } from '@mawsool/summary';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { loadConfig } from '../src/config';
 import { schema } from '../src/db/client';
 import { summaryLogContext } from '../src/tickets/service';
 import { runSeed } from '../src/seed/run';
 import { createTestApp, type TestApp } from './helpers/app';
+import { TEST_ENCRYPTION_KEY } from './helpers/config';
 import { createTestDb, type TestDb } from './helpers/db';
 import { CONDITION, FREE_TEXT, cipher, registerPerson, type TestPerson } from './helpers/flow';
 
@@ -114,6 +116,44 @@ describe('POST /summary/draft', () => {
     expect(log!.ciphertext).toMatch(/^v1\./);
     expect(log!.ciphertext).not.toContain(PROVIDER_TEXT);
     expect(cipher.decrypt(log!.ciphertext, summaryLogContext(person.id, requestId, 'draft'))).toBe(PROVIDER_TEXT);
+  });
+
+  it('reaches Claude on Foundry from the settings the environment gives, and sends only what was consented to', async () => {
+    const config = loadConfig({
+      BUNDLE_ENCRYPTION_KEY: TEST_ENCRYPTION_KEY,
+      SUMMARY_LLM_ENABLED: 'true',
+      SUMMARY_PROVIDER: 'foundry',
+      SUMMARY_FOUNDRY_API_KEY: 'test-key-not-real',
+      SUMMARY_FOUNDRY_RESOURCE: 'mawsool-test',
+      SUMMARY_MODEL: 'my-deployment',
+    });
+    const seen: { url: string; apiKey: string | null; body: string }[] = [];
+    const stub = async (url: string | URL | Request, init?: RequestInit) => {
+      seen.push({ url: String(url), apiKey: new Headers(init?.headers).get('x-api-key'), body: String(init?.body) });
+      const reply = { id: 'msg_1', type: 'message', role: 'assistant', model: 'my-deployment', content: [{ type: 'text', text: 'Foundry note.' }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } };
+      return new Response(JSON.stringify(reply), { status: 200, headers: { 'content-type': 'application/json' } });
+    };
+    const ctx = await createTestApp(testDb.db, {
+      summaryLlmEnabled: config.summaryLlmEnabled,
+      summaryProvider: createSummaryProvider(config.summaryProvider!, { fetch: stub as typeof fetch }),
+    });
+    open.push(ctx);
+    person = await registerPerson(ctx);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/summary/draft',
+      headers: person.headers,
+      payload: { requestId: crypto.randomUUID(), locale: 'en', useAi: true, consented: ['ticket', 'scores'], content },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ source: 'ai', text: 'Foundry note.' });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.url).toBe('https://mawsool-test.services.ai.azure.com/anthropic/v1/messages');
+    expect(seen[0]!.apiKey).toBe('test-key-not-real');
+    expect(JSON.parse(seen[0]!.body)).toMatchObject({ model: 'my-deployment' });
+    expect(seen[0]!.body).toContain('phq9 score: 12');
+    expect(seen[0]!.body).not.toContain(FREE_TEXT);
+    expect(seen[0]!.body).not.toContain(CONDITION);
   });
 
   it('needs a device credential and refuses an unknown field', async () => {

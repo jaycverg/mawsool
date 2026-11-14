@@ -14,7 +14,7 @@ packages/instruments  WHO-5, PHQ-9, GAD-7, C-SSRS items, scoring, evaluateCrisis
 packages/rules        match(), deadlines, config.ts (thresholds, windows, crisis numbers, sample insurance table)
 packages/ui           tokens, fonts, RTL helpers, platform adapters (storage, notifications, dialler), shared components
 packages/consent      the consent element list and redact(): keeps only consented elements, run on the phone before send and again on the server
-packages/summary      the only code that may call an LLM: referral-summary prompt over consented elements, template fallback, the Anthropic provider
+packages/summary      the only code that may call an LLM: referral-summary prompt over consented elements, template fallback, the Anthropic/Foundry providers
 packages/fhir         the FHIR R4 export built from consented elements, and the vendored official R4 JSON schema it is tested against
 infra/           docker-compose.yml        docs/     checklists and the exported spec
 ```
@@ -48,7 +48,7 @@ The browser gates share `scripts/e2e-gate.mjs` and run one spec each (`exit-acce
 
 Tests that need a database use in-process PGlite with the real migrations, so `pnpm test` and the `gate:*` commands need no Docker. `pnpm verify` ends with `smoke:dev`, and `smoke:dev` and `db:*` do need Docker.
 
-The API needs `BUNDLE_ENCRYPTION_KEY` (32 random bytes as base64) and refuses to start without one; `.env.example` carries a throwaway key for local development only. `SUMMARY_LLM_ENABLED` is off by default and, when on, also needs `ANTHROPIC_API_KEY`; no key is ever committed.
+The API needs `BUNDLE_ENCRYPTION_KEY` (32 random bytes as base64) and refuses to start without one; `.env.example` carries a throwaway key for local development only. `SUMMARY_LLM_ENABLED` is off by default and, when on, needs `SUMMARY_PROVIDER` and its settings (`.env.example`); no key is ever committed.
 
 Second copy of the repo on one machine (for example a gate run from another worktree): set `PORT_OFFSET=100` in its `.env`. Every port moves together (api 4100, apps 3100-3102, Postgres 54429) and the Compose project becomes `mawsool-100`, so containers and volumes never collide.
 

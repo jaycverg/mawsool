@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config';
 import { TEST_ENCRYPTION_KEY as KEY } from './helpers/config';
 
+const ANTHROPIC_ON = { BUNDLE_ENCRYPTION_KEY: KEY, SUMMARY_LLM_ENABLED: 'true', SUMMARY_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'k' };
+
 describe('loadConfig', () => {
   it('has defaults that match the base ports', () => {
     expect(loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY })).toEqual({
@@ -15,8 +17,7 @@ describe('loadConfig', () => {
       inboundKeys: {},
       encryptionKey: KEY,
       summaryLlmEnabled: false,
-      summaryModel: 'claude-sonnet-5-5',
-      anthropicApiKey: undefined,
+      summaryProvider: null,
       demoMode: false,
       notifierDriver: 'log',
     });
@@ -67,14 +68,84 @@ describe('loadConfig', () => {
   describe('the summary model flag', () => {
     it('is off by default, and on only for true or 1', () => {
       expect(loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY }).summaryLlmEnabled).toBe(false);
-      for (const on of ['true', '1']) expect(loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, SUMMARY_LLM_ENABLED: on, ANTHROPIC_API_KEY: 'k' }).summaryLlmEnabled).toBe(true);
+      for (const on of ['true', '1']) expect(loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, SUMMARY_LLM_ENABLED: on, SUMMARY_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'k' }).summaryLlmEnabled).toBe(true);
       expect(loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, SUMMARY_LLM_ENABLED: '0' }).summaryLlmEnabled).toBe(false);
       expect(() => loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, SUMMARY_LLM_ENABLED: 'yes' })).toThrow();
     });
 
-    it('refuses to start switched on without a provider key, and reads the model name', () => {
-      expect(() => loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, SUMMARY_LLM_ENABLED: 'true' })).toThrow(/ANTHROPIC_API_KEY/);
-      expect(loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, SUMMARY_MODEL: 'some-model' }).summaryModel).toBe('some-model');
+    it('refuses to start switched on with the Anthropic provider and no key, and reads the model name', () => {
+      expect(() => loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, SUMMARY_LLM_ENABLED: 'true', SUMMARY_PROVIDER: 'anthropic' })).toThrow(/ANTHROPIC_API_KEY/);
+      expect(loadConfig({ ...ANTHROPIC_ON, SUMMARY_MODEL: 'some-model' }).summaryProvider).toEqual({ kind: 'anthropic', apiKey: 'k', model: 'some-model' });
+    });
+  });
+
+  describe('the summary provider', () => {
+    const FOUNDRY_ON = { BUNDLE_ENCRYPTION_KEY: KEY, SUMMARY_LLM_ENABLED: 'true', SUMMARY_PROVIDER: 'foundry', SUMMARY_FOUNDRY_API_KEY: 'test-key-not-real', SUMMARY_FOUNDRY_RESOURCE: 'my-res' };
+    const EVERYTHING = { BUNDLE_ENCRYPTION_KEY: KEY, ANTHROPIC_API_KEY: 'k', SUMMARY_FOUNDRY_API_KEY: 'test-key-not-real', SUMMARY_FOUNDRY_RESOURCE: 'my-res' };
+
+    it('has no default: switched on with no provider chosen is refused, even with every key present', () => {
+      expect(() => loadConfig({ ...EVERYTHING, SUMMARY_LLM_ENABLED: 'true' })).toThrow(/SUMMARY_PROVIDER/);
+      expect(() => loadConfig({ ...EVERYTHING, SUMMARY_LLM_ENABLED: 'true', SUMMARY_PROVIDER: '' })).toThrow(/SUMMARY_PROVIDER/);
+    });
+
+    it('is not needed while the assistant is off: nothing is built whatever else is set', () => {
+      expect(loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY }).summaryProvider).toBeNull();
+      expect(loadConfig({ ...EVERYTHING, SUMMARY_LLM_ENABLED: 'false' }).summaryProvider).toBeNull();
+      expect(loadConfig({ ...EVERYTHING, SUMMARY_LLM_ENABLED: 'false', SUMMARY_PROVIDER: 'foundry' }).summaryProvider).toBeNull();
+    });
+
+    it('is read strictly: only anthropic or foundry, in lower case with no spaces', () => {
+      for (const bad of ['Foundry', 'azure', ' foundry']) {
+        expect(() => loadConfig({ ...FOUNDRY_ON, SUMMARY_PROVIDER: bad }), bad).toThrow(/SUMMARY_PROVIDER must be anthropic or foundry/);
+      }
+    });
+
+    it('refuses foundry without its key or its resource', () => {
+      const { SUMMARY_FOUNDRY_API_KEY: _key, ...noKey } = FOUNDRY_ON;
+      const { SUMMARY_FOUNDRY_RESOURCE: _resource, ...noResource } = FOUNDRY_ON;
+      expect(() => loadConfig(noKey)).toThrow(/SUMMARY_FOUNDRY_API_KEY/);
+      expect(() => loadConfig(noResource)).toThrow(/SUMMARY_FOUNDRY_RESOURCE/);
+    });
+
+    it('refuses a resource that is not a name: a host name would build a wrong address', () => {
+      expect(() => loadConfig({ ...FOUNDRY_ON, SUMMARY_FOUNDRY_RESOURCE: 'my-res.services.ai.azure.com' })).toThrow(/SUMMARY_FOUNDRY_RESOURCE/);
+    });
+
+    it('gives the Foundry settings, with the model as the deployment name', () => {
+      expect(loadConfig(FOUNDRY_ON).summaryProvider).toEqual({ kind: 'foundry', apiKey: 'test-key-not-real', resource: 'my-res', model: 'claude-sonnet-5-5' });
+      expect(loadConfig({ ...FOUNDRY_ON, SUMMARY_MODEL: 'my-deployment' }).summaryProvider).toEqual({ kind: 'foundry', apiKey: 'test-key-not-real', resource: 'my-res', model: 'my-deployment' });
+    });
+
+    it('gives the Anthropic settings', () => {
+      expect(loadConfig(ANTHROPIC_ON).summaryProvider).toEqual({ kind: 'anthropic', apiKey: 'k', model: 'claude-sonnet-5-5' });
+    });
+
+    it('never reads the names the Foundry SDK and Claude Code read: a shell cannot stand in for the settings', () => {
+      const config = loadConfig({
+        ...FOUNDRY_ON,
+        ANTHROPIC_FOUNDRY_API_KEY: 'shell-key-not-real',
+        ANTHROPIC_FOUNDRY_RESOURCE: 'shell.host.example',
+        ANTHROPIC_FOUNDRY_BASE_URL: 'https://shell.example.test/anthropic/',
+      });
+      expect(config.summaryProvider).toEqual({ kind: 'foundry', apiKey: 'test-key-not-real', resource: 'my-res', model: 'claude-sonnet-5-5' });
+    });
+
+    it('puts no value in a startup error: a pasted key or address is never echoed', () => {
+      const leaked = 'KEY.MUST.NOT.LEAK.7f3a';
+      const cases: [string, Record<string, string>][] = [
+        ['SUMMARY_FOUNDRY_RESOURCE', { ...FOUNDRY_ON, SUMMARY_FOUNDRY_RESOURCE: leaked }],
+        ['SUMMARY_PROVIDER', { ...FOUNDRY_ON, SUMMARY_PROVIDER: 'KEY-MUST-NOT-LEAK-7f3a' }],
+      ];
+      for (const [name, env] of cases) {
+        let message = '';
+        try {
+          loadConfig(env);
+        } catch (error) {
+          message = String(error instanceof Error ? error.message : error);
+        }
+        expect(message, name).toContain(name);
+        expect(message, name).not.toMatch(/MUST[.-]NOT[.-]LEAK/);
+      }
     });
   });
 

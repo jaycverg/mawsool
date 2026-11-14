@@ -80,8 +80,8 @@ in `phase4-acceptance.spec.ts` and the text-reminder sample's in `phase3-accepta
     on local ports). There is no hosted environment, scaling or backup set-up.
 19. **Tested in Chromium only.** The browser tests run in Chromium; the anonymous mode's clean-up relies on browser
     features (Web Locks, listing databases) that are unproven in Safari and Firefox.
-20. **One AI provider.** The optional note assistant reaches Claude through Anthropic's API only; no other route (for
-    example Azure) is built.
+20. **Foundry not tried live.** The optional note assistant can reach Claude through Anthropic's API or Microsoft
+    Foundry. The Foundry route is tested against a stand-in, but has not been tried against a real Foundry deployment.
 21. **Demo clock overlap.** In demo mode, the every-minute deadline check can overlap a demo reset. This affects demos
     only.
 22. **One CI check is red on GitHub.** In the latest run, the four browser gates passed but the `verify` job failed: the

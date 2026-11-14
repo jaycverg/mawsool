@@ -71,7 +71,7 @@ Design choices that shape everything else:
 | `packages/instruments`   | WHO-5, PHQ-9, GAD-7 and C-SSRS screener items, scoring and the crisis evaluation; wording sources in `SOURCES.md` |
 | `packages/rules`         | The matcher, deadlines and `config.ts` (thresholds, windows, crisis numbers, the sample insurance table)   |
 | `packages/consent`       | The list of shareable elements and the redaction used on the phone and again on the server                 |
-| `packages/summary`       | The only code allowed to call an LLM: the referral-summary prompt, template fallback, Anthropic client      |
+| `packages/summary`       | The only code allowed to call an LLM: the referral-summary prompt, template fallback, Anthropic and Microsoft Foundry clients      |
 | `packages/fhir`          | The FHIR R4 export and the official R4 JSON schema it is tested against                                    |
 | `packages/ui`            | Design tokens, fonts, right-to-left helpers, shared components, platform adapters (storage, notifications, dialler) |
 | `infra/`                 | `docker-compose.yml` for Postgres                                                                          |
@@ -219,7 +219,11 @@ event that blocks matching, so a crisis never sits in a queue.
   and approves the text; only approved text is shared. Without the flag, or on any failure, a fill-in template is used.
 - **Enforced in code:** a lint rule and a package-manifest check fail when anything outside `packages/summary` imports an
   LLM SDK, and `packages/summary/test/boundary.test.ts` proves the rule with cases that must fail.
-- The client is Anthropic's SDK; the default model is `claude-sonnet-5-5` (`SUMMARY_MODEL` changes it).
+- The client is Anthropic's SDK or its Foundry client, chosen by `SUMMARY_PROVIDER` (`anthropic` or `foundry`; there is no
+  default, and the API refuses to start with the flag on and no choice). Foundry takes `SUMMARY_FOUNDRY_API_KEY` and
+  `SUMMARY_FOUNDRY_RESOURCE` (the resource name only, as the Foundry portal shows it). The API reads these names and never
+  the SDK's `ANTHROPIC_FOUNDRY_*`, so a value exported in the shell cannot stand in for them. The default model is
+  `claude-sonnet-5-5` (`SUMMARY_MODEL` changes it); on Foundry it is the deployment name.
 
 ## 8. Security
 
@@ -317,7 +321,7 @@ Staff sign-in links are printed in the API log. Demo accounts: `admin@demo.mawso
 
 `.env.example` lists the variables you need to set, with their purpose. The important ones: `BUNDLE_ENCRYPTION_KEY`
 (required), `INBOUND_KEY_TAMM|PHC|SCHOOL` (one per front door), `DEMO_MODE`, `SUMMARY_LLM_ENABLED` with
-`ANTHROPIC_API_KEY`, and `PORT_OFFSET` to run a second copy beside the first.
+`SUMMARY_PROVIDER` and that provider's key (`ANTHROPIC_API_KEY`, or `SUMMARY_FOUNDRY_API_KEY` and `SUMMARY_FOUNDRY_RESOURCE`), and `PORT_OFFSET` to run a second copy beside the first.
 
 ## 13. Technology
 
@@ -329,7 +333,7 @@ Staff sign-in links are printed in the API log. Demo accounts: `admin@demo.mawso
 | API         | Node 24, Fastify 5, Zod 4, OpenAPI generated from the schemas                            |
 | Data        | Postgres (Docker Compose), Drizzle ORM, 17 migrations, pg-boss for the every-minute sweep |
 | Tests       | Vitest 4 (with in-process PGlite running the real migrations), Playwright 1.64           |
-| AI          | Anthropic SDK in `packages/summary` only, behind a flag                                  |
+| AI          | Anthropic SDK and its Foundry client in `packages/summary` only, behind a flag           |
 | CI          | GitHub Actions: `verify` plus the four browser gates in the official Playwright container |
 
 Source: the `package.json` files of `apps/*` and `packages/summary`, `.nvmrc`, `apps/api/drizzle/*.sql` and
