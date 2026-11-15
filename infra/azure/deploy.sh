@@ -289,7 +289,7 @@ print_plan() {
   say "registry         $ACR_NAME (Basic)"
   say "environment      $ENV_NAME"
   say "postgres         $PG_SERVER_NAME in $PG_LOCATION (Burstable B1ms, PostgreSQL 17, database $PG_DATABASE, firewall: Azure services only)"
-  say "apps             $APP_API (1 replica), $APP_PERSON, $APP_CLINIC, $APP_OPS (0 to 1 replica)"
+  say "apps             $APP_API, $APP_PERSON, $APP_CLINIC, $APP_OPS (each exactly 1 replica: a cold start took 10 to 30 s)"
   say "api settings     DEMO_MODE=true RATE_LIMIT=true DEMO_RESET_COOLDOWN_MS=300000 DEMO_RESET_CRON='0 23 * * *' SUMMARY_DAILY_LIMIT=100 SUMMARY_LLM_ENABLED=$([ "$AI" = on ] && echo true || echo false)"
   if [ "$EDGE" = cloudflare ]; then
     say "client address   CLIENT_IP_HEADER=cf-connecting-ip"
@@ -548,9 +548,9 @@ deploy_app() {
 APPS_MODE=all
 deploy_all() {
   deploy_app "$APP_API" mawsool-api 4000 1 1 0.5 1.0Gi --secrets "${API_SECRETS[@]}" --env-vars "${API_ENV[@]}"
-  deploy_app "$APP_PERSON" mawsool-person 80 0 1 0.25 0.5Gi
-  deploy_app "$APP_CLINIC" mawsool-clinician 3000 0 1 0.5 1.0Gi
-  deploy_app "$APP_OPS" mawsool-ops 3000 0 1 0.5 1.0Gi
+  deploy_app "$APP_PERSON" mawsool-person 80 1 1 0.25 0.5Gi
+  deploy_app "$APP_CLINIC" mawsool-clinician 3000 1 1 0.5 1.0Gi
+  deploy_app "$APP_OPS" mawsool-ops 3000 1 1 0.5 1.0Gi
 }
 # With Cloudflare, apps that already run are NOT moved yet: new images, the new addresses and CLIENT_IP_HEADER would break them
 # before their hostnames work. They are rolled in step 9, after the hostnames answer through Cloudflare.
@@ -611,7 +611,7 @@ if [ "$EDGE" = cloudflare ]; then
   APPS_MODE=all
   deploy_all
   for app in "$APP_API" "$APP_PERSON" "$APP_CLINIC" "$APP_OPS"; do
-    # Advisory: a scale-to-zero app can look not ready while it is simply asleep. The gate is the 200 check just below.
+    # Advisory: a new revision can take a while to be reported ready. The gate is the 200 check just below.
     retry 6 20 revision_ready "$app" || say "note: the newest revision of $app is not reported ready yet; the 200 check below decides"
   done
   if [ "$DRY_RUN" = 0 ]; then
