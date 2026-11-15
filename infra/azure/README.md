@@ -53,6 +53,7 @@ infra/azure/deploy.sh --init       # creates .local/azure.env if it is missing a
 infra/azure/deploy.sh --check      # read-only: login, subscription, resource providers, region, names
 infra/azure/deploy.sh --dry-run    # prints every step and command, secrets shown as ***; no call to Azure at all
 infra/azure/deploy.sh              # asks for "yes", then deploys (--yes skips the question)
+infra/azure/deploy.sh --probe=https://<api address>   # read-only: seeded, empty or unknown (needs no Azure and no settings)
 ```
 
 The steps, in order: register the resource providers that are not registered (this subscription has none of the five
@@ -62,7 +63,9 @@ Creating the Postgres server takes several minutes.
 
 **First seed.** The database starts empty and the guest sign-in answers 404 until it is seeded. The script runs
 `az containerapp exec ... pnpm --filter @mawsool/api db:seed` once, then signs in as the guest admin and calls reset, so the 90
-days end today and Noura's invite exists. It seeds only when the guest sign-in answers 404, so a redeploy never wipes data. If
+days end today and Noura's invite exists. It seeds only when the API says it is a demo, its `/services` is `[]` and the guest
+sign-in gives Fastify's own not-found body, and the same answer comes twice, 5 seconds apart. A 404 from Azure's front end during
+a revision swap has another body, and anything unclear stops the script without seeding. A redeploy never wipes data. If
 `exec` cannot run without a terminal, the script stops and prints the command to run by hand, then run the script again.
 
 Later deploys keep the data; the nightly reset (`DEMO_RESET_CRON`) puts the demo back to its scripted state each night.
@@ -118,7 +121,8 @@ Edit the value in `azure.env` and run `deploy.sh`. It updates the Container Apps
   admin's Reset); a reset reloads the seed.
 - `INBOUND_KEY_*`: the front doors that sign with the old key are refused until they have the new one.
 - `POSTGRES_ADMIN_PASSWORD`: `deploy.sh` does not change the password of a server that already exists. Change it on the server
-  first (`az postgres flexible-server update -g mawsool-demo-rg -n <server> --admin-password <new>`), then in `azure.env`,
+  first (`az postgres flexible-server update -g mawsool-demo-rg -n <server> --admin-password <new> -o none`; without `-o none` az
+  prints the new password back), then in `azure.env`,
   then run the script.
 - The Anthropic key: replace `ANTHROPIC_API_KEY` and run the script; revoke the old one in the Anthropic Console.
 
@@ -157,7 +161,8 @@ Both need the owner's go-ahead.
 
 ## What was not tested
 
-Everything in `deploy.sh` that talks to Azure has not run: it is checked by `bash -n`, shellcheck, `--dry-run` for both stages
-and the read-only `--check`. Known unknowns for the first run: the free trial's quota for these resources, whether
+Everything in `deploy.sh` that changes Azure has not run: it is checked by `bash -n`, shellcheck, `--dry-run` for both stages,
+the read-only `--check`, a run against a stand-in `az` that echoes every argument back (no secret reached the output), and
+`--probe` against a mock API for the seed decision. Known unknowns for the first run: the free trial's quota for these resources, whether
 `az containerapp exec` runs the seed without a terminal, whether the registry's build agent builds the Dockerfile (it uses no
 BuildKit-only feature, but a classic builder was not tried), and the Postgres TLS question above.
