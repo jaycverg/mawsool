@@ -393,7 +393,7 @@ if exists az postgres flexible-server show -n "$PG_SERVER_NAME" -g "$AZURE_RESOU
 else
   # --public-access 0.0.0.0 is the "allow Azure services" rule and nothing else.
   run az postgres flexible-server create -n "$PG_SERVER_NAME" -g "$AZURE_RESOURCE_GROUP" -l "$AZURE_LOCATION" \
-    --tier Burstable --sku-name Standard_B1ms --version 17 --storage-size 32 --high-availability Disabled --backup-retention 7 \
+    --tier Burstable --sku-name Standard_B1ms --version 17 --storage-size 32 --backup-retention 7 \
     --admin-user "$PG_ADMIN_USER" --admin-password "$POSTGRES_ADMIN_PASSWORD" --database-name "$PG_DATABASE" --public-access 0.0.0.0 --yes -o none
 fi
 if exists az postgres flexible-server db show -s "$PG_SERVER_NAME" -g "$AZURE_RESOURCE_GROUP" -d "$PG_DATABASE"; then
