@@ -87,6 +87,11 @@ Azure part, read-only, run 2026-11-15 with `az` on "Azure subscription 1":
   The list also shows `Standard_B1ms` and `Standard_B2s`, but creating either failed with `SkuNotAvailable` in `uaenorth` on this
   subscription (2026-11-15 and 2026-11-16). The list is not a quota or an entitlement. The database therefore takes its own
   region: set `PG_LOCATION` (default `AZURE_LOCATION`) in `azure.env`; the apps and the rest stay in `AZURE_LOCATION`. The SKU is `Standard_B1ms`.
+  Run 2026-11-16: `qatarcentral` and `westeurope` refused ("The location is restricted"), `northeurope` and `swedencentral` gave `SkuNotAvailable`,
+  `uksouth` created `Standard_B1ms`. The name `mawsool-pg-c91953` stayed reserved to `uaenorth` by the earlier refusals, so `PG_SERVER_NAME`
+  carries a suffix (`mawsool-pg-c91953d`). `az postgres flexible-server list-skus -l <region>` reports a restriction in its `reason` field.
+- ACR Tasks (`az acr run`) is refused on this subscription (`TasksOperationsNotAllowed`), so the images are built with Docker
+  and pushed (`IMAGE_BUILD=local`).
 - The registry name `mawsoolc91953` was free (`az acr check-name`).
 - Not established by these reads: that the free trial's quota lets the environment, the server and the registry actually be
   created (a list of capabilities is not a quota); the first deploy is that check. If the region refuses, pick the nearest one
