@@ -7,6 +7,8 @@ import { ConsentScreen } from '../components/ConsentScreen';
 import { CrisisHandoffPanel } from '../components/CrisisHandoffPanel';
 import { CrisisScreen } from '../components/CrisisScreen';
 import { createCrisisStore, type CrisisMark } from '../lib/crisis';
+import { KEYS } from '../lib/keys';
+import { refusedRequests } from '../lib/net';
 import { savePendingChoice } from '../lib/prefs';
 import { readPublicDemoFlag } from '../lib/public-demo';
 import ar from '../messages/ar.json';
@@ -184,5 +186,127 @@ describe.each(['en', 'ar'] as const)('the consent screen (%s)', (locale) => {
     }
     expect(bodies[0]).toEqual(['consented', 'content', 'locale', 'requestId', 'useAi']);
     expect(bodies[1]).toEqual(bodies[0]);
+  });
+});
+
+describe.each(['en', 'ar'] as const)('the AI banner on the consent screen (%s)', (locale) => {
+  const words = MESSAGES[locale].consent;
+  type Availability = 'available' | 'off' | 'daily_cap' | 'fail' | 'bad_status' | 'bad_body';
+
+  async function open(options: { availability: Availability; draftReply?: Record<string, unknown>; anonymous?: boolean }) {
+    const { device, memory } = makeDevice();
+    if (options.anonymous) (device as { anonymous: boolean }).anonymous = true;
+    await savePendingChoice(memory.storage, { tier: 'gp', serviceId: crypto.randomUUID(), chosenAt: '2026-11-01T08:00:00+04:00', windowDays: 7, requestId: crypto.randomUUID(), reroute: null });
+    const requests: { path: string; headers: Headers }[] = [];
+    window.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      const path = new URL(url).pathname;
+      requests.push({ path, headers: new Headers(init?.headers) });
+      if (path === '/summary/availability') {
+        if (options.availability === 'fail') throw new TypeError('network down');
+        if (options.availability === 'bad_status') return new Response('{}', { status: 500 });
+        if (options.availability === 'bad_body') return new Response(JSON.stringify({ ai: 'maybe' }), { status: 200 });
+        return new Response(JSON.stringify({ ai: options.availability }), { status: 200 });
+      }
+      if (path === '/services') return new Response('[]', { status: 200 });
+      if (path === '/summary/draft') return new Response(JSON.stringify(options.draftReply ?? { source: 'template', text: 'TEMPLATE TEXT' }), { status: 200 });
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    render(providers(locale, <ConsentScreen />));
+    await screen.findByText(words.writeTitle);
+    return { memory, requests };
+  }
+
+  const banner = () => document.querySelector('[data-ai-unavailable]');
+  const availabilityRequests = (requests: { path: string }[]) => requests.filter((request) => request.path === '/summary/availability');
+
+  it('with the flag and the AI switched off shows the off note above the AI tick', async () => {
+    vi.stubEnv('NEXT_PUBLIC_PUBLIC_DEMO', 'true');
+    await open({ availability: 'off' });
+    await waitFor(() => expect(banner()).not.toBeNull());
+    expect(banner()!.textContent).toBe(words.aiOff);
+    expect(banner()!.getAttribute('data-ai-unavailable')).toBe('off');
+    const tick = document.querySelector('#use-ai')!;
+    expect(banner()!.compareDocumentPosition(tick) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(banner()!.parentElement).toBe(tick.closest('section'));
+  });
+
+  it('with the flag and the day’s drafts used up shows the daily-cap note', async () => {
+    vi.stubEnv('NEXT_PUBLIC_PUBLIC_DEMO', 'true');
+    await open({ availability: 'daily_cap' });
+    await waitFor(() => expect(banner()).not.toBeNull());
+    expect(banner()!.textContent).toBe(words.aiDailyCap);
+    expect(banner()!.getAttribute('data-ai-unavailable')).toBe('daily_cap');
+  });
+
+  it('has the two notes in both languages, different from each other and not left as a key name', () => {
+    expect(words.aiOff).not.toBe(words.aiDailyCap);
+    for (const text of [words.aiOff, words.aiDailyCap]) expect(text).not.toMatch(/^ai(Off|DailyCap)$/);
+    expect(MESSAGES.en.consent.aiOff).toBe('AI drafting is switched off in this demo, so drafts are written from the template.');
+    expect(MESSAGES.en.consent.aiDailyCap).toBe("Today's AI drafts for this demo are used up, so drafts are written from the template until tomorrow.");
+  });
+
+  it('shows nothing when the AI is available, and nothing when the answer cannot be read', async () => {
+    vi.stubEnv('NEXT_PUBLIC_PUBLIC_DEMO', 'true');
+    for (const availability of ['available', 'fail', 'bad_status', 'bad_body'] as const) {
+      cleanup();
+      const { requests } = await open({ availability });
+      await waitFor(() => expect(availabilityRequests(requests)).toHaveLength(1));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(banner(), availability).toBeNull();
+    }
+  });
+
+  it('without the flag makes no availability request and shows no banner, whatever the server would say', async () => {
+    const { requests } = await open({ availability: 'off' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(availabilityRequests(requests)).toHaveLength(0);
+    expect(banner()).toBeNull();
+  });
+
+  it('in an anonymous session makes no request for it, even with the flag', async () => {
+    vi.stubEnv('NEXT_PUBLIC_PUBLIC_DEMO', 'true');
+    const refusedBefore = refusedRequests.count;
+    const { requests } = await open({ availability: 'off', anonymous: true });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(availabilityRequests(requests)).toHaveLength(0);
+    expect(refusedRequests.count).toBe(refusedBefore);
+    expect(banner()).toBeNull();
+  });
+
+  it('reads it without registering the phone and without leaving a footprint', async () => {
+    vi.stubEnv('NEXT_PUBLIC_PUBLIC_DEMO', 'true');
+    const { memory, requests } = await open({ availability: 'off' });
+    await waitFor(() => expect(banner()).not.toBeNull());
+    expect(requests.map((request) => request.path)).not.toContain('/persons');
+    expect(availabilityRequests(requests)[0]!.headers.get('authorization')).toBeNull();
+    expect(memory.data.has(KEYS.footprint)).toBe(false);
+  });
+
+  it('shows the note again after a draft reply that says the AI was unavailable, in the public-demo build only', async () => {
+    vi.stubEnv('NEXT_PUBLIC_PUBLIC_DEMO', 'true');
+    await open({ availability: 'available', draftReply: { source: 'template', text: 'TEMPLATE TEXT', aiUnavailable: 'daily_cap' } });
+    expect(banner()).toBeNull();
+    fireEvent.click(document.querySelector('#use-ai')!);
+    fireEvent.click(screen.getByRole('button', { name: words.draft }));
+    await screen.findByDisplayValue('TEMPLATE TEXT');
+    await waitFor(() => expect(banner()).not.toBeNull());
+    expect(banner()!.textContent).toBe(words.aiDailyCap);
+
+    cleanup();
+    vi.unstubAllEnvs();
+    await open({ availability: 'available', draftReply: { source: 'template', text: 'TEMPLATE TEXT', aiUnavailable: 'off' } });
+    fireEvent.click(document.querySelector('#use-ai')!);
+    fireEvent.click(screen.getByRole('button', { name: words.draft }));
+    await screen.findByDisplayValue('TEMPLATE TEXT');
+    expect(banner()).toBeNull();
+  });
+
+  it('shows no note after a draft reply that carries no reason', async () => {
+    vi.stubEnv('NEXT_PUBLIC_PUBLIC_DEMO', 'true');
+    await open({ availability: 'available' });
+    fireEvent.click(document.querySelector('#use-ai')!);
+    fireEvent.click(screen.getByRole('button', { name: words.draft }));
+    await screen.findByDisplayValue('TEMPLATE TEXT');
+    expect(banner()).toBeNull();
   });
 });

@@ -426,11 +426,21 @@ export const SummaryDraftRequestSchema = z
   .strict();
 export type SummaryDraftRequest = z.infer<typeof SummaryDraftRequestSchema>;
 
+/** Why the AI is not writing drafts: switched off in this deployment, or today's allowance of AI drafts is spent. */
+export const SummaryUnavailableReasonSchema = z.enum(['off', 'daily_cap']);
+export type SummaryUnavailableReason = z.infer<typeof SummaryUnavailableReasonSchema>;
+
 export const SummaryDraftSchema = z.object({
   source: z.enum(['ai', 'template']),
   text: z.string(),
+  /** Present only when the person asked for the AI (`useAi: true`) and the template was written because of this reason. */
+  aiUnavailable: SummaryUnavailableReasonSchema.optional(),
 });
 export type SummaryDraft = z.infer<typeof SummaryDraftSchema>;
+
+/** GET /summary/availability: whether an AI draft can be had right now. Holds no data about anyone. */
+export const SummaryAvailabilitySchema = z.object({ ai: z.enum(['available', 'off', 'daily_cap']) });
+export type SummaryAvailability = z.infer<typeof SummaryAvailabilitySchema>;
 
 /** PUT /persons/me/equity. Opting out clears the buckets on the server. */
 export const EquityRequestSchema = z.object({ optIn: z.boolean(), buckets: DemographicsSchema.optional() }).strict();

@@ -64,6 +64,7 @@ const REVIEWED: Record<string, { access: RouteAccess; kind: Kind }> = {
   'PUT /me/reminder-phone': { access: 'person', kind: 'person-own' },
   'DELETE /me/reminder-phone': { access: 'person', kind: 'person-own' },
   'POST /me/reminder-phone/sample': { access: 'person', kind: 'person-own' },
+  'GET /summary/availability': { access: 'public', kind: 'open' },
   'POST /summary/draft': { access: 'person', kind: 'person-own' },
   'POST /me/invites/claim': { access: 'person', kind: 'person-own' },
   'GET /tickets': { access: 'clinician', kind: 'clinician-scoped' },

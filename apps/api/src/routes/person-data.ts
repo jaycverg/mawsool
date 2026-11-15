@@ -8,9 +8,12 @@ import {
   OutcomeStatisticsRequestSchema,
   RateLimitedSchema,
   RevokeConsentResultSchema,
+  SummaryAvailabilitySchema,
   SummaryDraftRequestSchema,
   SummaryDraftSchema,
   type ConsentElement,
+  type SummaryAvailability,
+  type SummaryUnavailableReason,
 } from '@mawsool/types';
 import { draftSummary, type SummaryProvider } from '@mawsool/summary';
 import { eq } from 'drizzle-orm';
@@ -22,6 +25,11 @@ import { schema } from '../db/client';
 import { personIdOf, sendError } from '../plugins/auth';
 import type { SummaryBudget } from '../summary-budget';
 import { summaryLogContext } from '../tickets/service';
+
+/** Whether an AI draft can be asked for at all: the flag is on and a provider is configured. */
+function aiIsConfigured(summary: PersonDataDeps['summary']): boolean {
+  return summary.enabled && summary.provider !== null;
+}
 
 const Errors = { 400: ErrorResponseSchema, 404: ErrorResponseSchema, 409: ErrorResponseSchema, 410: ErrorResponseSchema };
 
@@ -123,6 +131,18 @@ export function registerPersonDataRoutes(app: FastifyInstance, deps: PersonDataD
     },
   );
 
+  // Public and free of data about anyone: it only says whether the AI can write a draft right now, in this order: off (the flag is
+  // unset or no provider), then daily_cap (today's allowance is spent), then available. Reading it spends nothing.
+  typed.get(
+    '/summary/availability',
+    { config: { access: 'public' }, schema: { response: { 200: SummaryAvailabilitySchema } } },
+    async (): Promise<SummaryAvailability> => {
+      if (!aiIsConfigured(deps.summary)) return { ai: 'off' };
+      if (deps.summary.budget?.isSpent()) return { ai: 'daily_cap' };
+      return { ai: 'available' };
+    },
+  );
+
   typed.post(
     '/summary/draft',
     {
@@ -133,7 +153,12 @@ export function registerPersonDataRoutes(app: FastifyInstance, deps: PersonDataD
       const { requestId, locale, useAi, consented, content } = request.body;
       // The rate limit runs first (a route hook), then the daily cap. Only a draft that will really call the provider spends the allowance.
       let allowAi = useAi;
-      if (allowAi && deps.summary.enabled && deps.summary.provider && deps.summary.budget && !deps.summary.budget.take()) allowAi = false;
+      let aiUnavailable: SummaryUnavailableReason | undefined;
+      if (useAi && !aiIsConfigured(deps.summary)) aiUnavailable = 'off';
+      else if (allowAi && deps.summary.budget && !deps.summary.budget.take()) {
+        allowAi = false;
+        aiUnavailable = 'daily_cap';
+      }
       const draft = await draftSummary({ enabled: deps.summary.enabled, provider: deps.summary.provider, useAi: allowAi, content, consented: consented as ConsentElement[], locale });
       await deps.db.insert(schema.summaryLogs).values({
         personId: personId(request),
@@ -144,7 +169,7 @@ export function registerPersonDataRoutes(app: FastifyInstance, deps: PersonDataD
         builtFrom: [...new Set(consented)],
         createdAt: deps.clock.now(),
       });
-      return { source: draft.source, text: draft.text };
+      return aiUnavailable === undefined ? { source: draft.source, text: draft.text } : { source: draft.source, text: draft.text, aiUnavailable };
     },
   );
 }

@@ -5,6 +5,7 @@ import { AGE_BANDS, CARE_LANGUAGES, GENDERS, REGIONS, SUMMARY_WORD_LIMIT, Summar
 import { isLocale } from '@mawsool/ui';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { readAiNotice, type AiNotice } from '../lib/ai-availability';
 import { API_URL } from '../lib/api';
 import { deviceFetch } from '../lib/net';
 import { deviceNow } from '../lib/clock';
@@ -65,6 +66,8 @@ export function ConsentScreen() {
   const [storedOptIn, setStoredOptIn] = useState(false);
   const [drafting, setDrafting] = useState<'idle' | 'working' | 'failed'>('idle');
   const publicDemo = isPublicDemo();
+  // Why the AI is not writing drafts, for the public-demo build only: read when the screen opens, and set again by a draft reply that says so.
+  const [aiNotice, setAiNotice] = useState<AiNotice | null>(null);
   const [equity, setEquity] = useState<{ on: boolean; buckets: Partial<Demographics> }>({ on: false, buckets: {} });
   const [sending, setSending] = useState(false);
   const [problem, setProblem] = useState<Problem>(null);
@@ -86,6 +89,18 @@ export function ConsentScreen() {
       setLoaded({ pending, service: directory?.services.find((service) => service.id === pending.serviceId) ?? null, screenings, base: buildContent(screenings, preferences, saved), sharing: saved, inviteId: invite?.inviteId ?? null });
     })().catch(() => setUnreadable(true));
   }, [device, lang]);
+
+  // The public-demo build only, and never in an anonymous session: with the flag unset (every gate, CI, any real build) there is no request at all.
+  useEffect(() => {
+    if (!publicDemo || device === null || device === 'unavailable' || device.anonymous) return;
+    let live = true;
+    void readAiNotice().then((notice) => {
+      if (live && notice !== null) setAiNotice(notice);
+    });
+    return () => {
+      live = false;
+    };
+  }, [publicDemo, device]);
 
   const content = useMemo<BundleContent>(() => {
     if (!loaded || loaded === 'none') return {};
@@ -159,6 +174,7 @@ export function ConsentScreen() {
       });
       const parsed = result.ok ? SummaryDraftSchema.safeParse(result.body) : null;
       if (!parsed?.success) return setDrafting('failed');
+      if (parsed.data.aiUnavailable) setAiNotice(parsed.data.aiUnavailable);
       // Only a draft the AI wrote is built from the ticked elements. A template (flag off, no AI box, or a provider that failed) is built from nothing: no tick stales it and no stop deletes text the person typed.
       setSummary({ text: parsed.data.text, source: parsed.data.source, approved: false, draftedFrom: parsed.data.source === 'ai' ? elements : [], acceptedWithout: [] });
       setDrafting('idle');
@@ -275,6 +291,11 @@ export function ConsentScreen() {
               {drafting === 'working' ? t('drafting') : t('draft')}
             </button>
           </div>
+          {publicDemo && aiNotice !== null && (
+            <p role="note" className="rounded-chip bg-mock px-2.5 py-1.5 text-[13px] font-semibold text-mock-ink" data-ai-unavailable={aiNotice}>
+              {aiNotice === 'off' ? t('aiOff') : t('aiDailyCap')}
+            </p>
+          )}
           <label className="flex min-h-tap items-center gap-3 text-[14px] font-semibold">
             <input type="checkbox" id="use-ai" className="size-6 accent-accent" checked={sharing.useAi} onChange={(event) => void keepTyped({ ...sharing, useAi: event.target.checked }, conditionsText)} />
             {t('aiTick')}
