@@ -1,0 +1,20 @@
+# One Azure Container Registry run that builds and pushes the four images:
+#
+#   az acr run --registry <registry> --file infra/azure/acr-task.yaml \
+#     --set TAG=<tag> --set NEXT_PUBLIC_API_URL=<the API's public address> [--set NEXT_PUBLIC_PUBLIC_DEMO=true] .
+#
+# The four steps build the same Dockerfile, so they share its `build` stage and the agent's layer cache: the workspace is
+# installed and built once, and the other three targets only copy from it. NEXT_PUBLIC_API_URL is required (the Dockerfile
+# refuses an empty one); NEXT_PUBLIC_PUBLIC_DEMO is read by the person app only and may be left out.
+# Written but not yet run: its first run is in the deploy step.
+version: v1.1.0
+steps:
+  - build: -t $Registry/mawsool-api:{{.Values.TAG}} --target api --build-arg NEXT_PUBLIC_API_URL={{.Values.NEXT_PUBLIC_API_URL}} --build-arg NEXT_PUBLIC_PUBLIC_DEMO={{.Values.NEXT_PUBLIC_PUBLIC_DEMO}} -f Dockerfile .
+  - build: -t $Registry/mawsool-person:{{.Values.TAG}} --target person --build-arg NEXT_PUBLIC_API_URL={{.Values.NEXT_PUBLIC_API_URL}} --build-arg NEXT_PUBLIC_PUBLIC_DEMO={{.Values.NEXT_PUBLIC_PUBLIC_DEMO}} -f Dockerfile .
+  - build: -t $Registry/mawsool-clinician:{{.Values.TAG}} --target clinician --build-arg NEXT_PUBLIC_API_URL={{.Values.NEXT_PUBLIC_API_URL}} --build-arg NEXT_PUBLIC_PUBLIC_DEMO={{.Values.NEXT_PUBLIC_PUBLIC_DEMO}} -f Dockerfile .
+  - build: -t $Registry/mawsool-ops:{{.Values.TAG}} --target ops --build-arg NEXT_PUBLIC_API_URL={{.Values.NEXT_PUBLIC_API_URL}} --build-arg NEXT_PUBLIC_PUBLIC_DEMO={{.Values.NEXT_PUBLIC_PUBLIC_DEMO}} -f Dockerfile .
+  - push:
+      - $Registry/mawsool-api:{{.Values.TAG}}
+      - $Registry/mawsool-person:{{.Values.TAG}}
+      - $Registry/mawsool-clinician:{{.Values.TAG}}
+      - $Registry/mawsool-ops:{{.Values.TAG}}
