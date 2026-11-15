@@ -1,6 +1,6 @@
 'use client';
 
-import { AdvanceClockResultSchema, ClockStateSchema, DEMO_ADVANCE_STEPS, DemoResetResultSchema, type ClockState, type DemoAdvanceStep, type DemoResetResult, type Session } from '@mawsool/types';
+import { AdvanceClockResultSchema, ClockStateSchema, DEMO_ADVANCE_STEPS, DemoResetResultSchema, NouraInviteResultSchema, ResetCooldownSchema, type ClockState, type DemoAdvanceStep, type NouraInviteResult, type Session } from '@mawsool/types';
 import { isLocale, staffCall } from '@mawsool/ui';
 import { CRISIS_NUMBERS_CONFIG } from '@mawsool/rules';
 import { useLocale, useTranslations } from 'next-intl';
@@ -33,8 +33,9 @@ export function AdminPanel({ session, signOut }: { session: Session; signOut: ()
   const [busy, setBusy] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const [reset, setReset] = useState<DemoResetResult | null>(null);
+  const [noura, setNoura] = useState<NouraInviteResult | null>(null);
   const [resetMessage, setResetMessage] = useState<Message>(null);
+  const [inviteMessage, setInviteMessage] = useState<Message>(null);
 
   const readClock = useCallback(async () => {
     try {
@@ -57,6 +58,7 @@ export function AdminPanel({ session, signOut }: { session: Session; signOut: ()
     setBusy(false);
     if (result.status === 'unauthorized') return signOut();
     const parsed = result.status === 'ok' ? AdvanceClockResultSchema.safeParse(result.body) : null;
+    if (result.status === 'refused' && result.error === 'rate_limited') return setMessage({ tone: 'error', text: t('rateLimited') });
     if (!parsed?.success) return setMessage({ tone: 'error', text: t('clock.moveFailed') });
     setClock({ k: 'ready', clock: { demoMode: parsed.data.demoMode, offsetMs: parsed.data.offsetMs } });
     setMessage({ tone: 'ok', text: t('clock.moved', { count: parsed.data.markedOverdue }) });
@@ -73,15 +75,33 @@ export function AdminPanel({ session, signOut }: { session: Session; signOut: ()
     setResetting(false);
     if (result.status === 'unauthorized') return signOut();
     const parsed = result.status === 'ok' ? DemoResetResultSchema.safeParse(result.body) : null;
+    // A cool-down and the per-client limit are both 429s, told apart by the error code the API sends.
+    if (result.status === 'refused' && result.httpStatus === 429) {
+      const cooldown = ResetCooldownSchema.safeParse(result.body);
+      return setResetMessage({ tone: 'error', text: cooldown.success ? t('reset.cooldown', { minutes: Math.max(1, Math.ceil(cooldown.data.retryAfterSeconds / 60)) }) : t('rateLimited') });
+    }
     if (!parsed?.success) return setResetMessage({ tone: 'error', text: t('reset.failed') });
-    setReset(parsed.data);
+    setNoura(parsed.data.noura);
     setResetMessage({ tone: 'ok', text: t('reset.done') });
     setMessage(null);
     void readClock();
   }
 
+  async function newInvite() {
+    setBusy(true);
+    setInviteMessage(null);
+    const result = await staffCall<unknown>({ fetch: window.fetch.bind(window), apiUrl: API_URL, session, method: 'POST', path: '/demo/noura-invite' });
+    setBusy(false);
+    if (result.status === 'unauthorized') return signOut();
+    if (result.status === 'refused' && result.error === 'rate_limited') return setInviteMessage({ tone: 'error', text: t('rateLimited') });
+    const parsed = result.status === 'ok' ? NouraInviteResultSchema.safeParse(result.body) : null;
+    if (!parsed?.success) return setInviteMessage({ tone: 'error', text: t('personas.newInviteFailed') });
+    setNoura(parsed.data);
+    setInviteMessage({ tone: 'ok', text: t('personas.newInviteDone') });
+  }
+
   const offsetDays = clock.k === 'ready' ? Math.round(clock.clock.offsetMs / DAY_MS) : 0;
-  const personOrigin = reset ? new URL(reset.noura.tammUrl.en).origin : null;
+  const personOrigin = noura ? new URL(noura.tammUrl.en).origin : null;
 
   return (
     <main className="mx-auto flex max-w-[960px] flex-col gap-4 px-6 py-7" data-screen="admin-panel">
@@ -130,15 +150,19 @@ export function AdminPanel({ session, signOut }: { session: Session; signOut: ()
       <section aria-label={t('personas.heading')} className={panel} data-section="personas">
         <h2 className="text-[17px] font-bold">{t('personas.heading')}</h2>
         <p className="t-body">{t('personas.noura')}</p>
-        {reset ? (
+        {noura ? (
           <div className="flex flex-col gap-2" data-noura>
-            <p className="t-body"><b>{t('personas.nouraCode')}</b>{': '}<span className="t-code" dir="ltr" data-noura-code>{reset.noura.code}</span></p>
+            <p className="t-body"><b>{t('personas.nouraCode')}</b>{': '}<span className="t-code" dir="ltr" data-noura-code>{noura.code}</span></p>
             <div className="flex flex-wrap gap-2">
-              <a className="btn-primary" href={reset.noura.tammUrl.ar} target="_blank" rel="noreferrer" data-tamm-link="ar">{t('personas.nouraArabic')}</a>
-              <a className="btn-primary" href={reset.noura.tammUrl.en} target="_blank" rel="noreferrer" data-tamm-link="en">{t('personas.nouraEnglish')}</a>
+              <a className="btn-primary" href={noura.tammUrl.ar} target="_blank" rel="noreferrer" data-tamm-link="ar">{t('personas.nouraArabic')}</a>
+              <a className="btn-primary" href={noura.tammUrl.en} target="_blank" rel="noreferrer" data-tamm-link="en">{t('personas.nouraEnglish')}</a>
             </div>
           </div>
         ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className="btn-primary" disabled={!enabled} onClick={() => void newInvite()} data-new-invite>{t('personas.newInvite')}</button>
+        </div>
+        {inviteMessage && <p role="status" aria-live="polite" className={`t-body ${inviteMessage.tone === 'error' ? 'text-danger' : ''}`} data-invite-message>{inviteMessage.text}</p>}
         <p className="t-body">{t('personas.rashid')}</p>
         {personOrigin ? <a className="tap inline-flex items-center font-semibold text-accent" href={`${personOrigin}/en/check-in/`} target="_blank" rel="noreferrer" data-rashid-link>{t('personas.rashidOpen')}</a> : null}
         <p className="t-small rounded-input bg-warning px-3 py-2.5 text-warning-ink" role="note">{t('personas.hint')}</p>

@@ -43,6 +43,10 @@ export type MagicLinkRequest = z.infer<typeof MagicLinkRequestSchema>;
 export const VerifyMagicLinkRequestSchema = z.object({ token: z.string().min(20).max(200) });
 export type VerifyMagicLinkRequest = z.infer<typeof VerifyMagicLinkRequestSchema>;
 
+/** `POST /demo/guest-session` (demo mode only): the seeded demo account to sign in as. Role and facility come from its row, never from the request. */
+export const GuestSessionRequestSchema = z.object({ email: z.email() }).strict();
+export type GuestSessionRequest = z.infer<typeof GuestSessionRequestSchema>;
+
 export const SessionSchema = z.object({
   sessionToken: z.string(),
   expiresAt: z.iso.datetime({ offset: true }),
@@ -158,6 +162,14 @@ export const ErrorResponseSchema = z.object({
   message: z.string(),
 });
 export type ErrorResponse = z.infer<typeof ErrorResponseSchema>;
+
+/** A 429 from the per-client limiter (`RATE_LIMIT` on): too many calls from one client in a minute. Carries no address. */
+export const RateLimitedSchema = z.object({ error: z.literal('rate_limited'), message: z.string() });
+export type RateLimited = z.infer<typeof RateLimitedSchema>;
+
+/** A 429 from `POST /demo/reset` while the cool-down (`DEMO_RESET_COOLDOWN_MS`) runs; distinct from `rate_limited`. */
+export const ResetCooldownSchema = z.object({ error: z.literal('reset_cooldown'), message: z.string(), retryAfterSeconds: z.number().int().min(1) });
+export type ResetCooldown = z.infer<typeof ResetCooldownSchema>;
 
 export const HealthResponseSchema = z.object({ status: z.literal('ok') });
 
@@ -410,11 +422,18 @@ export const SummaryDraftRequestSchema = z
     useAi: z.boolean(),
     consented: z.array(ConsentElementSchema).max(6),
     content: ReferralContentSchema,
+    /** The demo code, only in a hosted demo that sets `AI_DEMO_CODE`; ignored by every other deployment. Never stored or logged. */
+    demoCode: z.string().max(64).optional(),
   })
   .strict();
 export type SummaryDraftRequest = z.infer<typeof SummaryDraftRequestSchema>;
 
-export const SummaryDraftSchema = z.object({ source: z.enum(['ai', 'template']), text: z.string() });
+export const SummaryDraftSchema = z.object({
+  source: z.enum(['ai', 'template']),
+  text: z.string(),
+  /** Present only when the draft asked for the AI and the API holds an `AI_DEMO_CODE`: whether the request's code matched. */
+  demoCode: z.enum(['accepted', 'refused']).optional(),
+});
 export type SummaryDraft = z.infer<typeof SummaryDraftSchema>;
 
 /** PUT /persons/me/equity. Opting out clears the buckets on the server. */

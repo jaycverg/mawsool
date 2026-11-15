@@ -158,7 +158,7 @@ describe('resetting the demo', () => {
     const failing = withReload(async () => {
       throw new Error('the reload failed');
     });
-    await expect(resetDemo({ db: failing, cipher: testDb.cipher, clock, personAppUrl: 'http://localhost:3000' })).rejects.toThrow('the reload failed');
+    await expect(resetDemo({ db: failing, cipher: testDb.cipher, clock, securityClock: new ManualClock(TEST_START), personAppUrl: 'http://localhost:3000' })).rejects.toThrow('the reload failed');
     expect(clock.offset).toBe(21 * DAY);
     expect(await readDemoOffset(testDb.db)).toBe(21 * DAY);
   });
@@ -169,7 +169,7 @@ describe('resetting the demo', () => {
       seenDuringReload = clock.offset;
       throw new Error('stop after looking');
     });
-    await expect(resetDemo({ db: watching, cipher: testDb.cipher, clock, personAppUrl: 'http://localhost:3000' })).rejects.toThrow('stop after looking');
+    await expect(resetDemo({ db: watching, cipher: testDb.cipher, clock, securityClock: new ManualClock(TEST_START), personAppUrl: 'http://localhost:3000' })).rejects.toThrow('stop after looking');
     expect(seenDuringReload).toBe(0);
   });
 
@@ -237,7 +237,7 @@ describe('resetting the demo', () => {
     }) as Db;
     const mover = createClockMover(slow, clock);
     const advance = mover.advance(7 * DAY);
-    const reset = mover.exclusive(() => resetDemo({ db: testDb.db, cipher: testDb.cipher, clock, personAppUrl: 'http://localhost:3000' }));
+    const reset = mover.exclusive(() => resetDemo({ db: testDb.db, cipher: testDb.cipher, clock, securityClock: new ManualClock(TEST_START), personAppUrl: 'http://localhost:3000' }));
     await Promise.all([advance, reset]);
     expect(order).toEqual(['write 28d']);
     expect(clock.offset).toBe(0);

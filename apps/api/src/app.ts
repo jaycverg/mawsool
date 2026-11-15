@@ -17,12 +17,14 @@ import { issueClinicLink } from './clinic-links/service';
 import { createDriver, createNotifier, type Notifier } from './notifier';
 import { registerClinicLinkRoutes } from './routes/clinic-links';
 import { registerAuth } from './plugins/auth';
+import { registerRateLimit } from './plugins/rate-limit';
+import { createSummaryBudget } from './summary-budget';
 import { registerInboundAuth } from './plugins/inbound-auth';
 import { privateRequestLogger } from './plugins/request-log';
 import { registerRouteRegistry } from './plugins/route-registry';
 import { registerSecurityHeaders } from './plugins/security-headers';
 import { registerAuthRoutes } from './routes/auth';
-import { registerClockRoute, registerDemoRoutes } from './routes/demo';
+import { registerClockRoute, registerDemoRoutes, type DemoReset } from './routes/demo';
 import { registerAdverseEventRoutes } from './routes/adverse-events';
 import { registerMetricsRoutes } from './routes/metrics';
 import { registerCrisisEventRoutes } from './routes/crisis-events';
@@ -40,12 +42,19 @@ declare module 'fastify' {
   interface FastifyInstance {
     /** The clock the API runs care time on: the demo clock when `DEMO_MODE` is set, otherwise the wall clock. The sweep job uses it. */
     careClock: Clock;
+    /** One demo reset, as the route and the nightly job run it. Null unless `DEMO_MODE` is set. */
+    demoReset: DemoReset | null;
   }
 }
 
 export interface AppDeps {
   db: Db;
-  config: Pick<AppConfig, 'corsOrigins' | 'clinicianAppUrl' | 'opsAppUrl' | 'encryptionKey' | 'summaryLlmEnabled'> & Partial<Pick<AppConfig, 'personAppUrl' | 'inboundKeys' | 'demoMode' | 'notifierDriver'>>;
+  config: Pick<AppConfig, 'corsOrigins' | 'clinicianAppUrl' | 'opsAppUrl' | 'encryptionKey' | 'summaryLlmEnabled'> & Partial<
+      Pick<
+        AppConfig,
+        'personAppUrl' | 'inboundKeys' | 'demoMode' | 'notifierDriver' | 'rateLimit' | 'clientIpHeader' | 'summaryDailyLimit' | 'aiDemoCode' | 'demoResetCooldownMs'
+      >
+    >;
   /** The summary provider. Null (or the flag off) means no text ever leaves the API. */
   summaryProvider?: SummaryProvider | null;
   /**
@@ -85,6 +94,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     transform: jsonSchemaTransform,
   });
   registerRouteRegistry(app);
+  // Registered before any route it limits; with `RATE_LIMIT` unset nothing is registered and every route's limit is inert.
+  await registerRateLimit(app, { enabled: deps.config.rateLimit === true, clientIpHeader: deps.config.clientIpHeader });
   registerSecurityHeaders(app);
   registerAuth(app, { db: deps.db, clock: securityClock });
   registerInboundAuth(app, { clock: securityClock, keys: deps.config.inboundKeys ?? {} });
@@ -98,6 +109,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return reply.code(400).send({ error: 'invalid_request', message: 'The request did not match the expected shape' });
     }
     const status = typeof error.statusCode === 'number' && error.statusCode >= 400 ? error.statusCode : 500;
+    // A 429 thrown by the limiter: one fixed answer that names no client and no limit.
+    if (status === 429) return reply.code(429).send({ error: 'rate_limited', message: 'Too many requests. Try again shortly.' });
     if (status >= 500) request.log.error({ err: error }, 'request failed');
     return reply.code(status).send({ error: status >= 500 ? 'internal_error' : 'bad_request', message: status >= 500 ? 'Something went wrong' : error.message });
   });
@@ -124,17 +137,31 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerReminderRoutes(app, { ...consentDeps, notifier });
   registerCrisisHandoffRoutes(app, consentDeps);
   registerClinicLinkRoutes(app, clinicLinks);
-  registerPersonDataRoutes(app, { ...consentDeps, summary: { enabled: deps.config.summaryLlmEnabled, provider: deps.summaryProvider ?? null } });
+  const summaryBudget = deps.config.summaryDailyLimit === undefined ? undefined : createSummaryBudget(deps.config.summaryDailyLimit, securityClock);
+  registerPersonDataRoutes(app, {
+    ...consentDeps,
+    summary: { enabled: deps.config.summaryLlmEnabled, provider: deps.summaryProvider ?? null, demoCode: deps.config.aiDemoCode, budget: summaryBudget },
+  });
   registerClockRoute(app, { demoClock });
   registerMetricsRoutes(app, { db: deps.db, clock, encryptionKey: deps.config.encryptionKey, cipher });
   registerAdverseEventRoutes(app, { db: deps.db, clock, securityClock });
   // The write controls exist only in a demo; with `DEMO_MODE` unset these paths are 404.
-  if (demoClock) registerDemoRoutes(app, { db: deps.db, cipher, clock: demoClock, securityClock, personAppUrl: deps.config.personAppUrl ?? 'http://localhost:3000' });
+  const demoReset = demoClock
+    ? registerDemoRoutes(app, {
+        db: deps.db,
+        cipher,
+        clock: demoClock,
+        securityClock,
+        personAppUrl: deps.config.personAppUrl ?? 'http://localhost:3000',
+        resetCooldownMs: deps.config.demoResetCooldownMs ?? 0,
+      })
+    : null;
   // The OpenAPI document is generated from the routes' Zod schemas, so it cannot drift from what the API accepts.
   app.get('/docs', { config: { access: 'public' } }, async () => app.swagger());
   deps.extraRoutes?.(app);
 
   app.decorate('careClock', clock);
+  app.decorate('demoReset', demoReset);
   await app.ready();
   return app;
 }

@@ -19,6 +19,9 @@
     "emailLabel": "Work email address",
     "requestAction": "Request a sign-in link",
     "requestSent": "If that address is registered, a sign-in link has been issued.",
-    "requestFailed": "The request could not be sent. Try again."
+    "requestFailed": "The request could not be sent. Try again.",
+    "demoHeading": "Demo access",
+    "demoNote": "Demo only: synthetic data, shared with everyone using this demo.",
+    "demoFailed": "The demo sign-in did not work. Try again, or request a sign-in link."
   }
 }

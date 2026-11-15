@@ -195,15 +195,19 @@ export const AdvanceClockResultSchema = ClockStateSchema.extend({
 });
 export type AdvanceClockResult = z.infer<typeof AdvanceClockResultSchema>;
 
+/** Noura's invite: the code and the mock TAMM page that opens with it, in each language. Made by a reset and by `POST /demo/noura-invite`. */
+export const NouraInviteResultSchema = z.object({
+  code: z.string(),
+  expiresAt: z.iso.datetime({ offset: true }),
+  tammUrl: z.object({ ar: z.string(), en: z.string() }),
+});
+export type NouraInviteResult = z.infer<typeof NouraInviteResultSchema>;
+
 /** What a reset hands the presenter: Noura's invite code and the mock TAMM page that opens with it, in each language. */
 export const DemoResetResultSchema = z.object({
   offsetMs: z.literal(0),
   seededAt: z.iso.datetime({ offset: true }),
-  noura: z.object({
-    code: z.string(),
-    expiresAt: z.iso.datetime({ offset: true }),
-    tammUrl: z.object({ ar: z.string(), en: z.string() }),
-  }),
+  noura: NouraInviteResultSchema,
 });
 export type DemoResetResult = z.infer<typeof DemoResetResultSchema>;
 

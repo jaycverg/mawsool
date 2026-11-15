@@ -6,6 +6,7 @@ import {
   ConsentRecordSchema,
   OptInsSchema,
   OutcomeStatisticsRequestSchema,
+  RateLimitedSchema,
   RevokeConsentResultSchema,
   SummaryDraftRequestSchema,
   SummaryDraftSchema,
@@ -19,12 +20,31 @@ import { z } from 'zod';
 import { eraseEverything, grantConsent, revokeConsent, type ConsentDeps } from '../consents/service';
 import { schema } from '../db/client';
 import { personIdOf, sendError } from '../plugins/auth';
+import { hashesEqual, sha256Hex } from '../security';
+import type { SummaryBudget } from '../summary-budget';
 import { summaryLogContext } from '../tickets/service';
 
 const Errors = { 400: ErrorResponseSchema, 404: ErrorResponseSchema, 409: ErrorResponseSchema, 410: ErrorResponseSchema };
 
 export interface PersonDataDeps extends ConsentDeps {
-  summary: { enabled: boolean; provider: SummaryProvider | null };
+  summary: {
+    enabled: boolean;
+    provider: SummaryProvider | null;
+    /** A hosted demo's code (lower-case): with it set, the AI drafts only for a request that carries it. */
+    demoCode?: string | undefined;
+    /** A daily allowance of AI calls: once spent, drafts come from the template. Unset means no cap. */
+    budget?: SummaryBudget | undefined;
+  };
+}
+
+/** A typed code as the code is compared: trimmed and lower-cased, because phone keyboards capitalise the first letter and add a trailing space. */
+function normalizeDemoCode(code: string): string {
+  return code.trim().toLowerCase();
+}
+
+/** Whether a request's code is the demo code. Both sides are hashed, and the digests compared in constant time. */
+function demoCodeMatches(given: string | undefined, expected: string): boolean {
+  return given !== undefined && hashesEqual(sha256Hex(normalizeDemoCode(given)), sha256Hex(normalizeDemoCode(expected)));
 }
 
 /**
@@ -118,10 +138,24 @@ export function registerPersonDataRoutes(app: FastifyInstance, deps: PersonDataD
 
   typed.post(
     '/summary/draft',
-    { config: { access: 'person' }, schema: { body: SummaryDraftRequestSchema, response: { 200: SummaryDraftSchema } } },
+    {
+      config: { access: 'person', rateLimit: { max: 10, timeWindow: '1 minute' } },
+      schema: { body: SummaryDraftRequestSchema, response: { 200: SummaryDraftSchema, 429: RateLimitedSchema } },
+    },
     async (request) => {
-      const { requestId, locale, useAi, consented, content } = request.body;
-      const draft = await draftSummary({ enabled: deps.summary.enabled, provider: deps.summary.provider, useAi, content, consented: consented as ConsentElement[], locale });
+      const { requestId, locale, useAi, consented, content, demoCode } = request.body;
+      // The checks run in this order: the rate limit (a route hook), then the demo code, then the daily cap, so a refused code
+      // never spends the cap. The code is checked only when the request asks for the AI, so a person who never ticked it is
+      // never told a code was refused. It is never logged or stored.
+      let allowAi = useAi;
+      let codeOutcome: 'accepted' | 'refused' | undefined;
+      if (useAi && deps.summary.demoCode !== undefined) {
+        codeOutcome = demoCodeMatches(demoCode, deps.summary.demoCode) ? 'accepted' : 'refused';
+        allowAi = codeOutcome === 'accepted';
+      }
+      // Only a draft that will really call the provider spends the allowance.
+      if (allowAi && deps.summary.enabled && deps.summary.provider && deps.summary.budget && !deps.summary.budget.take()) allowAi = false;
+      const draft = await draftSummary({ enabled: deps.summary.enabled, provider: deps.summary.provider, useAi: allowAi, content, consented: consented as ConsentElement[], locale });
       await deps.db.insert(schema.summaryLogs).values({
         personId: personId(request),
         ticketId: null,
@@ -131,7 +165,7 @@ export function registerPersonDataRoutes(app: FastifyInstance, deps: PersonDataD
         builtFrom: [...new Set(consented)],
         createdAt: deps.clock.now(),
       });
-      return { source: draft.source, text: draft.text };
+      return { source: draft.source, text: draft.text, ...(codeOutcome ? { demoCode: codeOutcome } : {}) };
     },
   );
 }

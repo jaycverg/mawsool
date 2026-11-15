@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import { STAFF_SESSION_KEY, requestSignInLink, storeStaffSession, verifySignIn } from '../src';
+import { STAFF_SESSION_KEY, requestSignInLink, startGuestSession, storeStaffSession, verifySignIn } from '../src';
 import { StaffSignIn, type StaffSignInLabels } from '../src/components';
 
 const SESSION = {
@@ -45,6 +45,31 @@ describe('verifySignIn', () => {
   it('accepts every role the app lists', async () => {
     expect((await run(reply(200, { ...SESSION, role: 'admin', facilityId: null }), ['ops', 'admin'])).status).toBe('signed_in');
     expect((await run(reply(200, { ...SESSION, role: 'ops', facilityId: null }), ['ops', 'admin'])).status).toBe('signed_in');
+  });
+});
+
+describe('startGuestSession', () => {
+  const guest = (fetchFn: ReturnType<typeof reply>, allowedRoles: ('clinician' | 'ops' | 'admin')[] = ['clinician']) =>
+    startGuestSession({ fetch: fetchFn as never, apiUrl: 'http://api.test', email: 'clinician.a@demo.mawsool.test', allowedRoles });
+
+  it('posts only the address to /demo/guest-session and returns the session', async () => {
+    const fetchFn = reply(200, SESSION);
+    expect(await guest(fetchFn)).toEqual({ status: 'signed_in', session: SESSION });
+    const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('http://api.test/demo/guest-session');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ email: 'clinician.a@demo.mawsool.test' });
+  });
+
+  it('refuses a session for a role this app does not serve, the same rule as a link', async () => {
+    expect(await guest(reply(200, { ...SESSION, role: 'ops', facilityId: null }))).toEqual({ status: 'wrong_app', role: 'ops' });
+  });
+
+  it('fails, without throwing, for the route’s 404 (a server with the demo off), a 429, a body that is not a session and a network error', async () => {
+    expect(await guest(reply(404, { error: 'Not Found' }))).toEqual({ status: 'failed' });
+    expect(await guest(reply(429, { error: 'rate_limited' }))).toEqual({ status: 'failed' });
+    expect(await guest(reply(200, { nope: true }))).toEqual({ status: 'failed' });
+    expect(await guest(vi.fn(async () => { throw new TypeError('Failed to fetch'); }) as never)).toEqual({ status: 'failed' });
   });
 });
 

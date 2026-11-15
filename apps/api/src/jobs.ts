@@ -3,9 +3,11 @@ import { PgBoss } from 'pg-boss';
 import type { Clock } from './clock';
 import type { Db } from './db/client';
 import { databaseErrorCode } from './plugins/request-log';
+import type { DemoReset } from './routes/demo';
 import { sweep } from './sweep';
 
 export const SWEEP_QUEUE = 'ticket-sweep';
+export const DEMO_RESET_QUEUE = 'demo-reset';
 
 /** What the job queue's tables say when the sweep fails: this message and, for a database error, its SQLSTATE, and nothing else. */
 export const SWEEP_FAILED_MESSAGE = 'ticket sweep failed';
@@ -61,6 +63,20 @@ export function sweepJob(options: SweepJobOptions): () => Promise<void> {
   };
 }
 
+/**
+ * The work handler pg-boss runs for the nightly demo reset: one reset through the same function the route uses, with the
+ * cool-down skipped (a judge's press must not stop the night's reset). A failure is logged through the request log's
+ * serializer and rethrown as a plain error, so the queue stores no query, id or value.
+ */
+export function demoResetJob(demoReset: DemoReset, log?: FastifyBaseLogger): () => Promise<void> {
+  return async () => {
+    await demoReset({ cooldown: false }).catch((error: unknown) => {
+      log?.error({ err: error }, 'demo reset failed');
+      throw new Error('demo reset failed');
+    });
+  };
+}
+
 export interface Jobs {
   /** The queue itself, for a check that needs to see its schedule or fire it. */
   boss: PgBoss;
@@ -71,12 +87,26 @@ export interface Jobs {
  * Starts pg-boss and runs `sweep` every minute. The sweep is idempotent and arbitrated by the event sequence
  * constraint, so it does not matter that several API processes each run the schedule (`sweepJob` is the handler).
  */
-export async function startJobs(options: { databaseUrl: string; db: Db; clock: Clock; securityClock?: Clock; log: FastifyBaseLogger }): Promise<Jobs> {
+export async function startJobs(options: {
+  databaseUrl: string;
+  db: Db;
+  clock: Clock;
+  securityClock?: Clock;
+  log: FastifyBaseLogger;
+  /** The demo reset the nightly job runs. With this and `demoResetCron` both set, the `demo-reset` queue is scheduled. */
+  demoReset?: DemoReset | null;
+  demoResetCron?: string | undefined;
+}): Promise<Jobs> {
   const boss = new PgBoss(options.databaseUrl);
   boss.on('error', (error) => options.log.error({ err: error }, 'job queue error'));
   await boss.start();
   await boss.createQueue(SWEEP_QUEUE);
   await boss.schedule(SWEEP_QUEUE, '* * * * *');
   await boss.work(SWEEP_QUEUE, sweepJob(options));
+  if (options.demoReset && options.demoResetCron) {
+    await boss.createQueue(DEMO_RESET_QUEUE);
+    await boss.schedule(DEMO_RESET_QUEUE, options.demoResetCron);
+    await boss.work(DEMO_RESET_QUEUE, demoResetJob(options.demoReset, options.log));
+  }
   return { boss, stop: () => boss.stop({ graceful: true, timeout: 10_000 }) };
 }

@@ -1,4 +1,9 @@
 {
+  "demoAccounts": {
+    "ops": "Continue as demo programme lead",
+    "admin": "Continue as demo admin",
+    "crisisLine": "Continue as demo crisis-line operator"
+  },
   "meta": {
     "title": "Mawsool Outcomes",
     "description": "Referral outcomes and equity for programme leads."
@@ -162,6 +167,7 @@
   "admin": {
     "heading": "Demo controls",
     "intro": "For the person running the demo. Everything here is sample data.",
+    "rateLimited": "Too many presses in a short time. Wait a minute and try again.",
     "clock": {
       "heading": "Demo clock",
       "loading": "Reading the clock…",
@@ -186,7 +192,8 @@
       "working": "Resetting…",
       "done": "The demo is reset.",
       "failed": "The reset failed. Nothing may have changed; read the clock again.",
-      "off": "Reset is off because demo controls are off."
+      "off": "Reset is off because demo controls are off.",
+      "cooldown": "Someone reset the demo a moment ago. Try again in {minutes, plural, one {# minute} other {# minutes}}."
     },
     "personas": {
       "heading": "Personas",
@@ -196,7 +203,11 @@
       "nouraEnglish": "Open the mock TAMM page in English",
       "rashid": "Rashid, 19, English: answers PHQ-9 item 9 with several days, which opens the crisis screen. Nothing needs to be loaded for him.",
       "rashidOpen": "Open the check-in",
-      "hint": "Show withdrawal on Noura's own ticket. The seeded withdrawn tickets have no consent records behind them."
+      "hint": "Show withdrawal on Noura's own ticket. The seeded withdrawn tickets have no consent records behind them.",
+      "newInvite": "New invite for Noura (adds a TAMM screen to the dashboard)",
+      "newInviteWorking": "Making an invite…",
+      "newInviteDone": "A new invite for Noura is ready.",
+      "newInviteFailed": "The invite could not be made."
     },
     "crisis": {
       "heading": "Crisis numbers",

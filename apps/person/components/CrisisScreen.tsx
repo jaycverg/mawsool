@@ -18,6 +18,7 @@ import { useDevice, type Device } from '../lib/use-device';
 import { repairNow, syncNow } from '../lib/sync';
 import { within } from '../lib/within';
 import { handoffOffer } from '../lib/crisis-handoff';
+import { isPublicDemo } from '../lib/public-demo';
 import { CrisisHandoffPanel } from './CrisisHandoffPanel';
 
 type Reached = 'unasked' | 'asking' | 'yes' | 'later';
@@ -32,6 +33,9 @@ const SAKINA: CrisisNumber = LINES.hotline.number;
  * logged (which number) and the person stays here; the screen then asks "Did you reach someone?". Only "I'm with
  * someone safe" and "I'm safe right now — continue" release the block. Opened from "Help now" with no trigger, it
  * logs nothing.
+ *
+ * In the public-demo build (`NEXT_PUBLIC_PUBLIC_DEMO`) nothing here dials: the numbers are large text with no link, "Call now" records the
+ * tap and stays on the page, and a label says so. Everything else about the screen is unchanged.
  */
 export function CrisisScreen() {
   const t = useTranslations('crisis');
@@ -47,6 +51,7 @@ export function CrisisScreen() {
   const dialler = useMemo(() => createWebDialler((url) => window.location.assign(url)), []);
   const lang = isLocale(locale) ? locale : 'en';
   const texts = crisisTexts(t, LINES);
+  const publicDemo = isPublicDemo();
 
   const refresh = useCallback(async (d: Device) => {
     const state = await d.crisis.read();
@@ -68,7 +73,8 @@ export function CrisisScreen() {
   }, [reached]);
 
   function call(number: CrisisNumber) {
-    dialler.dial(number);
+    // The public-demo build records the tap and the prompt below, and never places a call.
+    if (!publicDemo) dialler.dial(number);
     // The prompt belongs to an open crisis. The tab's mark answers at once, before the stored record has been read.
     const open = Boolean(record?.blocked) || (device !== null && device !== 'unavailable' && device.tabMark.get() !== null);
     if (open && (reached === 'unasked' || reached === 'later')) setReached('asking');
@@ -123,6 +129,20 @@ export function CrisisScreen() {
   }
 
   const tile = 'flex flex-col gap-0.5 rounded-card border-2 border-danger bg-surface px-4 py-3.5 text-danger';
+  const hotlineClass = 'flex items-center gap-3.5 rounded-ticket bg-danger p-4 text-white';
+  const hotlineBody = (
+    <>
+      <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[#8A1515]">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
+          <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a1 1 0 0 1-1 1A16 16 0 0 1 4 5a1 1 0 0 1 1-1z" />
+        </svg>
+      </span>
+      <span className="flex flex-col gap-0.5">
+        <span className="text-[20px] font-bold leading-[normal]">{texts.hotline.title}</span>
+        <span className="text-[14px] leading-[19px] text-[#FBE3E0]">{texts.hotline.detail}</span>
+      </span>
+    </>
+  );
   const choice = 'min-h-cta rounded-cta border-[1.5px] border-[#6B4A46] bg-surface px-4 text-[16px] font-semibold text-[#2A1414]';
 
   return (
@@ -139,40 +159,55 @@ export function CrisisScreen() {
         <h1 className="t-h1">{t('heading')}</h1>
         <p className="text-[16px] leading-6 text-[#4D3330]">{t('body')}</p>
 
-        <a
-          href={`tel:${SAKINA}`}
-          onClick={(event) => {
-            event.preventDefault();
-            call(SAKINA);
-          }}
-          className="flex items-center gap-3.5 rounded-ticket bg-danger p-4 text-white no-underline"
-        >
-          <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[#8A1515]">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
-              <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a1 1 0 0 1-1 1A16 16 0 0 1 4 5a1 1 0 0 1 1-1z" />
-            </svg>
-          </span>
-          <span className="flex flex-col gap-0.5">
-            <span className="text-[20px] font-bold leading-[normal]">{texts.hotline.title}</span>
-            <span className="text-[14px] leading-[19px] text-[#FBE3E0]">{texts.hotline.detail}</span>
-          </span>
-        </a>
+        {publicDemo && (
+          <p role="note" className="rounded-chip bg-mock px-3 py-2 text-[14px] font-semibold text-mock-ink" data-public-demo-call>
+            {t('demoNoCall')}
+          </p>
+        )}
+
+        {publicDemo ? (
+          <div className={hotlineClass} data-number={SAKINA}>
+            {hotlineBody}
+          </div>
+        ) : (
+          <a
+            href={`tel:${SAKINA}`}
+            onClick={(event) => {
+              event.preventDefault();
+              call(SAKINA);
+            }}
+            className={`${hotlineClass} no-underline`}
+          >
+            {hotlineBody}
+          </a>
+        )}
 
         <div className="grid grid-cols-2 gap-2.5">
-          {texts.emergency.map((line) => (
-            <a
-              key={line.dial}
-              href={`tel:${line.dial}`}
-              onClick={(event) => {
-                event.preventDefault();
-                call(line.dial as CrisisNumber);
-              }}
-              className={`${tile} no-underline`}
-            >
-              <span className="text-[20px] font-bold">{line.title}</span>
-              <span className="text-[14px] text-[#4D3330]">{line.detail}</span>
-            </a>
-          ))}
+          {texts.emergency.map((line) => {
+            const body = (
+              <>
+                <span className="text-[20px] font-bold">{line.title}</span>
+                <span className="text-[14px] text-[#4D3330]">{line.detail}</span>
+              </>
+            );
+            return publicDemo ? (
+              <div key={line.dial} className={tile} data-number={line.dial}>
+                {body}
+              </div>
+            ) : (
+              <a
+                key={line.dial}
+                href={`tel:${line.dial}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  call(line.dial as CrisisNumber);
+                }}
+                className={`${tile} no-underline`}
+              >
+                {body}
+              </a>
+            );
+          })}
         </div>
 
         <div className="mt-1.5 flex items-center gap-2.5 text-[14px] text-[#4D3330]">
