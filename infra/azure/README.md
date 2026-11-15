@@ -87,7 +87,6 @@ Azure part, read-only, run 2026-11-15 with `az` on "Azure subscription 1":
   The list also shows `Standard_B1ms` and `Standard_B2s`, but creating either failed with `SkuNotAvailable` in `uaenorth` on this
   subscription (2026-11-15 and 2026-11-16). The list is not a quota or an entitlement. The database therefore takes its own
   region: set `PG_LOCATION` (default `AZURE_LOCATION`) in `azure.env`; the apps and the rest stay in `AZURE_LOCATION`. The SKU is `Standard_B1ms`.
-  The region the database actually landed in is recorded under "Stage 3A run" once it exists.
 - The registry name `mawsoolc91953` was free (`az acr check-name`).
 - Not established by these reads: that the free trial's quota lets the environment, the server and the registry actually be
   created (a list of capabilities is not a quota); the first deploy is that check. If the region refuses, pick the nearest one
