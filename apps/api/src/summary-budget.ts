@@ -4,6 +4,8 @@ import type { Clock } from './clock';
 export interface SummaryBudget {
   /** Spends one call from today's allowance. False when today's allowance is already spent, and then nothing is counted. */
   take(): boolean;
+  /** Whether today's allowance is spent, without spending anything: what `take()` would answer false to right now. */
+  isSpent(): boolean;
 }
 
 /**
@@ -15,16 +17,24 @@ export interface SummaryBudget {
 export function createSummaryBudget(limitPerDay: number, clock: Clock): SummaryBudget {
   let day = '';
   let used = 0;
+  /** Starts a new count when the UTC day has changed. */
+  const rollOver = () => {
+    const today = clock.now().toISOString().slice(0, 10);
+    if (today !== day) {
+      day = today;
+      used = 0;
+    }
+  };
   return {
     take() {
-      const today = clock.now().toISOString().slice(0, 10);
-      if (today !== day) {
-        day = today;
-        used = 0;
-      }
+      rollOver();
       if (used >= limitPerDay) return false;
       used += 1;
       return true;
+    },
+    isSpent() {
+      rollOver();
+      return used >= limitPerDay;
     },
   };
 }
