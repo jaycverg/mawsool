@@ -22,6 +22,9 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
 # The version `packageManager` pins. Installed with npm, not corepack: the corepack that ships with this Node (0.34) prepares
 # pnpm 12 without its entry file, so `pnpm` fails with MODULE_NOT_FOUND.
 RUN npm install --global pnpm@12.6.0 && pnpm --version
+# /app is made and handed to `node` here, as root. WORKDIR after `USER node` leaves it root-owned on a builder that is not
+# BuildKit (an ACR agent may be one), and the install and build below would then fail to write in it.
+RUN mkdir -p /app && chown node:node /app
 USER node
 WORKDIR /app
 
@@ -29,8 +32,9 @@ WORKDIR /app
 FROM base AS build
 ARG NEXT_PUBLIC_API_URL
 ARG NEXT_PUBLIC_PUBLIC_DEMO=""
-# An empty address would be baked in as an empty string (the apps only fall back to localhost when it is unset), so refuse it.
-RUN test -n "$NEXT_PUBLIC_API_URL" || { echo "build argument NEXT_PUBLIC_API_URL is required" >&2; exit 1; }
+# An empty address would be baked in as an empty string (the apps only fall back to localhost when it is unset), and so would
+# the text `<no value>` that an ACR task renders for a value nobody passed. Only an http(s) address gets through.
+RUN case "$NEXT_PUBLIC_API_URL" in http://?*|https://?*) ;; *) echo "build argument NEXT_PUBLIC_API_URL must be an http(s) address" >&2; exit 1;; esac
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} \
     NEXT_PUBLIC_PUBLIC_DEMO=${NEXT_PUBLIC_PUBLIC_DEMO}
 COPY --chown=node:node . .
