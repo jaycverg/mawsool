@@ -64,9 +64,6 @@ export function ConsentScreen() {
   const [typedFailed, setTypedFailed] = useState(false);
   const [storedOptIn, setStoredOptIn] = useState(false);
   const [drafting, setDrafting] = useState<'idle' | 'working' | 'failed'>('idle');
-  // The demo code (public-demo build only) lives in this component's state and nowhere else: not in the device store, not in sessionStorage.
-  const [demoCode, setDemoCode] = useState('');
-  const [codeRefused, setCodeRefused] = useState(false);
   const publicDemo = isPublicDemo();
   const [equity, setEquity] = useState<{ on: boolean; buckets: Partial<Demographics> }>({ on: false, buckets: {} });
   const [sending, setSending] = useState(false);
@@ -149,7 +146,6 @@ export function ConsentScreen() {
 
   async function draft() {
     setDrafting('working');
-    setCodeRefused(false);
     try {
       await markServerFootprint(dev.storage, deviceNow);
       // With the AI box unticked nothing about the person goes with the request: the server only returns the template.
@@ -160,11 +156,9 @@ export function ConsentScreen() {
         useAi: aiOn,
         consented: aiOn ? elements : ['ticket'],
         content: aiOn ? redact(content, elements) : {},
-        ...(publicDemo && aiOn && demoCode.trim() !== '' ? { demoCode } : {}),
       });
       const parsed = result.ok ? SummaryDraftSchema.safeParse(result.body) : null;
       if (!parsed?.success) return setDrafting('failed');
-      setCodeRefused(parsed.data.demoCode === 'refused');
       // Only a draft the AI wrote is built from the ticked elements. A template (flag off, no AI box, or a provider that failed) is built from nothing: no tick stales it and no stop deletes text the person typed.
       setSummary({ text: parsed.data.text, source: parsed.data.source, approved: false, draftedFrom: parsed.data.source === 'ai' ? elements : [], acceptedWithout: [] });
       setDrafting('idle');
@@ -285,26 +279,6 @@ export function ConsentScreen() {
             <input type="checkbox" id="use-ai" className="size-6 accent-accent" checked={sharing.useAi} onChange={(event) => void keepTyped({ ...sharing, useAi: event.target.checked }, conditionsText)} />
             {t('aiTick')}
           </label>
-          {publicDemo && (
-            <label htmlFor="demo-code" className="flex flex-col gap-1 text-[13px] font-semibold text-muted">
-              {t('demoCodeLabel')}
-              <input
-                id="demo-code"
-                type="text"
-                dir="ltr"
-                autoCapitalize="none"
-                autoCorrect="off"
-                autoComplete="off"
-                spellCheck={false}
-                maxLength={64}
-                disabled={!sharing.useAi}
-                value={demoCode}
-                onChange={(event) => setDemoCode(event.target.value)}
-                className={FIELD}
-                data-demo-code
-              />
-            </label>
-          )}
           {typedFailed && <p role="alert" className="t-small text-danger">{t('typedNotSaved')}</p>}
           {drafting === 'failed' && <p role="alert" className="t-small text-danger">{t('draftFailed')}</p>}
           {summary && (
@@ -312,7 +286,6 @@ export function ConsentScreen() {
               <label htmlFor="summary" className="text-[13px] font-semibold text-muted">{t('summaryLabel')}</label>
               <textarea id="summary" rows={5} className={FIELD} value={summary.text} onChange={(event) => setSummary({ ...summary, text: event.target.value, approved: false })} />
               <p className="t-small text-muted">{summary.source === 'ai' ? t('sourceAi') : t('sourceTemplate')}</p>
-              {codeRefused && <p role="status" className="t-small text-danger" data-demo-code-refused>{t('demoCodeRefused')}</p>}
               <p className={`t-small ${summaryWords > SUMMARY_WORD_LIMIT ? 'text-danger' : 'text-muted'}`}>{summaryWords > SUMMARY_WORD_LIMIT ? t('tooLong') : t('words', { count: summaryWords })}</p>
               <p className="t-small text-muted">{t('summaryHint')}</p>
               {!summary.approved && stale && <p className="t-small text-danger" data-stale>{t('staleSummary')}</p>}
