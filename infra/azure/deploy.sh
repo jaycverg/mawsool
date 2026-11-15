@@ -197,6 +197,8 @@ set +a
 
 AZURE_SUBSCRIPTION=${AZURE_SUBSCRIPTION:-Azure subscription 1}
 AZURE_LOCATION=${AZURE_LOCATION:-uaenorth}
+# The database may sit in another region: Flexible Server SKUs are refused per subscription and region.
+PG_LOCATION=${PG_LOCATION:-$AZURE_LOCATION}
 AZURE_RESOURCE_GROUP=${AZURE_RESOURCE_GROUP:-mawsool-demo-rg}
 EDGE=${EDGE:-azure}
 AI=${AI:-off}
@@ -288,7 +290,7 @@ print_plan() {
   say "stage            EDGE=$EDGE, AI=$AI"
   say "registry         $ACR_NAME (Basic)"
   say "environment      $ENV_NAME"
-  say "postgres         $PG_SERVER_NAME (Burstable B2s, PostgreSQL 17, database $PG_DATABASE, firewall: Azure services only)"
+  say "postgres         $PG_SERVER_NAME in $PG_LOCATION (Burstable B1ms, PostgreSQL 17, database $PG_DATABASE, firewall: Azure services only)"
   say "apps             $APP_API (1 replica), $APP_PERSON, $APP_CLINIC, $APP_OPS (0 to 1 replica)"
   say "api settings     DEMO_MODE=true RATE_LIMIT=true DEMO_RESET_COOLDOWN_MS=300000 DEMO_RESET_CRON='0 23 * * *' SUMMARY_DAILY_LIMIT=100 SUMMARY_LLM_ENABLED=$([ "$AI" = on ] && echo true || echo false)"
   if [ "$EDGE" = cloudflare ]; then
@@ -308,7 +310,7 @@ if [ "$MODE" = check ]; then
   for ns in $REQUIRED_PROVIDERS; do say "$ns  $(az provider show -n "$ns" --query registrationState -o tsv)"; done
   step "Region $AZURE_LOCATION"
   say "Container Apps environments: $(az provider show -n Microsoft.App --query "resourceTypes[?resourceType=='managedEnvironments'].locations | [0] | contains(@, '$(az account list-locations --query "[?name=='$AZURE_LOCATION'].displayName | [0]" -o tsv)')" -o tsv)"
-  say "PostgreSQL B2s and 17: $(az postgres flexible-server list-skus -l "$AZURE_LOCATION" --query "[0].supportedServerEditions[?name=='Burstable'].supportedServerSkus[].name | [?@=='Standard_B2s'] | [0]" -o tsv 2>/dev/null)"
+  say "PostgreSQL B1ms and 17 in $PG_LOCATION: $(az postgres flexible-server list-skus -l "$PG_LOCATION" --query "[0].supportedServerEditions[?name=='Burstable'].supportedServerSkus[].name | [?@=='Standard_B1ms'] | [0]" -o tsv 2>/dev/null)"
   step "Names"
   say "registry $ACR_NAME: $(az acr check-name -n "$ACR_NAME" --query 'nameAvailable' -o tsv 2>/dev/null || echo unknown) (true = free; false is fine if it is already ours)"
   say "resource group $AZURE_RESOURCE_GROUP exists: $(az group exists -n "$AZURE_RESOURCE_GROUP")"
@@ -387,13 +389,13 @@ fi
 say "API address in the images: $URL_API"
 
 # --- 6. postgres -------------------------------------------------------------------------------------------------------------
-step "6. PostgreSQL Flexible Server (Burstable B2s, 17)"
+step "6. PostgreSQL Flexible Server (Burstable B1ms, 17, in $PG_LOCATION)"
 if exists az postgres flexible-server show -n "$PG_SERVER_NAME" -g "$AZURE_RESOURCE_GROUP"; then
   say "$PG_SERVER_NAME exists"
 else
   # --public-access 0.0.0.0 is the "allow Azure services" rule and nothing else.
-  run az postgres flexible-server create -n "$PG_SERVER_NAME" -g "$AZURE_RESOURCE_GROUP" -l "$AZURE_LOCATION" \
-    --tier Burstable --sku-name Standard_B2s --version 17 --storage-size 32 --backup-retention 7 \
+  run az postgres flexible-server create -n "$PG_SERVER_NAME" -g "$AZURE_RESOURCE_GROUP" -l "$PG_LOCATION" \
+    --tier Burstable --sku-name Standard_B1ms --version 17 --storage-size 32 --backup-retention 7 \
     --admin-user "$PG_ADMIN_USER" --admin-password "$POSTGRES_ADMIN_PASSWORD" --public-access 0.0.0.0 --yes -o none
 fi
 if exists az postgres flexible-server db show -s "$PG_SERVER_NAME" -g "$AZURE_RESOURCE_GROUP" -d "$PG_DATABASE"; then
