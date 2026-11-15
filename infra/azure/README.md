@@ -126,14 +126,15 @@ keeps the 12-month free services. The sign-up date is the account owner's to rea
       Rocket Loader off, email obfuscation off), merged with the rules already in the zone's entry point; only an answer of
       "no such entry point" counts as no rules, and any other failed read stops before a write. Then the four CNAMEs are proxied.
       Web Analytics is read-only: it reports whether automatic injection is on for the zone and changes nothing (its per-host API
-      has not been run). If it is on, the page source of the four hostnames is the check, and the exclusion is made by hand.
+      has not been run). If it is on, the exclusion is made by hand in the dashboard; the smoke check then looks for the beacon in a
+      browser-like page request (a plain `curl` is not injected).
    5. Each of the four `https://<host>/` (the API on `/health`, served by the old image) must answer through Cloudflare. If one
       does not, the run stops with the apps still on the default addresses.
    6. Only now the apps roll to the new images and settings: `NEXT_PUBLIC_API_URL=https://mawsool-api.thevergara.dev`, the four URL
       settings (`CORS_ORIGINS` keeps the default addresses as well as the hostnames), `CLIENT_IP_HEADER=cf-connecting-ip`. The run
       waits for each newest revision to be the ready one and for the hostnames to answer 200.
    7. The ingress lock: every Cloudflare range (fetched at run time from `cloudflare.com/ips-v4` and `ips-v6`), as a rule named
-      `cf-<range>`, applied to each app in ONE update (an `az rest` PATCH of `ipSecurityRestrictions`; it replaces the app's
+      `cf-<range>`, applied to each app in ONE update (an `az rest` PATCH of `ipSecurityRestrictions`, api-version 2025-07-01; it replaces the app's
       restrictions as a whole). If Container Apps refuses the IPv6 ranges, the IPv4 ranges go in alone, still as one update.
    8. The smoke check goes through Cloudflare: the three pages answer 200 and carry no Web Analytics beacon, each
       `azurecontainerapps.io` address answers exactly 403 (the API on `/health`), `/clock` answers on the API hostname, and the
@@ -147,12 +148,14 @@ run against Azure or Cloudflare.
 
 ## Rolling back to 3A
 
-Set `EDGE=azure` in `azure.env` and run `deploy.sh`: the apps roll to images built for the default API address and the default
-URLs. Then, by hand:
-- remove the Cloudflare setting from the API: `az containerapp update -n mawsool-api -g mawsool-demo-rg --remove-env-vars CLIENT_IP_HEADER -o none`;
-- open the ingress again: `az rest --method patch --url "/subscriptions/<id>/resourceGroups/mawsool-demo-rg/providers/Microsoft.App/containerApps/<app>?api-version=2024-03-01" --body '{"properties":{"configuration":{"ingress":{"ipSecurityRestrictions":[]}}}}' --output none`
-  for each of the four apps (or `az containerapp ingress access-restriction remove -n <app> -g mawsool-demo-rg --rule-name <cf-...>` per rule,
-  names from `access-restriction list`).
+In this order (the ingress is opened first, so nobody is refused while the apps move back):
+1. Open the ingress of each of the four apps:
+   `az rest --method patch --url "/subscriptions/<id>/resourceGroups/mawsool-demo-rg/providers/Microsoft.App/containerApps/<app>?api-version=2025-07-01" --body '{"properties":{"configuration":{"ingress":{"ipSecurityRestrictions":[]}}}}' --output none`
+   (or `az containerapp ingress access-restriction remove -n <app> -g mawsool-demo-rg --rule-name <cf-...>` per rule, names from
+   `access-restriction list`).
+2. Set `EDGE=azure` in `azure.env` and run `deploy.sh`: the apps roll to images built for the default API address and the default URLs.
+3. Remove the Cloudflare setting from the API: `az containerapp update -n mawsool-api -g mawsool-demo-rg --remove-env-vars CLIENT_IP_HEADER -o none`.
+
 Leaving the hostnames bound and the DNS records in place is harmless: the default addresses keep working, and the hostnames
 simply stop being used. Remove them as in "Restoring Cloudflare" when they are no longer wanted.
 
