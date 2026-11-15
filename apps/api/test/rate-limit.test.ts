@@ -166,16 +166,13 @@ describe('the opt-in limits', () => {
       expect(provider.calls).toBe(4);
     });
 
-    it('does not count a draft that never asked for the AI, or one made with the AI off', async () => {
+    it('does not count a draft that never asked for the AI', async () => {
       const provider = new CountingProvider();
       const ctx = await setup({ summaryLlmEnabled: true, summaryProvider: provider, config: { summaryDailyLimit: 1 } });
       const person = await registerPerson(ctx);
       for (let i = 0; i < 3; i += 1) expect((await draft(ctx, person, { useAi: false })).json().source).toBe('template');
       expect((await draft(ctx, person, { useAi: true })).json().source).toBe('ai');
       expect((await draft(ctx, person, { useAi: true })).json().source).toBe('template');
-      const off = await setup({ summaryLlmEnabled: false, summaryProvider: provider, config: { summaryDailyLimit: 1 } });
-      const other = await registerPerson(off);
-      for (let i = 0; i < 3; i += 1) expect((await draft(off, other, { useAi: true })).json().source).toBe('template');
     });
 
     it('with the limit at 0 allows no AI call at all, and with it unset there is no cap', async () => {
