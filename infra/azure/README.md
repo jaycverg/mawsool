@@ -221,6 +221,9 @@ is written there on purpose (`staff_sign_in` with its link); the guest buttons d
 
 Fast, without a redeploy: `az containerapp update -n mawsool-api -g mawsool-demo-rg --set-env-vars SUMMARY_LLM_ENABLED=false`.
 To keep it off, set `AI=off` in `azure.env`. Drafts are then written from the template.
+The public-demo consent screen says so: it reads `GET /summary/availability` (`available`, `off` or `daily_cap`) when it opens and shows
+a note above the AI tick when the AI is off or the day's allowance (`SUMMARY_DAILY_LIMIT`) is spent, and again when a draft reply
+carries `aiUnavailable`. A build without `NEXT_PUBLIC_PUBLIC_DEMO=true` makes no such request and shows no note.
 
 ## If the API cannot reach Postgres (step 10)
 
