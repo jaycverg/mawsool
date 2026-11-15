@@ -123,10 +123,11 @@ keeps the 12-month free services. The sign-up date is the account owner's to rea
    3. `az containerapp hostname add` (skipped when the hostname is already listed) and `hostname bind --validation-method CNAME`
       (skipped when already bound): Azure issues a managed certificate and `deploy.sh` waits for it (10 minutes at most).
    4. `cloudflare.sh part2`: first one Configuration Rule (ref `mawsool_demo_hostnames`) for exactly the four hostnames (SSL strict,
-      Rocket Loader off, email obfuscation off), merged with the rules already in the zone's entry point; only an answer of
-      "no such entry point" counts as no rules, and any other failed read stops before a write. Then the four CNAMEs are proxied.
-      Web Analytics is read-only: it reports whether automatic injection is on for the zone and changes nothing (its per-host API
-      has not been run). If it is on, the exclusion is made by hand in the dashboard; the smoke check then looks for the beacon in a
+      Rocket Loader off, email obfuscation off, `disable_rum` true, which keeps Cloudflare's Web Analytics beacon off them), merged
+      with the rules already in the zone's entry point; an existing rule is compared with its keys sorted, so a rerun does not PUT it
+      again. Only an answer of "no such entry point" counts as no rules, and any other failed read stops before a write. Then the four
+      CNAMEs are proxied. The Web Analytics step is read-only: it reports whether automatic injection is on for the zone and changes
+      nothing; the rule's `disable_rum` is what keeps the beacon off the four hostnames, and the smoke check looks for it in a
       browser-like page request (a plain `curl` is not injected).
    5. Each of the four `https://<host>/` (the API on `/health`, served by the old image) must answer through Cloudflare. If one
       does not, the run stops with the apps still on the default addresses.
