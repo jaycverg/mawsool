@@ -31,7 +31,7 @@ Subscription "Azure subscription 1", region `uaenorth`, resource group `mawsool-
 | --- | --- | --- |
 | Container Registry | `mawsool` + 6 characters of a hash of the subscription id | Basic. Pulls use a managed identity (`mawsool-pull`, role AcrPull); the admin user is off. |
 | Container Apps environment | `mawsool-env` | Consumption plan; Azure creates its Log Analytics workspace. |
-| PostgreSQL Flexible Server | `mawsool-pg-` + the same 6 characters | Burstable B1ms, PostgreSQL 17, 32 GB, 7-day backups, database `mawsool`, firewall open to Azure services only. |
+| PostgreSQL Flexible Server | `mawsool-pg-` + the same 6 characters | Burstable B2s, PostgreSQL 17, 32 GB, 7-day backups, database `mawsool`, firewall open to Azure services only. |
 | Apps | `mawsool-api`, `mawsool-person`, `mawsool-clinic`, `mawsool-ops` | Single revision mode. The API runs at exactly 1 replica (its clock queue, rate limiter and AI budget live in one process); the web apps scale 0 to 1. |
 
 API settings: `DEMO_MODE=true`, `RATE_LIMIT=true`, `DEMO_RESET_COOLDOWN_MS=300000`, `DEMO_RESET_CRON=0 23 * * *` (03:00 in the
@@ -82,8 +82,10 @@ for a minute two API processes run and the in-memory rate limits and AI budget a
 
 Azure part, read-only, run 2026-11-15 with `az` on "Azure subscription 1":
 - Container Apps managed environments, Container Registry and PostgreSQL Flexible Server are all offered in UAE North.
-- Flexible Server in `uaenorth` lists the Burstable SKU `Standard_B1ms` and PostgreSQL versions 11 to 18 (`az postgres
+- Flexible Server in `uaenorth` lists the Burstable SKU `Standard_B2s` and PostgreSQL versions 11 to 18 (`az postgres
   flexible-server list-skus -l uaenorth`), with the feature `OfferRestricted` disabled.
+  The list also shows `Standard_B1ms`, but creating one failed with `SkuNotAvailable` on this subscription (2026-11-15), so the deploy
+  uses `Standard_B2s` (2 vCores, 2 GB). The list is not a quota or an entitlement.
 - The registry name `mawsoolc91953` was free (`az acr check-name`).
 - Not established by these reads: that the free trial's quota lets the environment, the server and the registry actually be
   created (a list of capabilities is not a quota); the first deploy is that check. If the region refuses, pick the nearest one
