@@ -54,15 +54,6 @@ const wholeNumber = (name: string) => {
   return z.coerce.number({ error }).int({ error }).min(0, { error });
 };
 
-/**
- * `AI_DEMO_CODE` is the code a hosted demo asks for before the AI drafts a note: 8 to 64 characters, lower-case letters, digits
- * and hyphens (a request's code is trimmed and lower-cased before it is compared). The message never repeats the value.
- */
-const AiDemoCode = z.preprocess(
-  blankIsUnset,
-  z.string().regex(/^[a-z0-9-]{8,64}$/, { error: 'AI_DEMO_CODE must be 8 to 64 characters of lower-case letters, digits and hyphens' }).optional(),
-);
-
 /** `DEMO_RESET_CRON` is a five-field cron expression, checked by the parser pg-boss schedules with, so a bad one stops startup instead of making `boss.schedule` throw. */
 const DemoResetCron = z.preprocess(
   blankIsUnset,
@@ -105,7 +96,6 @@ const EnvSchema = z
     RATE_LIMIT: RateLimitFlag,
     CLIENT_IP_HEADER: ClientIpHeader,
     SUMMARY_DAILY_LIMIT: z.preprocess(blankIsUnset, wholeNumber('SUMMARY_DAILY_LIMIT').optional()),
-    AI_DEMO_CODE: AiDemoCode,
     DEMO_RESET_COOLDOWN_MS: z.preprocess(blankIsUnset, wholeNumber('DEMO_RESET_COOLDOWN_MS').default(0)),
     DEMO_RESET_CRON: DemoResetCron,
     API_PORT: z.coerce.number().int().min(1).max(65535).default(4000),
@@ -172,8 +162,6 @@ export interface AppConfig {
   clientIpHeader: string | undefined;
   /** At most this many AI calls per UTC day, then the template. Unset means no cap; 0 means no AI call at all. */
   summaryDailyLimit: number | undefined;
-  /** When set, the AI drafts only for a request that carries this code (lower-case). */
-  aiDemoCode: string | undefined;
   /** Milliseconds after a reset during which another reset is refused (429). 0 means no cool-down. */
   demoResetCooldownMs: number;
   /** When set (and `DEMO_MODE` is on), the demo resets itself on this cron schedule (UTC). */
@@ -204,7 +192,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     rateLimit: parsed.RATE_LIMIT,
     clientIpHeader: parsed.CLIENT_IP_HEADER,
     summaryDailyLimit: parsed.SUMMARY_DAILY_LIMIT,
-    aiDemoCode: parsed.AI_DEMO_CODE,
     demoResetCooldownMs: parsed.DEMO_RESET_COOLDOWN_MS,
     demoResetCron: parsed.DEMO_RESET_CRON,
   };

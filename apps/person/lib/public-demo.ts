@@ -5,7 +5,7 @@
  *
  * With it on, nothing on the crisis screen dials (a visitor must not ring a real crisis or emergency line), the numbers are
  * shown as text with a label saying so, a note warns that what is typed is visible to everyone using the demo, and the consent
- * screen asks for the demo code before the AI drafts a note.
+ * screen carries the same note.
  */
 
 /**

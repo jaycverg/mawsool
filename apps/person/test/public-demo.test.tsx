@@ -21,7 +21,6 @@ vi.mock('@mawsool/ui', async (importOriginal) => ({ ...(await importOriginal<Rec
 
 const MESSAGES = { en, ar } as const;
 const SAKINA = '800725462';
-const CODE = 'Sand-River-Lamp ';
 
 /** A device over an in-memory store, with a real crisis store (and the tab's mark held in memory), as the screens use it. */
 function makeDevice(initial: Record<string, unknown> = {}) {
@@ -137,7 +136,7 @@ describe.each(['en', 'ar'] as const)('the consent screen (%s)', (locale) => {
   const words = MESSAGES[locale].consent;
   type Body = Record<string, unknown>;
 
-  async function open(reply: { source: 'ai' | 'template'; text: string; demoCode?: 'accepted' | 'refused' }) {
+  async function open(reply: { source: 'ai' | 'template'; text: string }) {
     const { memory } = makeDevice();
     await savePendingChoice(memory.storage, { tier: 'gp', serviceId: crypto.randomUUID(), chosenAt: '2026-11-01T08:00:00+04:00', windowDays: 7, requestId: crypto.randomUUID(), reroute: null });
     const drafts: Body[] = [];
@@ -157,78 +156,33 @@ describe.each(['en', 'ar'] as const)('the consent screen (%s)', (locale) => {
   }
 
   const aiTick = () => document.querySelector('#use-ai') as HTMLInputElement;
-  const codeField = () => document.querySelector('#demo-code') as HTMLInputElement | null;
 
-  it('without the flag has no public-demo note and no demo-code field, and a draft carries no demoCode', async () => {
-    const { drafts } = await open({ source: 'template', text: 'TEMPLATE TEXT' });
+  it('without the flag has no public-demo note', async () => {
+    await open({ source: 'template', text: 'TEMPLATE TEXT' });
     expect(document.querySelector('[data-public-demo-note]')).toBeNull();
-    expect(codeField()).toBeNull();
-    fireEvent.click(aiTick());
-    fireEvent.click(screen.getByRole('button', { name: words.draft }));
-    await screen.findByDisplayValue('TEMPLATE TEXT');
-    expect(drafts).toHaveLength(1);
-    expect('demoCode' in drafts[0]!).toBe(false);
   });
 
-  it('with the flag shows the note and the field, and the field is disabled until the AI tick is on', async () => {
+  it('with the flag shows the note beside what the person types, and no field for a code', async () => {
     vi.stubEnv('NEXT_PUBLIC_PUBLIC_DEMO', 'true');
     await open({ source: 'template', text: 'TEMPLATE TEXT' });
     expect(document.querySelector('[data-public-demo-note]')!.textContent).toBe(words.publicDemoNote);
-    const field = codeField()!;
-    expect(field).not.toBeNull();
-    expect(field.disabled).toBe(true);
-    expect(field.getAttribute('autocapitalize')).toBe('none');
-    expect(field.getAttribute('autocorrect')).toBe('off');
-    expect(field.getAttribute('spellcheck')).toBe('false');
-    fireEvent.click(aiTick());
-    await waitFor(() => expect(codeField()!.disabled).toBe(false));
+    expect(document.querySelectorAll('input[type="text"]')).toHaveLength(0);
   });
 
-  it('sends the typed code as demoCode, shows the “not accepted” message beside a template draft when the reply says refused, and keeps the code out of every store', async () => {
-    vi.stubEnv('NEXT_PUBLIC_PUBLIC_DEMO', 'true');
-    const { memory, drafts } = await open({ source: 'template', text: 'TEMPLATE TEXT', demoCode: 'refused' });
-    fireEvent.click(aiTick());
-    await waitFor(() => expect(codeField()!.disabled).toBe(false));
-    fireEvent.change(codeField()!, { target: { value: CODE } });
-    fireEvent.click(screen.getByRole('button', { name: words.draft }));
-    await screen.findByText(words.demoCodeRefused);
-    expect(screen.getByDisplayValue('TEMPLATE TEXT')).toBeTruthy();
-    expect(drafts).toHaveLength(1);
-    expect(drafts[0]!.demoCode).toBe(CODE);
-    expect(drafts[0]!.useAi).toBe(true);
-
-    const device = [...memory.data.entries()].map(([key, value]) => `${key}=${JSON.stringify(value)}`).join('\n');
-    expect(device).not.toContain('Sand-River-Lamp');
-    expect(device.toLowerCase()).not.toContain('sand-river');
-    const session = Object.keys(window.sessionStorage).map((key) => `${key}=${window.sessionStorage.getItem(key)}`).join('\n');
-    const local = Object.keys(window.localStorage).map((key) => `${key}=${window.localStorage.getItem(key)}`).join('\n');
-    expect(session.toLowerCase()).not.toContain('sand-river');
-    expect(local.toLowerCase()).not.toContain('sand-river');
-  });
-
-  it('shows no message when the reply says accepted, and clears an earlier message on the next draft', async () => {
-    vi.stubEnv('NEXT_PUBLIC_PUBLIC_DEMO', 'true');
-    const { drafts } = await open({ source: 'ai', text: 'AI TEXT', demoCode: 'accepted' });
-    fireEvent.click(aiTick());
-    await waitFor(() => expect(codeField()!.disabled).toBe(false));
-    fireEvent.change(codeField()!, { target: { value: CODE } });
-    fireEvent.click(screen.getByRole('button', { name: words.draft }));
-    await screen.findByDisplayValue('AI TEXT');
-    expect(screen.queryByText(words.demoCodeRefused)).toBeNull();
-    expect(drafts[0]!.demoCode).toBe(CODE);
-  });
-
-  it('sends no demoCode when the AI box is not ticked, whatever is in the field', async () => {
-    vi.stubEnv('NEXT_PUBLIC_PUBLIC_DEMO', 'true');
-    const { drafts } = await open({ source: 'template', text: 'TEMPLATE TEXT' });
-    fireEvent.click(aiTick());
-    await waitFor(() => expect(codeField()!.disabled).toBe(false));
-    fireEvent.change(codeField()!, { target: { value: CODE } });
-    fireEvent.click(aiTick());
-    await waitFor(() => expect(aiTick().checked).toBe(false));
-    fireEvent.click(screen.getByRole('button', { name: words.draft }));
-    await screen.findByDisplayValue('TEMPLATE TEXT');
-    expect(drafts[0]!.useAi).toBe(false);
-    expect('demoCode' in drafts[0]!).toBe(false);
+  it('asks the server for a draft the same way with and without the flag: no field of the request is added', async () => {
+    const bodies: string[][] = [];
+    for (const flag of [undefined, 'true']) {
+      cleanup();
+      vi.unstubAllEnvs();
+      if (flag) vi.stubEnv('NEXT_PUBLIC_PUBLIC_DEMO', flag);
+      const { drafts } = await open({ source: 'template', text: 'TEMPLATE TEXT' });
+      fireEvent.click(aiTick());
+      fireEvent.click(screen.getByRole('button', { name: words.draft }));
+      await screen.findByDisplayValue('TEMPLATE TEXT');
+      expect(drafts).toHaveLength(1);
+      bodies.push(Object.keys(drafts[0]!).sort());
+    }
+    expect(bodies[0]).toEqual(['consented', 'content', 'locale', 'requestId', 'useAi']);
+    expect(bodies[1]).toEqual(bodies[0]);
   });
 });

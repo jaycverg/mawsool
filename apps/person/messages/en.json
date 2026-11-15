@@ -389,8 +389,6 @@
     "aiText": "Want help writing a summary? AI can draft it from what you share; you edit and approve every word.",
     "aiTick": "Use AI to help write my note",
     "publicDemoNote": "Public demo: everything you enter here can be seen by anyone using this demo. Do not enter real details.",
-    "demoCodeLabel": "Demo code",
-    "demoCodeRefused": "The demo code was not accepted, so this draft was written from the template.",
     "draft": "Help me draft",
     "drafting": "Drafting…",
     "draftFailed": "The draft could not be made. You can write the summary yourself.",

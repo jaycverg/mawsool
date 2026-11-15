@@ -52,7 +52,7 @@ export interface AppDeps {
   config: Pick<AppConfig, 'corsOrigins' | 'clinicianAppUrl' | 'opsAppUrl' | 'encryptionKey' | 'summaryLlmEnabled'> & Partial<
       Pick<
         AppConfig,
-        'personAppUrl' | 'inboundKeys' | 'demoMode' | 'notifierDriver' | 'rateLimit' | 'clientIpHeader' | 'summaryDailyLimit' | 'aiDemoCode' | 'demoResetCooldownMs'
+        'personAppUrl' | 'inboundKeys' | 'demoMode' | 'notifierDriver' | 'rateLimit' | 'clientIpHeader' | 'summaryDailyLimit' | 'demoResetCooldownMs'
       >
     >;
   /** The summary provider. Null (or the flag off) means no text ever leaves the API. */
@@ -140,7 +140,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const summaryBudget = deps.config.summaryDailyLimit === undefined ? undefined : createSummaryBudget(deps.config.summaryDailyLimit, securityClock);
   registerPersonDataRoutes(app, {
     ...consentDeps,
-    summary: { enabled: deps.config.summaryLlmEnabled, provider: deps.summaryProvider ?? null, demoCode: deps.config.aiDemoCode, budget: summaryBudget },
+    summary: { enabled: deps.config.summaryLlmEnabled, provider: deps.summaryProvider ?? null, budget: summaryBudget },
   });
   registerClockRoute(app, { demoClock });
   registerMetricsRoutes(app, { db: deps.db, clock, encryptionKey: deps.config.encryptionKey, cipher });

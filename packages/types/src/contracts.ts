@@ -422,8 +422,6 @@ export const SummaryDraftRequestSchema = z
     useAi: z.boolean(),
     consented: z.array(ConsentElementSchema).max(6),
     content: ReferralContentSchema,
-    /** The demo code, only in a hosted demo that sets `AI_DEMO_CODE`; ignored by every other deployment. Never stored or logged. */
-    demoCode: z.string().max(64).optional(),
   })
   .strict();
 export type SummaryDraftRequest = z.infer<typeof SummaryDraftRequestSchema>;
@@ -431,8 +429,6 @@ export type SummaryDraftRequest = z.infer<typeof SummaryDraftRequestSchema>;
 export const SummaryDraftSchema = z.object({
   source: z.enum(['ai', 'template']),
   text: z.string(),
-  /** Present only when the draft asked for the AI and the API holds an `AI_DEMO_CODE`: whether the request's code matched. */
-  demoCode: z.enum(['accepted', 'refused']).optional(),
 });
 export type SummaryDraft = z.infer<typeof SummaryDraftSchema>;
 

@@ -51,7 +51,7 @@ export interface TestAppOptions {
   demoMode?: boolean;
   summaryLlmEnabled?: boolean;
   summaryProvider?: SummaryProvider | null;
-  /** Extra settings, as the hosted demo's variables set them (`rateLimit`, `clientIpHeader`, `summaryDailyLimit`, `aiDemoCode`, `demoResetCooldownMs`). */
+  /** Extra settings, as the hosted demo's variables set them (`rateLimit`, `clientIpHeader`, `summaryDailyLimit`, `demoResetCooldownMs`). */
   config?: Partial<AppDeps['config']>;
 }
 
