@@ -15,14 +15,29 @@ PostgreSQL Flexible Server and a container registry, in one resource group on an
 
 `cloudflare.sh` (DNS, the proxy and one zone rule for the four hostnames) is stage 3B; `deploy.sh` calls it as `part1` and `part2`. `cloudflare.sh part1|part2 --dry-run` prints what it would write and calls nothing.
 
+## Live state (2026-11-16)
+
+Both stages have run. The demo is live in stage 3B, `EDGE=cloudflare`, `AI=off`:
+
+| Part | State |
+| --- | --- |
+| Addresses | `https://mawsool.thevergara.dev` (person), `https://mawsool-clinic.thevergara.dev`, `https://mawsool-ops.thevergara.dev`, `https://mawsool-api.thevergara.dev`, each behind Cloudflare (proxied) with a free Container Apps managed certificate. The default `azurecontainerapps.io` addresses answer 403. |
+| Apps | `uaenorth`. All four run at exactly 1 replica (idle-rate cost around the clock: not established). |
+| Database | PostgreSQL Flexible Server `mawsool-pg-c91953d`, Standard_B1ms, in `uksouth` (`PG_LOCATION=uksouth`; the apps and the database are in different regions, and the latency between them was not measured). The API connects with `sslmode=require` and that works. |
+| Images | Built with Docker here and pushed (`IMAGE_BUILD=local`): ACR Tasks is refused on this subscription. |
+| Ingress lock | Cloudflare's IPv4 ranges only: Container Apps refused the IPv6 ranges (`IpRestrictionsAddressEnteredInvalid`). Cloudflare reaches the origin over IPv4. |
+| Zone rule | One Configuration Rule, ref `mawsool_demo_hostnames`, for the four hostnames only: SSL strict, Rocket Loader off, email obfuscation off, `disable_rum` true (Web Analytics injection was on for the zone and put its script on the pages; the rule keeps it off these four hostnames and the zone setting is untouched). |
+| DNS | Eight records: four `asuid.` TXT and four CNAMEs. The zone has no CAA records (read by the orchestrator on 2026-11-16), so Azure's certificate authority is not blocked. |
+| AI | Off (`SUMMARY_LLM_ENABLED=false`): the free credit is the only budget, and the Anthropic prepaid key would be extra payment. Every draft is the template. |
+
 ## The two stages
 
-- **Stage 3A (now): Azure only, `EDGE=azure`, `AI=off`.** The apps keep their `azurecontainerapps.io` addresses and their
-  ingress is open. `RATE_LIMIT` is on with `CLIENT_IP_HEADER` unset, so each route's limit is one cap shared by every visitor.
-  The AI is off, so every draft is the template and nothing is spent.
-- **Stage 3B (later): Cloudflare and the Anthropic key, `EDGE=cloudflare`, `AI=on`.** The four hostnames under
-  `thevergara.dev`, with Container Apps managed certificates (free, no certificate file), `CLIENT_IP_HEADER=cf-connecting-ip`, then
-  the ingress locked to Cloudflare's address ranges. See "Moving to stage 3B".
+- **Stage 3A: Azure only, `EDGE=azure`.** The apps keep their `azurecontainerapps.io` addresses and their ingress is open.
+  `RATE_LIMIT` is on with `CLIENT_IP_HEADER` unset, so each route's limit is one cap shared by every visitor. It was the first
+  deploy and is also the rollback target.
+- **Stage 3B: Cloudflare, `EDGE=cloudflare` (live).** The four hostnames under `thevergara.dev`, with Container Apps managed
+  certificates (free, no certificate file), `CLIENT_IP_HEADER=cf-connecting-ip`, then the ingress locked to Cloudflare's
+  address ranges. See "How stage 3B runs". `AI=on` (the Anthropic key) has never run on the hosted demo.
 
 ## What the deploy sets up
 
@@ -46,8 +61,9 @@ different address is a different image. A tag that is already in the registry is
 
 ## First deploy (stage 3A)
 
-Needs: `az login` done, `az` on the subscription named in `azure.env`, `git`, `curl`, `openssl`. No Docker is needed: the build
-runs in the registry.
+Needs: `az login` done, `az` on the subscription named in `azure.env`, `git`, `curl`, `openssl`. With `IMAGE_BUILD=acr` (the
+default) the build runs in the registry and no Docker is needed; with `IMAGE_BUILD=local` (what this subscription needs) Docker
+must be running (OrbStack here) and builds for linux/amd64. `EDGE=cloudflare` also needs `jq`.
 
 ```
 infra/azure/deploy.sh --init       # creates .local/azure.env if it is missing and generates the secrets; prints no value
@@ -66,8 +82,16 @@ Creating the Postgres server takes several minutes.
 `az containerapp exec ... pnpm --filter @mawsool/api db:seed` once, then signs in as the guest admin and calls reset, so the 90
 days end today and Noura's invite exists. It seeds only when the API says it is a demo, its `/services` is `[]` and the guest
 sign-in gives Fastify's own not-found body, and the same answer comes twice, 5 seconds apart. A 404 from Azure's front end during
-a revision swap has another body, and anything unclear stops the script without seeding. A redeploy never wipes data. If
-`exec` cannot run without a terminal, the script stops and prints the command to run by hand, then run the script again.
+a revision swap has another body, and anything unclear stops the script without seeding. A redeploy never wipes data.
+`az containerapp exec` needs a terminal and the script has none, so on an empty database it stops and prints the command. The first
+seed here was done by hand under a pseudo-terminal, then the script was run again and found the database seeded:
+
+```
+script -q /dev/null az containerapp exec -n mawsool-api -g mawsool-demo-rg --command 'pnpm --filter @mawsool/api db:seed' < /dev/null
+```
+
+It printed `seeded 2 facilities, 24 services, 470 persons, 500 tickets, 1517 events, 40 crisis events`. The script's own seed step
+did not work without a terminal and was not changed.
 
 Later deploys keep the data; the nightly reset (`DEMO_RESET_CRON`) puts the demo back to its scripted state each night.
 
@@ -77,7 +101,7 @@ Change the code, commit, and run `deploy.sh` again: it builds the new commit, up
 Changes to `azure.env` (a secret, `AI`) are applied to the API at the same time. Updating the API starts a new revision, so
 for a minute two API processes run and the in-memory rate limits and AI budget are split; that is accepted.
 
-`AI=on` needs `ANTHROPIC_API_KEY` in `azure.env` and is stage 3B work; with `AI=off` the key is not read or required.
+`AI=on` needs `ANTHROPIC_API_KEY` in `azure.env` (a prepaid key: extra payment) and has not run on the hosted demo; with `AI=off`, as now, the key is not read or required.
 
 ## Step 11b: platform check
 
@@ -94,21 +118,31 @@ Azure part, read-only, run 2026-11-15 with `az` on "Azure subscription 1":
 - ACR Tasks (`az acr run`) is refused on this subscription (`TasksOperationsNotAllowed`), so the images are built with Docker
   and pushed (`IMAGE_BUILD=local`).
 - The registry name `mawsoolc91953` was free (`az acr check-name`).
-- Not established by these reads: that the free trial's quota lets the environment, the server and the registry actually be
-  created (a list of capabilities is not a quota); the first deploy is that check. If the region refuses, pick the nearest one
-  that offers all three, set `AZURE_LOCATION` and record it here.
+- The first deploy was the quota check: the environment, the registry and the identity were created in `uaenorth`, the server only
+  in `uksouth` (above), and the apps ran on the trial.
 
-Not yet run (stage 3B): the AI check (one draft with `SUMMARY_PROVIDER=anthropic` and the prepaid key, with its latency
-against the phone's 10-second wait) and the Cloudflare checks (Universal SSL on a first-level name, the Configuration Rules
-read call, turning off Web Analytics injection, Cloudflare's address ranges). Record the results here when they run.
+Cloudflare part, run 2026-11-16 with the project token on `thevergara.dev`:
+- Universal SSL covers the first-level names (`mawsool.thevergara.dev` and the three `mawsool-*` names answer over HTTPS through
+  Cloudflare, and the edge certificate verifies); the Configuration Rules phase can be read and written (the rule above was created);
+  the zone has no CAA records.
+- Web Analytics automatic injection was on for the zone and put `beacon.min.js` on the pages of the browser's requests (a plain
+  `curl` is not injected), which the staff page policy blocked and the person app's connection to it was refused: console errors.
+  `disable_rum` in the zone rule fixed it for the four hostnames.
+- Cloudflare's IPv6 ranges are refused by Container Apps; the IPv4 ranges are accepted.
+
+Not run: the AI check (one draft with `SUMMARY_PROVIDER=anthropic` and a prepaid key, with its latency against the phone's
+10-second wait), because the AI is off on the hosted demo.
 
 **The trial's end date: not established.** The free trial ends 30 days from sign-up or when the $200 credit is used up,
 whichever is first; after that the subscription is disabled unless it is moved to pay-as-you-go, and moving within 30 days
 keeps the 12-month free services. The sign-up date is the account owner's to read in the Azure portal and write here.
 
-## Moving to stage 3B
+## How stage 3B runs
 
-1. Run step 11b's AI and Cloudflare parts and record the results above. If the AI check fails, keep `AI=off`.
+This is what `deploy.sh` does with `EDGE=cloudflare`, and what ran on 2026-11-16. To move a stage 3A deployment, set the
+settings in step 1 and run it.
+
+1. `AI=off` stays unless a prepaid Anthropic key is wanted (extra payment); the AI check in step 11b has not run.
 2. Put `ANTHROPIC_API_KEY` (a prepaid key, auto-reload off, a spend limit in the Anthropic Console) in `azure.env` when `AI=on`;
    set `EDGE=cloudflare`. `CF_API_TOKEN` and `CF_ACCOUNT_ID` are read from `azure.env`, else from `<workspace>/.claude/settings.local.json`
    (`env`); the token needs Zone DNS edit and Zone Config Rules edit (Web Analytics read is optional). `CF_ZONE_ID` is
@@ -144,8 +178,9 @@ keeps the 12-month free services. The sign-up date is the account owner's to rea
 Managed certificates are issued while the CNAMEs are DNS-only. Whether they renew behind the proxy and the ingress lock is not
 established; for a demo of weeks that does not matter, and a rerun of `deploy.sh` after a renewal failure would show it.
 
-The `EDGE=cloudflare` path of `deploy.sh` and `cloudflare.sh` have been dry-run and run against a mock `curl` only. They have not
-run against Azure or Cloudflare.
+The path ran once against Azure and Cloudflare (2026-11-16) and finished with every smoke check passing. Two of its steps needed a
+result the dry runs could not give: the lock's IPv6 fallback (used, IPv4 only) and the Web Analytics report (injection was on,
+fixed by `disable_rum`).
 
 ## Rolling back to 3A
 
@@ -189,9 +224,9 @@ To keep it off, set `AI=off` in `azure.env`. Drafts are then written from the te
 
 ## If the API cannot reach Postgres (step 10)
 
-The URL carries `sslmode=require`, which Flexible Server needs. If the API log shows a certificate or SSL error, `pg`,
-the migrator or pg-boss is not accepting Azure's certificate chain: add a `DATABASE_SSL` option to `db/client.ts`,
-`db/migrate.ts` and `jobs.ts` (nothing here works around it). This has not been tried against Azure yet.
+The URL carries `sslmode=require`, which Flexible Server needs, and it works live: the API, its migrations and the seed ran over it.
+If the API log ever shows a certificate or SSL error, `pg`, the migrator or pg-boss is not accepting Azure's certificate chain:
+add a `DATABASE_SSL` option to `db/client.ts`, `db/migrate.ts` and `jobs.ts` (nothing here works around it).
 
 ## Restoring Cloudflare
 
@@ -204,12 +239,19 @@ else in the zone is touched, so the snapshot is a reference, not something to re
 Both need the owner's go-ahead.
 - Azure: `az group delete -n mawsool-demo-rg` removes the environment, the four apps, the registry, the identity and the
   database. The images and the data go with them.
-- Cloudflare (stage 3B): remove the eight DNS records and the Configuration Rule `mawsool_demo_hostnames` .
+- Cloudflare (stage 3B): remove the eight DNS records and the Configuration Rule `mawsool_demo_hostnames`.
 
 ## What was not tested
 
-Everything in `deploy.sh` that changes Azure has not run: it is checked by `bash -n`, shellcheck, `--dry-run` for both stages,
-the read-only `--check`, a run against a stand-in `az` that echoes every argument back (no secret reached the output), and
-`--probe` against a mock API for the seed decision. Known unknowns for the first run: the free trial's quota for these resources, whether
-`az containerapp exec` runs the seed without a terminal, whether the registry's build agent builds the Dockerfile (it uses no
-BuildKit-only feature, but a classic builder was not tried), and the Postgres TLS question above.
+Run live on 2026-11-16: every step of `deploy.sh` with `EDGE=cloudflare` (apart from the seed, done by hand), `cloudflare.sh part1`
+and `part2`, the `--probe`, the smoke check, and one pass of a Playwright check in Chromium, in English, against the four
+hostnames (16 checks passed). Not run, or not established:
+- the AI (`AI=on`, a prepaid key): never run on the hosted demo;
+- the nightly reset (`DEMO_RESET_CRON`) on the live app, and a second clinic's queue;
+- Arabic and right-to-left, and a phone viewport, on the live hostnames;
+- rate-limit behaviour under load, and the API's cold start after a restart;
+- renewal of the managed certificates behind the proxy and the lock;
+- the rollback to stage 3A in "Rolling back to 3A": written, never run;
+- the idle-rate cost of the four always-on replicas and the database against the trial credit, and the trial's end date;
+- latency between the API in `uaenorth` and the database in `uksouth`;
+- the seed step of `deploy.sh` without a terminal (it needs the command above).
