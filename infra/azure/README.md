@@ -111,7 +111,7 @@ keeps the 12-month free services. The sign-up date is the account owner's to rea
 1. Run step 11b's AI and Cloudflare parts and record the results above. If the AI check fails, keep `AI=off`.
 2. Put `ANTHROPIC_API_KEY` (a prepaid key, auto-reload off, a spend limit in the Anthropic Console) in `azure.env` when `AI=on`;
    set `EDGE=cloudflare`. `CF_API_TOKEN` and `CF_ACCOUNT_ID` are read from `azure.env`, else from `<workspace>/.claude/settings.local.json`
-   (`env`); the token needs Zone DNS edit and Zone Config Rules edit (Web Analytics read and edit is optional). `CF_ZONE_ID` is
+   (`env`); the token needs Zone DNS edit and Zone Config Rules edit (Web Analytics read is optional). `CF_ZONE_ID` is
    looked up by `CF_DOMAIN` when empty.
 3. `deploy.sh` runs these in order, each part printing its Cloudflare changes before it writes them:
    1. `cloudflare.sh part1`: `asuid.<host>` TXT records (the environment's verification ID) and the four CNAMEs, DNS-only, and
@@ -121,8 +121,8 @@ keeps the 12-month free services. The sign-up date is the account owner's to rea
       and `deploy.sh` waits for it (10 minutes at most). A hostname already bound is skipped.
    3. `cloudflare.sh part2`: the four CNAMEs proxied; one Configuration Rule (ref `mawsool_demo_hostnames`) for exactly the four
       hostnames (SSL strict, Rocket Loader off, email obfuscation off), merged with the rules already in the zone's entry point;
-      Web Analytics: if automatic injection is on for the zone, a per-hostname exclusion, never the zone switch. The Web Analytics
-      call shapes have not been run; a refusal prints `NOT DONE` and the page source is the check.
+      Web Analytics is read-only: it reports whether automatic injection is on for the zone and changes nothing (its per-host API
+      has not been run). If it is on, the page source of the four hostnames is the check, and the exclusion is made by hand.
    4. The ingress lock: one Allow rule per Cloudflare range (fetched at run time from `cloudflare.com/ips-v4` and `ips-v6`), named
       `cf-<range>`; if Container Apps refuses an IPv6 range, IPv6 is skipped and it says so.
 4. The images are rebuilt with `NEXT_PUBLIC_API_URL=https://mawsool-api.thevergara.dev` (a new tag; `IMAGE_BUILD=local` where ACR
@@ -180,7 +180,7 @@ else in the zone is touched, so the snapshot is a reference, not something to re
 Both need the owner's go-ahead.
 - Azure: `az group delete -n mawsool-demo-rg` removes the environment, the four apps, the registry, the identity and the
   database. The images and the data go with them.
-- Cloudflare (stage 3B): remove the eight DNS records and the Configuration Rule `mawsool_demo_hostnames` (and any Web Analytics exclusions it added).
+- Cloudflare (stage 3B): remove the eight DNS records and the Configuration Rule `mawsool_demo_hostnames` .
 
 ## What was not tested
 
