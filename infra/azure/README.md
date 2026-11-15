@@ -113,28 +113,48 @@ keeps the 12-month free services. The sign-up date is the account owner's to rea
    set `EDGE=cloudflare`. `CF_API_TOKEN` and `CF_ACCOUNT_ID` are read from `azure.env`, else from `<workspace>/.claude/settings.local.json`
    (`env`); the token needs Zone DNS edit and Zone Config Rules edit (Web Analytics read is optional). `CF_ZONE_ID` is
    looked up by `CF_DOMAIN` when empty.
-3. `deploy.sh` runs these in order, each part printing its Cloudflare changes before it writes them:
-   1. `cloudflare.sh part1`: `asuid.<host>` TXT records (the environment's verification ID) and the four CNAMEs, DNS-only, and
-      a snapshot of the zone's records and rules in `.local/tmp/cloudflare-before-<time>.json`. It stops, never deleting, when
-      another record type sits at one of the four names.
-   2. `az containerapp hostname add` and `hostname bind --validation-method CNAME` per app: Azure issues a managed certificate
-      and `deploy.sh` waits for it (10 minutes at most). A hostname already bound is skipped.
-   3. `cloudflare.sh part2`: the four CNAMEs proxied; one Configuration Rule (ref `mawsool_demo_hostnames`) for exactly the four
-      hostnames (SSL strict, Rocket Loader off, email obfuscation off), merged with the rules already in the zone's entry point;
+3. `deploy.sh` moves to Cloudflare in this order, so the running demo is never moved before its hostnames work. Each Cloudflare
+   part prints its changes before it writes them:
+   1. Apps that already run are left on their old images and settings; any that are missing are created. The images are built
+      (a new tag, because the API hostname is part of it; `IMAGE_BUILD=local` where ACR Tasks is refused) but no running app moves.
+   2. `cloudflare.sh part1`: `asuid.<host>` TXT records (the environment's verification ID) and the four CNAMEs, DNS-only. It stops
+      (never deleting, never re-pointing) when another record type sits at one of the four names or a CNAME already points
+      elsewhere. A snapshot of the zone's records and rules goes to `.local/tmp/cloudflare-before-<time>.json` before the first write.
+   3. `az containerapp hostname add` (skipped when the hostname is already listed) and `hostname bind --validation-method CNAME`
+      (skipped when already bound): Azure issues a managed certificate and `deploy.sh` waits for it (10 minutes at most).
+   4. `cloudflare.sh part2`: first one Configuration Rule (ref `mawsool_demo_hostnames`) for exactly the four hostnames (SSL strict,
+      Rocket Loader off, email obfuscation off), merged with the rules already in the zone's entry point; only an answer of
+      "no such entry point" counts as no rules, and any other failed read stops before a write. Then the four CNAMEs are proxied.
       Web Analytics is read-only: it reports whether automatic injection is on for the zone and changes nothing (its per-host API
       has not been run). If it is on, the page source of the four hostnames is the check, and the exclusion is made by hand.
-   4. The ingress lock: one Allow rule per Cloudflare range (fetched at run time from `cloudflare.com/ips-v4` and `ips-v6`), named
-      `cf-<range>`; if Container Apps refuses an IPv6 range, IPv6 is skipped and it says so.
-4. The images are rebuilt with `NEXT_PUBLIC_API_URL=https://mawsool-api.thevergara.dev` (a new tag; `IMAGE_BUILD=local` where ACR
-   Tasks is refused), the four URL settings and `CLIENT_IP_HEADER=cf-connecting-ip` are set, and the four apps roll to them
-   before the domains are bound. The smoke check then goes through Cloudflare, expects each `azurecontainerapps.io` address to
-   refuse a direct visitor, `/clock` to answer on the API hostname, and the clinician page policy to name it.
+   5. Each of the four `https://<host>/` (the API on `/health`, served by the old image) must answer through Cloudflare. If one
+      does not, the run stops with the apps still on the default addresses.
+   6. Only now the apps roll to the new images and settings: `NEXT_PUBLIC_API_URL=https://mawsool-api.thevergara.dev`, the four URL
+      settings (`CORS_ORIGINS` keeps the default addresses as well as the hostnames), `CLIENT_IP_HEADER=cf-connecting-ip`. The run
+      waits for each newest revision to be the ready one and for the hostnames to answer 200.
+   7. The ingress lock: every Cloudflare range (fetched at run time from `cloudflare.com/ips-v4` and `ips-v6`), as a rule named
+      `cf-<range>`, applied to each app in ONE update (an `az rest` PATCH of `ipSecurityRestrictions`; it replaces the app's
+      restrictions as a whole). If Container Apps refuses the IPv6 ranges, the IPv4 ranges go in alone, still as one update.
+   8. The smoke check goes through Cloudflare: the three pages answer 200 and carry no Web Analytics beacon, each
+      `azurecontainerapps.io` address answers exactly 403 (the API on `/health`), `/clock` answers on the API hostname, and the
+      clinician page policy names it.
 
 Managed certificates are issued while the CNAMEs are DNS-only. Whether they renew behind the proxy and the ingress lock is not
 established; for a demo of weeks that does not matter, and a rerun of `deploy.sh` after a renewal failure would show it.
 
 The `EDGE=cloudflare` path of `deploy.sh` and `cloudflare.sh` have been dry-run and run against a mock `curl` only. They have not
 run against Azure or Cloudflare.
+
+## Rolling back to 3A
+
+Set `EDGE=azure` in `azure.env` and run `deploy.sh`: the apps roll to images built for the default API address and the default
+URLs. Then, by hand:
+- remove the Cloudflare setting from the API: `az containerapp update -n mawsool-api -g mawsool-demo-rg --remove-env-vars CLIENT_IP_HEADER -o none`;
+- open the ingress again: `az rest --method patch --url "/subscriptions/<id>/resourceGroups/mawsool-demo-rg/providers/Microsoft.App/containerApps/<app>?api-version=2024-03-01" --body '{"properties":{"configuration":{"ingress":{"ipSecurityRestrictions":[]}}}}' --output none`
+  for each of the four apps (or `az containerapp ingress access-restriction remove -n <app> -g mawsool-demo-rg --rule-name <cf-...>` per rule,
+  names from `access-restriction list`).
+Leaving the hostnames bound and the DNS records in place is harmless: the default addresses keep working, and the hostnames
+simply stop being used. Remove them as in "Restoring Cloudflare" when they are no longer wanted.
 
 ## Rotating a secret
 
