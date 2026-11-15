@@ -9,8 +9,9 @@
 #
 # Settings come from azure.env (see azure.env.example): EDGE=azure|cloudflare picks the stage, AI=on|off the summary assistant.
 #   EDGE=azure       stage 3A: the apps keep their azurecontainerapps.io addresses and their ingress stays open.
-#   EDGE=cloudflare  stage 3B: the four hostnames under CF_DOMAIN, bound with a Cloudflare Origin CA certificate, then the
-#                    ingress is locked to Cloudflare's addresses. Needs infra/azure/cloudflare.sh (not written yet).
+#   EDGE=cloudflare  stage 3B: the four hostnames under CF_DOMAIN with Container Apps managed certificates (free; issued while the
+#                    CNAMEs are DNS-only), then the CNAMEs are proxied by Cloudflare and the ingress is locked to Cloudflare's
+#                    addresses. DNS and the zone rule are written by infra/azure/cloudflare.sh.
 #
 # It prints names and URLs, never a secret: every command is shown with secret values replaced by ***, nothing runs under
 # `set -x`, and every az call that creates or changes something runs with `-o none`, because some of them print what they were
@@ -222,7 +223,6 @@ ENV_NAME=${ENV_NAME:-mawsool-env}
 IDENTITY_NAME=mawsool-pull
 PG_ADMIN_USER=mawsooladmin
 PG_DATABASE=mawsool
-CERT_NAME=mawsool-origin-ca
 HOST_API=mawsool-api.$CF_DOMAIN
 HOST_PERSON=mawsool.$CF_DOMAIN
 HOST_CLINIC=mawsool-clinic.$CF_DOMAIN
@@ -235,11 +235,6 @@ preflight_settings() {
     [ -n "${!key:-}" ] || missing="$missing $key"
   done
   [ "$AI" = on ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && missing="$missing ANTHROPIC_API_KEY"
-  if [ "$EDGE" = cloudflare ]; then
-    for key in ORIGIN_CERT_FILE ORIGIN_KEY_FILE; do
-      [ -n "${!key:-}" ] || missing="$missing $key"
-    done
-  fi
   [ -z "$missing" ] || die "missing in $ENV_FILE:$missing (run --init for the generated ones)"
 
   # A key copied from .env.example is public: refuse it. The comparison is made in memory and nothing is printed.
@@ -259,9 +254,9 @@ preflight_settings() {
   for class in '[A-Z]' '[a-z]' '[0-9]'; do
     printf '%s' "$POSTGRES_ADMIN_PASSWORD" | grep -q "$class" || die "POSTGRES_ADMIN_PASSWORD must hold an upper-case letter, a lower-case letter and a digit"
   done
-  if [ "$EDGE" = cloudflare ] && [ "$DRY_RUN" = 0 ]; then
-    [ -f "$ORIGIN_CERT_FILE" ] && [ -f "$ORIGIN_KEY_FILE" ] || die "the Origin CA certificate or key file does not exist"
-    [ -x "$HERE/cloudflare.sh" ] || die "EDGE=cloudflare needs infra/azure/cloudflare.sh, which is stage 3B work and is not written yet"
+  if [ "$EDGE" = cloudflare ]; then
+    [ -x "$HERE/cloudflare.sh" ] || die "EDGE=cloudflare needs infra/azure/cloudflare.sh to be executable"
+    command -v jq >/dev/null || die "jq is required for EDGE=cloudflare (cloudflare.sh reads the Cloudflare API with it)"
   fi
   command -v git >/dev/null || die "git is required"
   command -v curl >/dev/null || die "curl is required"
@@ -531,39 +526,56 @@ if [ "$DRY_RUN" = 0 ]; then
 fi
 
 # --- 9. custom domains and the Cloudflare lock (EDGE=cloudflare only) -------------------------------------------------------------
+# cert_ready <hostname>: true once the managed certificate for the hostname is issued.
+cert_ready() {
+  [ "$(az containerapp env certificate list -n "$ENV_NAME" -g "$AZURE_RESOURCE_GROUP" --managed-certificates-only --query "[?properties.subjectName=='$1'].properties.provisioningState | [0]" -o tsv)" = Succeeded ]
+}
 if [ "$EDGE" = cloudflare ]; then
   step "9. Custom domains and the ingress lock (stage 3B)"
-  export MAWSOOL_ENV_VERIFICATION_ID=$VERIFICATION_ID
+  export MAWSOOL_FROM_DEPLOY=1 MAWSOOL_ENV_VERIFICATION_ID=$VERIFICATION_ID CF_DOMAIN
   export MAWSOOL_HOST_API=$HOST_API MAWSOOL_HOST_PERSON=$HOST_PERSON MAWSOOL_HOST_CLINIC=$HOST_CLINIC MAWSOOL_HOST_OPS=$HOST_OPS
   for pair in "API:$APP_API" "PERSON:$APP_PERSON" "CLINIC:$APP_CLINIC" "OPS:$APP_OPS"; do
-    fqdn=$(read_value "<$pair-fqdn>" az containerapp show -n "${pair#*:}" -g "$AZURE_RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)
+    fqdn=$(read_value "<${pair%%:*}-fqdn>" az containerapp show -n "${pair#*:}" -g "$AZURE_RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)
     export "MAWSOOL_FQDN_${pair%%:*}=$fqdn"
   done
-  # Part 1 writes the four asuid TXT records and the four CNAMEs as DNS-only, so Azure's lookup finds them when a name is bound.
+  # Part 1 writes the four asuid TXT records and the four CNAMEs, DNS-only, so Azure's lookup finds them when a name is bound.
   run "$HERE/cloudflare.sh" part1
-  cert_password='<certificate-password>'
-  if [ "$DRY_RUN" = 0 ]; then
-    cert_password=$(openssl rand -hex 16)
-    remember_secret "$cert_password"
-    openssl pkcs12 -export -inkey "$ORIGIN_KEY_FILE" -in "$ORIGIN_CERT_FILE" -out "$WORK/origin.pfx" -passout "pass:$cert_password"
-  fi
-  run az containerapp env certificate upload -n "$ENV_NAME" -g "$AZURE_RESOURCE_GROUP" --certificate-file "$WORK/origin.pfx" --certificate-password "$cert_password" --certificate-name "$CERT_NAME" -o none
+  # A hostname is added, then bound with a managed certificate (free; Azure validates it through the CNAME, which is why the
+  # records are not proxied yet). A hostname that is already bound is left alone, so a rerun does not touch a live one.
   for pair in "$APP_API:$HOST_API" "$APP_PERSON:$HOST_PERSON" "$APP_CLINIC:$HOST_CLINIC" "$APP_OPS:$HOST_OPS"; do
     app=${pair%%:*}
     host=${pair#*:}
+    bound=$(read_value '' az containerapp hostname list -n "$app" -g "$AZURE_RESOURCE_GROUP" --query "[?name=='$host'].bindingType | [0]" -o tsv 2>/dev/null) || bound=''
+    if [ "$bound" = SniEnabled ]; then
+      say "$host is already bound on $app"
+      continue
+    fi
     retry 6 30 az containerapp hostname add -n "$app" -g "$AZURE_RESOURCE_GROUP" --hostname "$host" -o none
-    run az containerapp hostname bind -n "$app" -g "$AZURE_RESOURCE_GROUP" --hostname "$host" --environment "$ENV_NAME" --certificate "$CERT_NAME" -o none
+    retry 3 60 az containerapp hostname bind -n "$app" -g "$AZURE_RESOURCE_GROUP" --hostname "$host" --environment "$ENV_NAME" --validation-method CNAME -o none
   done
-  # Part 2 turns the four CNAMEs to proxied and applies the zone rules.
+  for host in "$HOST_API" "$HOST_PERSON" "$HOST_CLINIC" "$HOST_OPS"; do
+    retry 20 30 cert_ready "$host" || die "the managed certificate for $host was not issued in 10 minutes; read it with: az containerapp env certificate list -n $ENV_NAME -g $AZURE_RESOURCE_GROUP --managed-certificates-only"
+  done
+  # Part 2 turns the four CNAMEs to proxied and applies the zone rule.
   run "$HERE/cloudflare.sh" part2
   # Only now is the ingress locked, so the apps never refuse Cloudflare while it is still being set up.
   ranges=$(read_value '10.0.0.0/8' sh -c 'curl -fsS -m 20 https://www.cloudflare.com/ips-v4 && echo && curl -fsS -m 20 https://www.cloudflare.com/ips-v6')
   printf '%s\n' "$ranges" | grep -Eq '^[0-9a-fA-F:.]+/[0-9]+$' || die "could not read Cloudflare's address ranges"
+  # One Allow rule per range, named after the range, so a rerun adds only what is missing. If Container Apps refuses an IPv6
+  # range, the IPv6 ranges are skipped for that app (Cloudflare reaches the origin over IPv4, which the CNAME resolves to).
   for app in "$APP_API" "$APP_PERSON" "$APP_CLINIC" "$APP_OPS"; do
-    n=0
+    existing=$(read_value '' az containerapp ingress access-restriction list -n "$app" -g "$AZURE_RESOURCE_GROUP" --query '[].name' -o tsv 2>/dev/null | tr '\n' ' ') || existing=''
+    v6_refused=0
     for cidr in $ranges; do
-      n=$((n + 1))
-      run az containerapp ingress access-restriction set -n "$app" -g "$AZURE_RESOURCE_GROUP" --rule-name "cloudflare-$n" --ip-address "$cidr" --action Allow -o none
+      rule="cf-$(printf '%s' "$cidr" | tr './:' '---')"
+      case " $existing " in *" $rule "*) continue ;; esac
+      case "$cidr" in *:*) [ "$v6_refused" = 1 ] && continue ;; esac
+      if ! run az containerapp ingress access-restriction set -n "$app" -g "$AZURE_RESOURCE_GROUP" --rule-name "$rule" --ip-address "$cidr" --action Allow -o none; then
+        case "$cidr" in
+          *:*) say "  Container Apps refused the IPv6 range $cidr on $app; the other IPv6 ranges are skipped (IPv4 only)"; v6_refused=1 ;;
+          *) die "Container Apps refused the range $cidr on $app" ;;
+        esac
+      fi
     done
   done
 fi
@@ -585,9 +597,12 @@ if [ "$DRY_RUN" = 1 ]; then
   say "+ then: az containerapp exec -n $APP_API -g $AZURE_RESOURCE_GROUP --command 'pnpm --filter @mawsool/api db:seed'"
   say "+ then sign in as the guest admin and POST /demo/reset"
 else
-  # With EDGE=cloudflare the public address is not reachable until DNS is proxied; the default address is always there.
-  CHECK_API=https://$(az containerapp show -n "$APP_API" -g "$AZURE_RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)
-  [ "$EDGE" = cloudflare ] && say "(checks use the default address $CHECK_API; with the ingress locked to Cloudflare they may be refused, which is expected)"
+  # With EDGE=cloudflare the ingress is locked by now, so the checks go through Cloudflare, on the hostname.
+  if [ "$EDGE" = cloudflare ]; then
+    CHECK_API=$URL_API
+  else
+    CHECK_API=https://$(az containerapp show -n "$APP_API" -g "$AZURE_RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)
+  fi
   wait_for "$CHECK_API/health" 30 || die "the API did not answer /health at $CHECK_API; read its log (see README)"
   state=$(seed_state "$CHECK_API")
   case "$state" in
@@ -614,15 +629,35 @@ fi
 step "11. Smoke check"
 if [ "$DRY_RUN" = 1 ]; then
   say "+ GET $URL_API/clock (demoMode true), $URL_PERSON/en/, $URL_CLINIC/en/sign-in/, $URL_OPS/en/sign-in/ (each 200)"
+  [ "$EDGE" = cloudflare ] && say "+ each app's azurecontainerapps.io address must not answer 200; the clinician page policy must name $URL_API"
 else
   smoke_api=$CHECK_API
   say "GET $smoke_api/clock: $(curl -s -m 30 "$smoke_api/clock")"
   fqdn_of() { az containerapp show -n "$1" -g "$AZURE_RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv; }
-  for pair in "person:$APP_PERSON:/en/" "clinic:$APP_CLINIC:/en/sign-in/" "ops:$APP_OPS:/en/sign-in/"; do
+  failures=0
+  for pair in "person:$APP_PERSON:/en/:$URL_PERSON" "clinic:$APP_CLINIC:/en/sign-in/:$URL_CLINIC" "ops:$APP_OPS:/en/sign-in/:$URL_OPS"; do
     label=${pair%%:*}
     rest=${pair#*:}
-    if wait_for "https://$(fqdn_of "${rest%%:*}")${rest#*:}" 12; then say "$label app answers"; else say "$label app did not answer 200 in time"; fi
+    app=${rest%%:*}
+    rest=${rest#*:}
+    path=${rest%%:*}
+    if [ "$EDGE" = cloudflare ]; then target=${rest#*:}$path; else target=https://$(fqdn_of "$app")$path; fi
+    if wait_for "$target" 12; then say "$label answers 200 at $target"; else say "$label did not answer 200 at $target in time"; failures=$((failures + 1)); fi
   done
+  if [ "$EDGE" = cloudflare ]; then
+    # Through Cloudflare the certificate is checked by curl; the origin's by Cloudflare (strict), so a 200 here means both chains hold.
+    for app in "$APP_API" "$APP_PERSON" "$APP_CLINIC" "$APP_OPS"; do
+      code=$(curl -s -m 20 -o /dev/null -w '%{http_code}' "https://$(fqdn_of "$app")/" || true)
+      if [ "$code" = 200 ]; then say "FAIL: https://$(fqdn_of "$app")/ still answers 200 directly"; failures=$((failures + 1)); else say "the direct address of $app refuses visitors (status $code)"; fi
+    done
+    csp=$(curl -s -m 30 -D - -o /dev/null "$URL_CLINIC/en/sign-in/" | grep -i '^content-security-policy' || true)
+    case "$csp" in
+      *"$URL_API"*) say "the clinician page policy names $URL_API" ;;
+      *) say "FAIL: the clinician page policy does not name $URL_API"; failures=$((failures + 1)) ;;
+    esac
+    case "$(curl -s -m 30 "$URL_API/clock")" in *'"demoMode":true'*) ;; *) say "FAIL: $URL_API/clock does not say demoMode true"; failures=$((failures + 1)) ;; esac
+    [ "$failures" = 0 ] || die "$failures smoke check(s) failed (see above)"
+  fi
 fi
 
 step "Done"

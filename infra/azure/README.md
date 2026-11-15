@@ -8,11 +8,12 @@ PostgreSQL Flexible Server and a container registry, in one resource group on an
 | --- | --- |
 | `deploy.sh` | The deploy. `--init`, `--check`, `--dry-run`, or no flag to deploy. Safe to run again. |
 | `azure.env.example` | The names `deploy.sh` reads. The real file is `<workspace root>/.local/azure.env` (git-ignored). |
+| `cloudflare.sh` | Stage 3B: the Cloudflare DNS records, the proxy and one zone rule for the four hostnames (`part1`, `part2`). |
 | `acr-task.yaml` | One Azure Container Registry run that builds and pushes the four images (linux/amd64). |
 | `compose.prod-like.yml` | The same four images on this machine, for a check before anything goes to Azure. |
 | `../../Dockerfile`, `../Caddyfile.person` | The image targets: `api`, `person`, `clinician`, `ops`. |
 
-`cloudflare.sh` (DNS, the proxy and the zone rules) is stage 3B work and is not written yet.
+`cloudflare.sh` (DNS, the proxy and one zone rule for the four hostnames) is stage 3B; `deploy.sh` calls it as `part1` and `part2`. `cloudflare.sh part1|part2 --dry-run` prints what it would write and calls nothing.
 
 ## The two stages
 
@@ -20,8 +21,8 @@ PostgreSQL Flexible Server and a container registry, in one resource group on an
   ingress is open. `RATE_LIMIT` is on with `CLIENT_IP_HEADER` unset, so each route's limit is one cap shared by every visitor.
   The AI is off, so every draft is the template and nothing is spent.
 - **Stage 3B (later): Cloudflare and the Anthropic key, `EDGE=cloudflare`, `AI=on`.** The four hostnames under
-  `thevergara.dev`, bound with a Cloudflare Origin CA certificate, `CLIENT_IP_HEADER=cf-connecting-ip`, then the ingress locked
-  to Cloudflare's address ranges. See "Moving to stage 3B".
+  `thevergara.dev`, with Container Apps managed certificates (free, no certificate file), `CLIENT_IP_HEADER=cf-connecting-ip`, then
+  the ingress locked to Cloudflare's address ranges. See "Moving to stage 3B".
 
 ## What the deploy sets up
 
@@ -108,19 +109,32 @@ keeps the 12-month free services. The sign-up date is the account owner's to rea
 ## Moving to stage 3B
 
 1. Run step 11b's AI and Cloudflare parts and record the results above. If the AI check fails, keep `AI=off`.
-2. Put `ANTHROPIC_API_KEY` (a prepaid key, auto-reload off, a spend limit in the Anthropic Console), `ORIGIN_CERT_FILE` and
-   `ORIGIN_KEY_FILE` (the Origin CA certificate and key for `thevergara.dev` and `*.thevergara.dev`) and, optionally,
-   `CF_API_TOKEN` in `azure.env`; set `EDGE=cloudflare` and `AI=on`.
-3. Write `cloudflare.sh` (step 12b). `deploy.sh` calls it as `cloudflare.sh part1` and `cloudflare.sh part2`, with these in the
-   environment: `MAWSOOL_ENV_VERIFICATION_ID`, `MAWSOOL_HOST_{API,PERSON,CLINIC,OPS}` (the hostnames) and
-   `MAWSOOL_FQDN_{API,PERSON,CLINIC,OPS}` (each app's `azurecontainerapps.io` name). Part 1 writes the four `asuid.<host>`
-   TXT records and the four CNAMEs as DNS-only; part 2 turns the CNAMEs to proxied and applies the zone rules.
-4. `deploy.sh` rebuilds the images with `NEXT_PUBLIC_API_URL=https://mawsool-api.thevergara.dev`, switches the four URL
-   settings, sets `CLIENT_IP_HEADER=cf-connecting-ip`, binds the domains with the uploaded certificate, and only then locks each
-   app's ingress to Cloudflare's address ranges. Record here whether a proxied CNAME also passes the bind; if it does, the
-   DNS-only stage can be dropped.
+2. Put `ANTHROPIC_API_KEY` (a prepaid key, auto-reload off, a spend limit in the Anthropic Console) in `azure.env` when `AI=on`;
+   set `EDGE=cloudflare`. `CF_API_TOKEN` and `CF_ACCOUNT_ID` are read from `azure.env`, else from `<workspace>/.claude/settings.local.json`
+   (`env`); the token needs Zone DNS edit and Zone Config Rules edit (Web Analytics read and edit is optional). `CF_ZONE_ID` is
+   looked up by `CF_DOMAIN` when empty.
+3. `deploy.sh` runs these in order, each part printing its Cloudflare changes before it writes them:
+   1. `cloudflare.sh part1`: `asuid.<host>` TXT records (the environment's verification ID) and the four CNAMEs, DNS-only, and
+      a snapshot of the zone's records and rules in `.local/tmp/cloudflare-before-<time>.json`. It stops, never deleting, when
+      another record type sits at one of the four names.
+   2. `az containerapp hostname add` and `hostname bind --validation-method CNAME` per app: Azure issues a managed certificate
+      and `deploy.sh` waits for it (10 minutes at most). A hostname already bound is skipped.
+   3. `cloudflare.sh part2`: the four CNAMEs proxied; one Configuration Rule (ref `mawsool_demo_hostnames`) for exactly the four
+      hostnames (SSL strict, Rocket Loader off, email obfuscation off), merged with the rules already in the zone's entry point;
+      Web Analytics: if automatic injection is on for the zone, a per-hostname exclusion, never the zone switch. The Web Analytics
+      call shapes have not been run; a refusal prints `NOT DONE` and the page source is the check.
+   4. The ingress lock: one Allow rule per Cloudflare range (fetched at run time from `cloudflare.com/ips-v4` and `ips-v6`), named
+      `cf-<range>`; if Container Apps refuses an IPv6 range, IPv6 is skipped and it says so.
+4. The images are rebuilt with `NEXT_PUBLIC_API_URL=https://mawsool-api.thevergara.dev` (a new tag; `IMAGE_BUILD=local` where ACR
+   Tasks is refused), the four URL settings and `CLIENT_IP_HEADER=cf-connecting-ip` are set, and the four apps roll to them
+   before the domains are bound. The smoke check then goes through Cloudflare, expects each `azurecontainerapps.io` address to
+   refuse a direct visitor, `/clock` to answer on the API hostname, and the clinician page policy to name it.
 
-The `EDGE=cloudflare` path of `deploy.sh` has been written and dry-run only. It has not run against Azure.
+Managed certificates are issued while the CNAMEs are DNS-only. Whether they renew behind the proxy and the ingress lock is not
+established; for a demo of weeks that does not matter, and a rerun of `deploy.sh` after a renewal failure would show it.
+
+The `EDGE=cloudflare` path of `deploy.sh` and `cloudflare.sh` have been dry-run and run against a mock `curl` only. They have not
+run against Azure or Cloudflare.
 
 ## Rotating a secret
 
@@ -157,15 +171,16 @@ the migrator or pg-boss is not accepting Azure's certificate chain: add a `DATAB
 
 ## Restoring Cloudflare
 
-Stage 3B. `cloudflare.sh` saves the zone's current DNS records and rules to `.local/tmp/` before it writes anything; restoring
-is putting those back, record by record, and removing the eight records and two rules the script added. Not written yet.
+Stage 3B. `cloudflare.sh` saves the zone's current DNS records and rules to `.local/tmp/cloudflare-before-<time>.json` before it writes
+anything. To undo: delete the eight records it added (four `asuid.` TXT, four CNAMEs) and the rule `mawsool_demo_hostnames`; nothing
+else in the zone is touched, so the snapshot is a reference, not something to re-import.
 
 ## Tearing everything down after judging
 
 Both need the owner's go-ahead.
 - Azure: `az group delete -n mawsool-demo-rg` removes the environment, the four apps, the registry, the identity and the
   database. The images and the data go with them.
-- Cloudflare (stage 3B): remove the eight DNS records and the two Configuration Rules.
+- Cloudflare (stage 3B): remove the eight DNS records and the Configuration Rule `mawsool_demo_hostnames` (and any Web Analytics exclusions it added).
 
 ## What was not tested
 
