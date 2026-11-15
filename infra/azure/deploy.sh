@@ -611,7 +611,8 @@ if [ "$EDGE" = cloudflare ]; then
   APPS_MODE=all
   deploy_all
   for app in "$APP_API" "$APP_PERSON" "$APP_CLINIC" "$APP_OPS"; do
-    retry 30 20 revision_ready "$app" || die "the new revision of $app is not ready; read its log (see README)"
+    # Advisory: a scale-to-zero app can look not ready while it is simply asleep. The gate is the 200 check just below.
+    retry 6 20 revision_ready "$app" || say "note: the newest revision of $app is not reported ready yet; the 200 check below decides"
   done
   if [ "$DRY_RUN" = 0 ]; then
     for pair in "$HOST_API:/health" "$HOST_PERSON:/en/" "$HOST_CLINIC:/en/sign-in/" "$HOST_OPS:/en/sign-in/"; do
@@ -629,13 +630,13 @@ if [ "$EDGE" = cloudflare ]; then
   # The list replaces the app's restrictions as a whole (these apps have no others). If Container Apps refuses the IPv6 ranges, the
   # IPv4 ranges go in alone, still as one update: Cloudflare reaches the origin over IPv4, which the CNAME resolves to.
   for app in "$APP_API" "$APP_PERSON" "$APP_CLINIC" "$APP_OPS"; do
-    url="/subscriptions/$SUB_ID/resourceGroups/$AZURE_RESOURCE_GROUP/providers/Microsoft.App/containerApps/$app?api-version=2024-03-01"
+    url="/subscriptions/$SUB_ID/resourceGroups/$AZURE_RESOURCE_GROUP/providers/Microsoft.App/containerApps/$app?api-version=2025-07-01"
     if ! run az rest --method patch --url "$url" --body "@$WORK/restrict-all.json" --output none; then
       say "  Container Apps refused the full list for $app (the IPv6 ranges?); applying the IPv4 ranges alone, in one update"
       run az rest --method patch --url "$url" --body "@$WORK/restrict-v4.json" --output none || die "Container Apps refused the address ranges for $app"
     fi
     if [ "$DRY_RUN" = 0 ]; then
-      say "$app now has $(az containerapp show -n "$app" -g "$AZURE_RESOURCE_GROUP" --query 'length(properties.configuration.ingress.ipSecurityRestrictions)' -o tsv) ingress rule(s)"
+      say "$app now has $(az containerapp show -n "$app" -g "$AZURE_RESOURCE_GROUP" --query "length(properties.configuration.ingress.ipSecurityRestrictions || \`[]\`)" -o tsv 2>/dev/null || echo '?') ingress rule(s)"
     fi
   done
 fi
@@ -707,7 +708,8 @@ else
     # Cloudflare's Web Analytics, if it is on for the zone, injects its beacon script into HTML at the edge; the staff page policy blocks it.
     for url in "$URL_PERSON/en/" "$URL_CLINIC/en/sign-in/" "$URL_OPS/en/sign-in/"; do
       # The page is fetched into a variable first: a failed or timed-out fetch must not read as "no beacon".
-      if ! page=$(curl -fsS -m 30 "$url"); then
+      # The edge injects the script only into a browser-like page request, so the fetch looks like one.
+      if ! page=$(curl -fsS -m 30 -A 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36' -H 'accept: text/html,application/xhtml+xml' "$url"); then
         say "FAIL: could not fetch $url to look for the Web Analytics beacon"
         failures=$((failures + 1))
         continue
