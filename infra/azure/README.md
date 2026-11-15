@@ -58,7 +58,7 @@ infra/azure/deploy.sh --probe=https://<api address>   # read-only: seeded, empty
 
 The steps, in order: register the resource providers that are not registered (this subscription has none of the five
 registered, and registering is a change to the subscription), resource group, registry, pull identity, environment, Postgres,
-images (one ACR run), the four apps, the first seed, a smoke check. It stops at the first failure; run it again to continue.
+images (one ACR run, or Docker builds here with `IMAGE_BUILD=local` where ACR Tasks is refused), the four apps, the first seed, a smoke check. It stops at the first failure; run it again to continue.
 Creating the Postgres server takes several minutes.
 
 **First seed.** The database starts empty and the guest sign-in answers 404 until it is seeded. The script runs
