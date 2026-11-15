@@ -398,10 +398,10 @@ else
     --tier Burstable --sku-name Standard_B1ms --version 17 --storage-size 32 --backup-retention 7 \
     --admin-user "$PG_ADMIN_USER" --admin-password "$POSTGRES_ADMIN_PASSWORD" --public-access 0.0.0.0 --yes -o none
 fi
-if exists az postgres flexible-server db show -s "$PG_SERVER_NAME" -g "$AZURE_RESOURCE_GROUP" -d "$PG_DATABASE"; then
+if exists az postgres flexible-server db show --server-name "$PG_SERVER_NAME" -g "$AZURE_RESOURCE_GROUP" --name "$PG_DATABASE"; then
   say "database $PG_DATABASE exists"
 elif [ "$DRY_RUN" = 0 ]; then
-  run az postgres flexible-server db create -s "$PG_SERVER_NAME" -g "$AZURE_RESOURCE_GROUP" -d "$PG_DATABASE" -o none
+  run az postgres flexible-server db create --server-name "$PG_SERVER_NAME" -g "$AZURE_RESOURCE_GROUP" --name "$PG_DATABASE" -o none
 fi
 # sslmode=require is the Flexible Server's own requirement. If pg, the migrator or pg-boss refuse it, the fallback is a
 # DATABASE_SSL option in the API (see README); nothing here works around it.
