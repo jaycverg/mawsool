@@ -706,12 +706,19 @@ else
     done
     # Cloudflare's Web Analytics, if it is on for the zone, injects its beacon script into HTML at the edge; the staff page policy blocks it.
     for url in "$URL_PERSON/en/" "$URL_CLINIC/en/sign-in/" "$URL_OPS/en/sign-in/"; do
-      if curl -s -m 30 "$url" | grep -qi 'cloudflareinsights.com\|beacon.min.js'; then
-        say "FAIL: $url carries Cloudflare's Web Analytics beacon; exclude the hostname in the dashboard (Web Analytics, the site's rules)"
+      # The page is fetched into a variable first: a failed or timed-out fetch must not read as "no beacon".
+      if ! page=$(curl -fsS -m 30 "$url"); then
+        say "FAIL: could not fetch $url to look for the Web Analytics beacon"
         failures=$((failures + 1))
-      else
-        say "no Web Analytics beacon in $url"
+        continue
       fi
+      case "$page" in
+        *cloudflareinsights.com* | *beacon.min.js*)
+          say "FAIL: $url carries Cloudflare's Web Analytics beacon; exclude the hostname in the dashboard (Web Analytics, the site's rules)"
+          failures=$((failures + 1))
+          ;;
+        *) say "no Web Analytics beacon in $url" ;;
+      esac
     done
     csp=$(curl -s -m 30 -D - -o /dev/null "$URL_CLINIC/en/sign-in/" | grep -i '^content-security-policy' || true)
     case "$csp" in
