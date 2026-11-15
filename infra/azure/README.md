@@ -33,7 +33,7 @@ Subscription "Azure subscription 1", region `uaenorth` (the database may sit in 
 | Container Registry | `mawsool` + 6 characters of a hash of the subscription id | Basic. Pulls use a managed identity (`mawsool-pull`, role AcrPull); the admin user is off. |
 | Container Apps environment | `mawsool-env` | Consumption plan; Azure creates its Log Analytics workspace. |
 | PostgreSQL Flexible Server | `mawsool-pg-` + the same 6 characters | Burstable B1ms, PostgreSQL 17, in `PG_LOCATION` (default `AZURE_LOCATION`), 32 GB, 7-day backups, database `mawsool`, firewall open to Azure services only. |
-| Apps | `mawsool-api`, `mawsool-person`, `mawsool-clinic`, `mawsool-ops` | Single revision mode. The API runs at exactly 1 replica (its clock queue, rate limiter and AI budget live in one process); the web apps scale 0 to 1. |
+| Apps | `mawsool-api`, `mawsool-person`, `mawsool-clinic`, `mawsool-ops` | Single revision mode. The API runs at exactly 1 replica (its clock queue, rate limiter and AI budget live in one process); the web apps also run at exactly 1 replica, because a cold start from zero took 10 to 30 s and a judge's first page would wait (a running replica is billed at the idle rate). |
 
 API settings: `DEMO_MODE=true`, `RATE_LIMIT=true`, `DEMO_RESET_COOLDOWN_MS=300000`, `DEMO_RESET_CRON=0 23 * * *` (03:00 in the
 UAE), `SUMMARY_DAILY_LIMIT=100`, `SUMMARY_LLM_ENABLED=false` (true with `AI=on`, with `SUMMARY_PROVIDER=anthropic`), and
@@ -133,7 +133,7 @@ keeps the 12-month free services. The sign-up date is the account owner's to rea
       does not, the run stops with the apps still on the default addresses.
    6. Only now the apps roll to the new images and settings: `NEXT_PUBLIC_API_URL=https://mawsool-api.thevergara.dev`, the four URL
       settings (`CORS_ORIGINS` keeps the default addresses as well as the hostnames), `CLIENT_IP_HEADER=cf-connecting-ip`. The run
-      waits for each newest revision to be the ready one and for the hostnames to answer 200.
+      looks for each newest revision to be reported ready (advisory only) and waits for the four hostnames to answer 200, which is the gate.
    7. The ingress lock: every Cloudflare range (fetched at run time from `cloudflare.com/ips-v4` and `ips-v6`), as a rule named
       `cf-<range>`, applied to each app in ONE update (an `az rest` PATCH of `ipSecurityRestrictions`, api-version 2025-07-01; it replaces the app's
       restrictions as a whole). If Container Apps refuses the IPv6 ranges, the IPv4 ranges go in alone, still as one update.
