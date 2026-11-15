@@ -194,7 +194,7 @@ const inspect = createServer(async (request, response) => {
   } else if (request.method === 'POST' && url.pathname === '/e2e/reseed') {
     // Puts the database back to the seed behind every phone's back, the way a lost database would: the people are gone.
     // Staff sign-ins are kept. Not a product route.
-    await runSeed(db, cipher, startOfDubaiDay(systemClock.now()), await readStaffAccess(db));
+    await runSeed(db, cipher, startOfDubaiDay(systemClock.now()), await readStaffAccess(db, systemClock.now()));
     response.end('{}');
   } else if (request.method === 'POST' && /^\/e2e\/last-seen\/[0-9a-f-]{36}$/.test(url.pathname)) {
     // Puts a person's last-seen day back by N days from today, as if their phone had been silent that long. Not a product route.

@@ -1,11 +1,21 @@
 // @ts-check
 // Runs after `next build`: checks the static export is what the person app promises to be.
-// Fails with one line per problem. Usage: node scripts/check-export.mjs
+// Fails with one line per problem. Usage: node scripts/check-export.mjs [export folder]   (default: out/)
+//
+// With NEXT_PUBLIC_PUBLIC_DEMO=true (the hosted public-demo build) the crisis page must show its numbers as text and carry no
+// `tel:` link; unset, it must carry the tap-to-call links. Any other value of the variable fails the check, as it fails the build.
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const out = resolve(fileURLToPath(new URL('..', import.meta.url)), 'out');
+const folderArgument = process.argv[2];
+const out = folderArgument ? resolve(folderArgument) : resolve(fileURLToPath(new URL('..', import.meta.url)), 'out');
+const flag = process.env.NEXT_PUBLIC_PUBLIC_DEMO;
+if (flag !== undefined && flag !== '' && flag !== 'true') {
+  console.error('export check: NEXT_PUBLIC_PUBLIC_DEMO must be true or be left unset');
+  process.exit(1);
+}
+const publicDemo = flag === 'true';
 /** @type {string[]} */
 const problems = [];
 const need = (/** @type {boolean} */ ok, /** @type {string} */ message) => {
@@ -83,12 +93,21 @@ const allHtml = [en, ar].join('\n');
 need(!/fonts\.(googleapis|gstatic)\.com/.test(allHtml), 'pages reference a font CDN');
 
 // The crisis screen ships with its numbers in the page itself, in both languages, so it opens offline from the cache.
+// The public-demo build shows them as text only and must never carry a link that dials; every other build carries the links.
 for (const locale of ['en', 'ar']) {
   const crisis = html(`${locale}/crisis/index.html`);
-  need(
-    crisis.includes('800-SAKINA') && crisis.includes('800 725462') && crisis.includes('tel:800725462') && crisis.includes('tel:998') && crisis.includes('tel:999'),
-    `${locale} crisis page is missing its numbers`,
-  );
+  if (publicDemo) {
+    need(
+      crisis.includes('800-SAKINA') && crisis.includes('800 725462') && crisis.includes('998') && crisis.includes('999'),
+      `${locale} crisis page is missing its numbers as text`,
+    );
+    need(!crisis.includes('tel:'), `${locale} crisis page has a tel: link, which the public-demo build must not carry`);
+  } else {
+    need(
+      crisis.includes('800-SAKINA') && crisis.includes('800 725462') && crisis.includes('tel:800725462') && crisis.includes('tel:998') && crisis.includes('tel:999'),
+      `${locale} crisis page is missing its numbers`,
+    );
+  }
 }
 // A guarded screen's static page holds only the waiting state: no option or check-in content before the block is read.
 for (const locale of ['en', 'ar']) {

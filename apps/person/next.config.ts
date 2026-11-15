@@ -1,5 +1,9 @@
 import type { NextConfig } from 'next';
 import createNextIntlPlugin from 'next-intl/plugin';
+import { readPublicDemoFlag } from './lib/public-demo';
+
+// Read strictly: only `true` or unset is accepted, and anything else fails the build (see lib/public-demo.ts).
+const publicDemo = readPublicDemoFlag(process.env.NEXT_PUBLIC_PUBLIC_DEMO);
 
 const withNextIntl = createNextIntlPlugin('./i18n/request.ts');
 
@@ -14,6 +18,7 @@ const config: NextConfig = {
   transpilePackages: ['@mawsool/ui', '@mawsool/types', '@mawsool/instruments', '@mawsool/rules'],
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL ?? `http://localhost:${process.env.API_PORT ?? '4000'}`,
+    NEXT_PUBLIC_PUBLIC_DEMO: publicDemo ? 'true' : '',
   },
 };
 

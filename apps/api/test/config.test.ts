@@ -20,6 +20,61 @@ describe('loadConfig', () => {
       summaryProvider: null,
       demoMode: false,
       notifierDriver: 'log',
+      rateLimit: false,
+      clientIpHeader: undefined,
+      summaryDailyLimit: undefined,
+      aiDemoCode: undefined,
+      demoResetCooldownMs: 0,
+      demoResetCron: undefined,
+    });
+  });
+
+  describe('the hosted demo settings', () => {
+    const load = (extra: Record<string, string>) => loadConfig({ BUNDLE_ENCRYPTION_KEY: KEY, ...extra });
+
+    it('are all off or unset by default, and a blank value is the same as unset', () => {
+      const blank = load({ RATE_LIMIT: '', CLIENT_IP_HEADER: '', SUMMARY_DAILY_LIMIT: '', AI_DEMO_CODE: '', DEMO_RESET_COOLDOWN_MS: '', DEMO_RESET_CRON: '' });
+      expect(blank).toMatchObject({ rateLimit: false, clientIpHeader: undefined, summaryDailyLimit: undefined, aiDemoCode: undefined, demoResetCooldownMs: 0, demoResetCron: undefined });
+    });
+
+    it('reads good values', () => {
+      expect(
+        load({ RATE_LIMIT: 'true', CLIENT_IP_HEADER: 'cf-connecting-ip', SUMMARY_DAILY_LIMIT: '100', AI_DEMO_CODE: 'sand-river-lamp', DEMO_RESET_COOLDOWN_MS: '300000', DEMO_RESET_CRON: '0 23 * * *' }),
+      ).toMatchObject({ rateLimit: true, clientIpHeader: 'cf-connecting-ip', summaryDailyLimit: 100, aiDemoCode: 'sand-river-lamp', demoResetCooldownMs: 300000, demoResetCron: '0 23 * * *' });
+      expect(load({ SUMMARY_DAILY_LIMIT: '0' }).summaryDailyLimit).toBe(0);
+      expect(load({ RATE_LIMIT: '1' }).rateLimit).toBe(true);
+      expect(load({ RATE_LIMIT: '0' }).rateLimit).toBe(false);
+    });
+
+    it('stop startup on a malformed value, each naming its variable', () => {
+      const bad: [string, string][] = [
+        ['CLIENT_IP_HEADER', 'CF Connecting IP'],
+        ['CLIENT_IP_HEADER', 'CF-Connecting-IP'],
+        ['RATE_LIMIT', '1x'],
+        ['RATE_LIMIT', 'yes'],
+        ['AI_DEMO_CODE', 'short'],
+        ['AI_DEMO_CODE', 'Sand-River-Lamp'],
+        ['AI_DEMO_CODE', 'x'.repeat(65)],
+        ['DEMO_RESET_CRON', 'nightly'],
+        ['DEMO_RESET_CRON', '99 99 * * *'],
+        ['SUMMARY_DAILY_LIMIT', '-1'],
+        ['SUMMARY_DAILY_LIMIT', '1.5'],
+        ['SUMMARY_DAILY_LIMIT', 'many'],
+        ['DEMO_RESET_COOLDOWN_MS', '-5'],
+        ['DEMO_RESET_COOLDOWN_MS', 'soon'],
+      ];
+      for (const [name, value] of bad) expect(() => load({ [name]: value }), `${name}=${value}`).toThrow(new RegExp(name));
+    });
+
+    it('never repeats a bad demo code in the message', () => {
+      let message = '';
+      try {
+        load({ AI_DEMO_CODE: 'SECRET-Value' });
+      } catch (error) {
+        message = String(error);
+      }
+      expect(message).toMatch(/AI_DEMO_CODE/);
+      expect(message).not.toContain('SECRET-Value');
     });
   });
 

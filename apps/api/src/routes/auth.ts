@@ -1,8 +1,10 @@
 import {
   ErrorResponseSchema,
   MagicLinkRequestSchema,
+  RateLimitedSchema,
   SessionSchema,
   VerifyMagicLinkRequestSchema,
+  type Session,
 } from '@mawsool/types';
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
@@ -45,8 +47,8 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): v
   typed.post(
     '/auth/magic-link',
     {
-      config: { access: 'public' },
-      schema: { body: MagicLinkRequestSchema, response: { 202: z.object({ status: z.literal('accepted') }) } },
+      config: { access: 'public', rateLimit: { max: 5, timeWindow: '1 minute' } },
+      schema: { body: MagicLinkRequestSchema, response: { 202: z.object({ status: z.literal('accepted') }), 429: RateLimitedSchema } },
     },
     async (request, reply) => {
       const email = request.body.email.toLowerCase();
@@ -106,20 +108,24 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): v
         .limit(1);
       if (!user?.active) return sendError(reply, 401, 'invalid_link', 'This link is invalid, expired or already used');
 
-      const sessionToken = randomToken();
-      const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
-      await deps.db.insert(schema.staffSessions).values({
-        staffUserId: link.staffUserId,
-        tokenHash: sha256Hex(sessionToken),
-        createdAt: now,
-        expiresAt,
-      });
-      return reply.code(200).send({
-        sessionToken,
-        expiresAt: expiresAt.toISOString(),
-        role: user.role,
-        facilityId: user.facilityId,
-      });
+      return reply.code(200).send(await issueStaffSession(deps.db, deps.clock, { id: link.staffUserId, role: user.role, facilityId: user.facilityId }));
     },
   );
+}
+
+/**
+ * Opens a staff session for a user and returns what the front end stores. The session is a random token whose SHA-256 is the
+ * only thing kept, and it lives `SESSION_TTL_MS` from now on the wall clock (`clock` is the security clock, never the demo
+ * clock). Shared by the sign-in link's verify route and the demo's guest sign-in, so the two cannot issue different sessions.
+ */
+export async function issueStaffSession(
+  db: Db,
+  clock: Clock,
+  user: { id: string; role: Session['role']; facilityId: string | null },
+): Promise<Session> {
+  const now = clock.now();
+  const sessionToken = randomToken();
+  const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
+  await db.insert(schema.staffSessions).values({ staffUserId: user.id, tokenHash: sha256Hex(sessionToken), createdAt: now, expiresAt });
+  return { sessionToken, expiresAt: expiresAt.toISOString(), role: user.role, facilityId: user.facilityId };
 }

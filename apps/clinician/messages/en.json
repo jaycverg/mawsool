@@ -1,4 +1,8 @@
 {
+  "demoAccounts": {
+    "clinicianA": "Continue as demo clinician, Clinic A (Sample PHC · Khalifa City)",
+    "clinicianB": "Continue as demo clinician, Clinic B (Sample Clinic · Al Ain)"
+  },
   "meta": {
     "title": "Mawsool Clinician",
     "description": "Incoming referrals for your facility."

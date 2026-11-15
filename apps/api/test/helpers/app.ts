@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { SummaryProvider } from '@mawsool/summary';
-import { buildApp } from '../../src/app';
+import { buildApp, type AppDeps } from '../../src/app';
 import { ManualClock } from '../../src/clock';
 import type { Db } from '../../src/db/client';
 import type { ClinicLinkMessage, Notifier, OutboundMessage, ReminderTextMessage, StaffSignInMessage } from '../../src/notifier';
@@ -51,6 +51,8 @@ export interface TestAppOptions {
   demoMode?: boolean;
   summaryLlmEnabled?: boolean;
   summaryProvider?: SummaryProvider | null;
+  /** Extra settings, as the hosted demo's variables set them (`rateLimit`, `clientIpHeader`, `summaryDailyLimit`, `aiDemoCode`, `demoResetCooldownMs`). */
+  config?: Partial<AppDeps['config']>;
 }
 
 export async function createTestApp(db: Db, options: TestAppOptions = {}): Promise<TestApp> {
@@ -60,7 +62,7 @@ export async function createTestApp(db: Db, options: TestAppOptions = {}): Promi
     db,
     clock,
     notifier,
-    config: { ...TEST_CONFIG, summaryLlmEnabled: options.summaryLlmEnabled ?? false, demoMode: options.demoMode ?? false },
+    config: { ...TEST_CONFIG, summaryLlmEnabled: options.summaryLlmEnabled ?? false, demoMode: options.demoMode ?? false, ...options.config },
     summaryProvider: options.summaryProvider ?? null,
   });
   return { app, clock, notifier };
