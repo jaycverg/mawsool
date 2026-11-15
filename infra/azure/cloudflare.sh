@@ -4,7 +4,7 @@
 #   infra/azure/cloudflare.sh part1 [--dry-run]   TXT asuid.<host> (the environment's verification ID) and CNAME <host> -> the app's
 #                                                 address, both DNS-only, so Azure's lookup sees them when a hostname is bound
 #   infra/azure/cloudflare.sh part2 [--dry-run]   the four CNAMEs proxied, then ONE Configuration Rule for the four hostnames only
-#                                                 (SSL strict, Rocket Loader off, email obfuscation off), then a read-only Web Analytics report
+#                                                 (SSL strict, Rocket Loader off, email obfuscation off, RUM injection off), then a read-only Web Analytics report
 #
 # --dry-run prints what would be written and makes no call at all (not even a read). Without it, a part first READS the zone, prints
 # every change it will make, saves the zone's DNS records and rules to <workspace>/.local/tmp/cloudflare-before-<time>.json, and only
@@ -98,7 +98,7 @@ print_desired() {
   else
     say "Configuration Rule (phase $RULE_PHASE, ref $RULE_REF), the only rule this script writes:"
     say "  when $(host_expression)"
-    say "  set ssl=strict, rocket_loader=false, email_obfuscation=false"
+    say "  set ssl=strict, rocket_loader=false, email_obfuscation=false, disable_rum=true"
     for pair in $PAIRS; do say "CNAME  ${pair%%:*}  ->  ${pair#*:}  switched to proxied"; done
     say "Web Analytics: read-only; reports whether automatic injection is on for the zone and changes nothing"
   fi
@@ -248,12 +248,12 @@ read_entrypoint() {
 ensure_rule() {
   local expr desired rules merged existing_ours existing_id others
   expr=$(host_expression)
-  desired=$(jq -nc --arg ref "$RULE_REF" --arg e "$expr" '{ref:$ref, description:"Mawsool demo hostnames: strict SSL, no Rocket Loader, no email obfuscation", expression:$e, action:"set_config", action_parameters:{ssl:"strict", rocket_loader:false, email_obfuscation:false}, enabled:true}')
+  desired=$(jq -nc --arg ref "$RULE_REF" --arg e "$expr" '{ref:$ref, description:"Mawsool demo hostnames: strict SSL, no Rocket Loader, no email obfuscation, no Web Analytics injection", expression:$e, action:"set_config", action_parameters:{ssl:"strict", rocket_loader:false, email_obfuscation:false, disable_rum:true}, enabled:true}')
   read_entrypoint
   rules=$ENTRYPOINT_RULES
   existing_ours=$(printf '%s' "$rules" | jq -c --arg ref "$RULE_REF" '[.[] | select(.ref == $ref)] | .[0] // empty')
   others=$(printf '%s' "$rules" | jq --arg ref "$RULE_REF" '[.[] | select(.ref != $ref)] | length')
-  if [ -n "$existing_ours" ] && [ "$(printf '%s' "$existing_ours" | jq -c '{expression, action_parameters, enabled}')" = "$(printf '%s' "$desired" | jq -c '{expression, action_parameters, enabled}')" ]; then
+  if [ -n "$existing_ours" ] && [ "$(printf '%s' "$existing_ours" | jq -S -c '{expression, action_parameters, enabled}')" = "$(printf '%s' "$desired" | jq -S -c '{expression, action_parameters, enabled}')" ]; then
     say "keep    rule $RULE_REF ($others other rule(s) in the zone's $RULE_PHASE entry point, untouched)"
     return 0
   fi
@@ -279,8 +279,8 @@ web_analytics() {
   if [ -z "$site" ]; then say "Web Analytics: no site for $CF_DOMAIN, so nothing is injected"; return 0; fi
   auto=$(printf '%s' "$site" | jq -r '.auto_install // false')
   if [ "$auto" = true ]; then
-    say "Web Analytics: automatic injection is ON for $CF_DOMAIN. NOT CHANGED: the four hostnames may get the beacon script, which the staff page policy"
-    say "  would block. Check their page source after the run; to exclude them, add an exclusion per hostname in the dashboard (Web Analytics, the site's rules)."
+    say "Web Analytics: automatic injection is ON for $CF_DOMAIN (the zone setting is NOT changed). The rule $RULE_REF sets disable_rum=true for the four"
+    say "  hostnames, which keeps the beacon off them; the smoke check looks for it in a browser-like request to confirm."
   else
     say "Web Analytics: automatic injection is off for $CF_DOMAIN; the four hostnames get no beacon"
   fi
