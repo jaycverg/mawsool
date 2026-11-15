@@ -199,6 +199,9 @@ AZURE_SUBSCRIPTION=${AZURE_SUBSCRIPTION:-Azure subscription 1}
 AZURE_LOCATION=${AZURE_LOCATION:-uaenorth}
 # The database may sit in another region: Flexible Server SKUs are refused per subscription and region.
 PG_LOCATION=${PG_LOCATION:-$AZURE_LOCATION}
+# acr: one ACR Tasks run builds the images. local: Docker builds them here and pushes (for a subscription where ACR Tasks is refused).
+IMAGE_BUILD=${IMAGE_BUILD:-acr}
+case "$IMAGE_BUILD" in acr|local) ;; *) die "IMAGE_BUILD must be acr or local" ;; esac
 AZURE_RESOURCE_GROUP=${AZURE_RESOURCE_GROUP:-mawsool-demo-rg}
 EDGE=${EDGE:-azure}
 AI=${AI:-off}
@@ -429,7 +432,19 @@ else
     mkdir -p "$WORK/context"
     git -C "$REPO" archive HEAD | tar -x -C "$WORK/context"
   fi
-  run az acr run -r "$ACR_NAME" --timeout 3600 --file infra/azure/acr-task.yaml --set "TAG=$TAG" --set "NEXT_PUBLIC_API_URL=$URL_API" "$WORK/context"
+  if [ "$IMAGE_BUILD" = local ]; then
+    # ACR Tasks is refused on some subscriptions (free trials: TasksOperationsNotAllowed). The same four builds run here
+    # with Docker for linux/amd64 and are pushed with the registry's own login; a push is not an ACR Task.
+    run az acr login -n "$ACR_NAME"
+    for target in api person clinician ops; do
+      image=$ACR_SERVER/mawsool-$target:$TAG
+      run docker build --platform linux/amd64 --target "$target" -t "$image" \
+        --build-arg "NEXT_PUBLIC_API_URL=$URL_API" --build-arg NEXT_PUBLIC_PUBLIC_DEMO=true -f "$WORK/context/Dockerfile" "$WORK/context"
+      run docker push "$image"
+    done
+  else
+    run az acr run -r "$ACR_NAME" --timeout 3600 --file infra/azure/acr-task.yaml --set "TAG=$TAG" --set "NEXT_PUBLIC_API_URL=$URL_API" "$WORK/context"
+  fi
   if [ "$DRY_RUN" = 0 ]; then
     for repo in mawsool-api mawsool-person mawsool-clinician mawsool-ops; do
       az acr repository show-tags -n "$ACR_NAME" --repository "$repo" -o tsv | grep -qx "$TAG" || die "the ACR run did not push $repo:$TAG"
