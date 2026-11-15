@@ -96,10 +96,10 @@ print_desired() {
       say "CNAME  $host  ->  ${pair#*:}  (DNS-only, so Azure's lookup sees the target)"
     done
   else
-    for pair in $PAIRS; do say "CNAME  ${pair%%:*}  ->  ${pair#*:}  switched to proxied"; done
     say "Configuration Rule (phase $RULE_PHASE, ref $RULE_REF), the only rule this script writes:"
     say "  when $(host_expression)"
     say "  set ssl=strict, rocket_loader=false, email_obfuscation=false"
+    for pair in $PAIRS; do say "CNAME  ${pair%%:*}  ->  ${pair#*:}  switched to proxied"; done
     say "Web Analytics: read-only; reports whether automatic injection is on for the zone and changes nothing"
   fi
 }
@@ -125,14 +125,19 @@ if [ -z "$TOKEN" ]; then
 fi
 
 # cf <METHOD> <path> [json body]: prints the response body, returns 1 when Cloudflare says success is false (errors go to stderr).
-# The token is given to curl on stdin as a config line, never in its arguments.
+# The token is given to curl on stdin as a config line, never in its arguments. CF_STATUS holds the HTTP status afterwards; it is
+# only visible to the caller when cf is not run inside $(...) (use a redirect to a file).
+CF_STATUS=''
 cf() {
   local method=$1 path=$2 body=${3:-} out
+  CF_STATUS=''
   if [ -n "$body" ]; then
-    out=$(printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" | curl -sS -m 40 -K - -X "$method" -H 'content-type: application/json' --data "$body" "$API/$path") || return 1
+    out=$(printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" | curl -sS -m 40 -K - -X "$method" -H 'content-type: application/json' --data "$body" -w '\n%{http_code}' "$API/$path") || return 1
   else
-    out=$(printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" | curl -sS -m 40 -K - -X "$method" "$API/$path") || return 1
+    out=$(printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" | curl -sS -m 40 -K - -X "$method" -w '\n%{http_code}' "$API/$path") || return 1
   fi
+  CF_STATUS=${out##*$'\n'}
+  out=${out%$'\n'*}
   printf '%s' "$out"
   if [ "$(printf '%s' "$out" | jq -r '.success // false' 2>/dev/null)" != true ]; then
     printf '%s' "$out" | jq -r '.errors[]? | "cloudflare error \(.code): \(.message)"' >&2 2>/dev/null || true
@@ -181,10 +186,10 @@ ensure_txt() {
   return 0
 }
 
-# ensure_cname <host> <target> <part>: part1 makes it exist and point at the target (a new record is DNS-only; an existing one with the
-# right target keeps its proxy setting, so a rerun never takes a live hostname off the proxy); part2 makes it proxied.
+# ensure_cname <host> <target> <part>: part1 creates it DNS-only when it does not exist; one that exists with the right target keeps its
+# proxy setting (a rerun never takes a live hostname off the proxy); one that points anywhere else stops the run. part2 makes it proxied.
 ensure_cname() {
-  local host=$1 target=$2 part=$3 recs id content proxied want_proxied
+  local host=$1 target=$2 part=$3 recs id content proxied
   recs=$(records_at "$host")
   only_types "$host" "$recs" CNAME
   id=$(printf '%s' "$recs" | jq -r '.[0].id // empty')
@@ -208,25 +213,44 @@ ensure_cname() {
     CHANGES=$((CHANGES + 1))
     [ "$APPLY" = 1 ] && cf POST "$DNS" "$(jq -nc --arg n "$host" --arg c "$target" '{type:"CNAME",name:$n,content:$c,proxied:false,ttl:1,comment:"Mawsool demo"}')" >/dev/null
   elif [ "$content" != "$target" ]; then
-    want_proxied=false
-    say "UPDATE  CNAME  $host  $content -> $target  (DNS-only)"
-    CHANGES=$((CHANGES + 1))
-    [ "$APPLY" = 1 ] && cf PATCH "$DNS/$id" "$(jq -nc --arg c "$target" --argjson p "$want_proxied" '{content:$c,proxied:$p}')" >/dev/null
+    die "$host already points at $content, not at $target; this script never re-points a record it did not create. Remove or fix it by hand."
   else
     say "keep    CNAME  $host  (proxied=$proxied)"
   fi
   return 0
 }
 
+# read_entrypoint: reads the zone's config-settings entry point into ENTRYPOINT_RULES (a JSON array, trimmed to what a PUT accepts) and
+# ENTRYPOINT_RESULT (the whole result, or null when there is none). ONLY Cloudflare's own "no such entry point" answer (HTTP 404 with
+# error code 10003 or "could not find") counts as "no rules"; any other failure (429, 5xx, a body that is not JSON) stops the run, so a
+# failed read can never end in a PUT that replaces the zone's rules with ours alone.
+ENTRYPOINT_RULES='[]'
+ENTRYPOINT_RESULT='null'
+read_entrypoint() {
+  local tmp status
+  tmp=$(mktemp)
+  cf GET "zones/$ZONE/rulesets/phases/$RULE_PHASE/entrypoint" >"$tmp" 2>/dev/null || true
+  status=$CF_STATUS
+  if [ "$status" = 200 ] && jq -e '.success == true and (.result.rules // []) != null' "$tmp" >/dev/null 2>&1; then
+    ENTRYPOINT_RESULT=$(jq -c '.result' "$tmp")
+    ENTRYPOINT_RULES=$(jq -c '(.result.rules // []) | map({id, ref, description, expression, action, action_parameters, enabled} | with_entries(select(.value != null)))' "$tmp")
+  elif [ "$status" = 404 ] && jq -e '.success == false and ([.errors[]? | select(.code == 10003 or ((.message // "") | test("could not find"; "i")))] | length > 0)' "$tmp" >/dev/null 2>&1; then
+    ENTRYPOINT_RESULT=null
+    ENTRYPOINT_RULES='[]'
+  else
+    rm -f "$tmp"
+    die "could not read the zone's $RULE_PHASE entry point (HTTP ${status:-none}); not writing anything"
+  fi
+  rm -f "$tmp"
+}
+
 # ensure_rule: the zone's entry point ruleset for the config settings phase holds exactly its previous rules plus ours.
 ensure_rule() {
-  local expr desired current rules merged existing_ours existing_id others
+  local expr desired rules merged existing_ours existing_id others
   expr=$(host_expression)
   desired=$(jq -nc --arg ref "$RULE_REF" --arg e "$expr" '{ref:$ref, description:"Mawsool demo hostnames: strict SSL, no Rocket Loader, no email obfuscation", expression:$e, action:"set_config", action_parameters:{ssl:"strict", rocket_loader:false, email_obfuscation:false}, enabled:true}')
-  # No entry point yet is a 404 from Cloudflare; that is the empty list.
-  current=$(cf GET "zones/$ZONE/rulesets/phases/$RULE_PHASE/entrypoint" 2>/dev/null || true)
-  rules=$(printf '%s' "$current" | jq -c '(.result.rules // []) | map({id, ref, description, expression, action, action_parameters, enabled} | with_entries(select(.value != null)))' 2>/dev/null || true)
-  [ -n "$rules" ] || rules='[]'
+  read_entrypoint
+  rules=$ENTRYPOINT_RULES
   existing_ours=$(printf '%s' "$rules" | jq -c --arg ref "$RULE_REF" '[.[] | select(.ref == $ref)] | .[0] // empty')
   others=$(printf '%s' "$rules" | jq --arg ref "$RULE_REF" '[.[] | select(.ref != $ref)] | length')
   if [ -n "$existing_ours" ] && [ "$(printf '%s' "$existing_ours" | jq -c '{expression, action_parameters, enabled}')" = "$(printf '%s' "$desired" | jq -c '{expression, action_parameters, enabled}')" ]; then
@@ -287,20 +311,20 @@ run_all() {
       ensure_cname "${pair%%:*}" "${pair#*:}" part1
     done
   else
-    for pair in $PAIRS; do ensure_cname "${pair%%:*}" "${pair#*:}" part2; done
     ensure_rule
+    for pair in $PAIRS; do ensure_cname "${pair%%:*}" "${pair#*:}" part2; done
     web_analytics
   fi
 }
 
 # snapshot: the zone's DNS records and the config-settings entry point, as they are before the first write.
 snapshot() {
-  local dir=$WORKSPACE/.local/tmp file
+  local dir=$WORKSPACE/.local/tmp file dns
   mkdir -p "$dir"
   file=$dir/cloudflare-before-$(date +%Y%m%d-%H%M%S).json
-  jq -n --argjson dns "$(cf GET "$DNS?per_page=5000" | jq -c '.result')" \
-    --argjson rules "$(cf GET "zones/$ZONE/rulesets/phases/$RULE_PHASE/entrypoint" 2>/dev/null | jq -c '.result // null' 2>/dev/null || echo null)" \
-    '{dns_records: $dns, config_settings_entrypoint: $rules}' >"$file"
+  dns=$(cf GET "$DNS?per_page=5000" | jq -c '.result') || die "could not read the zone's DNS records for the snapshot; not writing anything"
+  read_entrypoint
+  jq -n --argjson dns "$dns" --argjson rules "$ENTRYPOINT_RESULT" '{dns_records: $dns, config_settings_entrypoint: $rules}' >"$file"
   chmod 600 "$file"
   say "saved the zone's records and rules before any change: $file"
 }

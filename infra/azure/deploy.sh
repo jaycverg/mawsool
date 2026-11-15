@@ -448,9 +448,38 @@ else
   fi
 fi
 
+# --- helpers for waiting --------------------------------------------------------------------------------------------------------
+wait_for() { # wait_for <url> <tries>: until the URL answers 200 (10 s apart)
+  local n=0
+  until [ "$(curl -s -m 20 -o /dev/null -w '%{http_code}' "$1" || true)" = 200 ]; do
+    n=$((n + 1))
+    [ "$n" -ge "$2" ] && return 1
+    sleep 10
+  done
+}
+wait_answers() { # wait_answers <url> <tries>: until the URL answers 2xx or 3xx (a redirect counts; Cloudflare's 52x does not)
+  local n=0 code
+  while :; do
+    code=$(curl -s -m 20 -o /dev/null -w '%{http_code}' "$1" || true)
+    case "$code" in 2?? | 3??) return 0 ;; esac
+    n=$((n + 1))
+    [ "$n" -ge "$2" ] && return 1
+    sleep 10
+  done
+}
+revision_ready() { # revision_ready <app>: true once the newest revision is the one that is ready
+  local out ready latest
+  out=$(az containerapp show -n "$1" -g "$AZURE_RESOURCE_GROUP" --query "[properties.latestReadyRevisionName, properties.latestRevisionName]" -o tsv | tr '\n' ' ')
+  read -r ready latest <<<"$out"
+  [ -n "$ready" ] && [ "$ready" = "$latest" ]
+}
+
 # --- 8. apps -------------------------------------------------------------------------------------------------------------------
 step "8. Container Apps (single revision mode)"
 CORS_ORIGINS="$URL_PERSON,$URL_CLINIC,$URL_OPS"
+# With Cloudflare the default addresses stay allowed too: the apps still on the old images answer there until the cutover is done
+# (and once the ingress is locked those addresses are unreachable anyway).
+if [ "$EDGE" = cloudflare ]; then CORS_ORIGINS="$CORS_ORIGINS,https://$APP_PERSON.$DEFAULT_DOMAIN,https://$APP_CLINIC.$DEFAULT_DOMAIN,https://$APP_OPS.$DEFAULT_DOMAIN"; fi
 API_ENV=(
   "DATABASE_URL=secretref:database-url"
   "BUNDLE_ENCRYPTION_KEY=secretref:bundle-encryption-key"
@@ -488,6 +517,10 @@ deploy_app() {
   shift 7
   local image=$ACR_SERVER/$repo:$TAG
   if exists az containerapp show -n "$name" -g "$AZURE_RESOURCE_GROUP"; then
+    if [ "$APPS_MODE" = create_only ]; then
+      say "$name exists; it is moved to $image after the hostnames answer (step 9)"
+      return 0
+    fi
     say "$name exists; updating it to $image"
     if [ "${1:-}" = --secrets ]; then
       # Everything up to --env-vars is the secret list.
@@ -511,10 +544,18 @@ deploy_app() {
   fi
 }
 
-deploy_app "$APP_API" mawsool-api 4000 1 1 0.5 1.0Gi --secrets "${API_SECRETS[@]}" --env-vars "${API_ENV[@]}"
-deploy_app "$APP_PERSON" mawsool-person 80 0 1 0.25 0.5Gi
-deploy_app "$APP_CLINIC" mawsool-clinician 3000 0 1 0.5 1.0Gi
-deploy_app "$APP_OPS" mawsool-ops 3000 0 1 0.5 1.0Gi
+# deploy_all: create or update the four apps. APPS_MODE=create_only creates the ones that are missing and leaves running ones alone.
+APPS_MODE=all
+deploy_all() {
+  deploy_app "$APP_API" mawsool-api 4000 1 1 0.5 1.0Gi --secrets "${API_SECRETS[@]}" --env-vars "${API_ENV[@]}"
+  deploy_app "$APP_PERSON" mawsool-person 80 0 1 0.25 0.5Gi
+  deploy_app "$APP_CLINIC" mawsool-clinician 3000 0 1 0.5 1.0Gi
+  deploy_app "$APP_OPS" mawsool-ops 3000 0 1 0.5 1.0Gi
+}
+# With Cloudflare, apps that already run are NOT moved yet: new images, the new addresses and CLIENT_IP_HEADER would break them
+# before their hostnames work. They are rolled in step 9, after the hostnames answer through Cloudflare.
+if [ "$EDGE" = cloudflare ]; then APPS_MODE=create_only; fi
+deploy_all
 
 # The address the images were built with has to be the address the app really got.
 if [ "$DRY_RUN" = 0 ]; then
@@ -525,72 +566,83 @@ if [ "$DRY_RUN" = 0 ]; then
   say "API address: https://$actual"
 fi
 
-# --- 9. custom domains and the Cloudflare lock (EDGE=cloudflare only) -------------------------------------------------------------
+# --- 9. custom domains, the move of the apps and the Cloudflare lock (EDGE=cloudflare only) ----------------------------------------
 # cert_ready <hostname>: true once the managed certificate for the hostname is issued.
 cert_ready() {
   [ "$(az containerapp env certificate list -n "$ENV_NAME" -g "$AZURE_RESOURCE_GROUP" --managed-certificates-only --query "[?properties.subjectName=='$1'].properties.provisioningState | [0]" -o tsv)" = Succeeded ]
 }
 if [ "$EDGE" = cloudflare ]; then
-  step "9. Custom domains and the ingress lock (stage 3B)"
+  step "9. Custom domains (stage 3B): the hostnames first, then the apps move"
   export MAWSOOL_FROM_DEPLOY=1 MAWSOOL_ENV_VERIFICATION_ID=$VERIFICATION_ID CF_DOMAIN
   export MAWSOOL_HOST_API=$HOST_API MAWSOOL_HOST_PERSON=$HOST_PERSON MAWSOOL_HOST_CLINIC=$HOST_CLINIC MAWSOOL_HOST_OPS=$HOST_OPS
   for pair in "API:$APP_API" "PERSON:$APP_PERSON" "CLINIC:$APP_CLINIC" "OPS:$APP_OPS"; do
     fqdn=$(read_value "<${pair%%:*}-fqdn>" az containerapp show -n "${pair#*:}" -g "$AZURE_RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)
     export "MAWSOOL_FQDN_${pair%%:*}=$fqdn"
   done
-  # Part 1 writes the four asuid TXT records and the four CNAMEs, DNS-only, so Azure's lookup finds them when a name is bound.
+  # 9a. The asuid TXT records and the four CNAMEs, DNS-only, so Azure's lookup finds them when a name is bound.
   run "$HERE/cloudflare.sh" part1
-  # A hostname is added, then bound with a managed certificate (free; Azure validates it through the CNAME, which is why the
-  # records are not proxied yet). A hostname that is already bound is left alone, so a rerun does not touch a live one.
+  # 9b. Each hostname is added (unless it is already listed), then bound with a managed certificate (free; Azure validates it through
+  # the CNAME, which is why the records are not proxied yet). A hostname already bound is left alone.
   for pair in "$APP_API:$HOST_API" "$APP_PERSON:$HOST_PERSON" "$APP_CLINIC:$HOST_CLINIC" "$APP_OPS:$HOST_OPS"; do
     app=${pair%%:*}
     host=${pair#*:}
+    listed=$(read_value '' az containerapp hostname list -n "$app" -g "$AZURE_RESOURCE_GROUP" --query "[?name=='$host'].name | [0]" -o tsv 2>/dev/null) || listed=''
     bound=$(read_value '' az containerapp hostname list -n "$app" -g "$AZURE_RESOURCE_GROUP" --query "[?name=='$host'].bindingType | [0]" -o tsv 2>/dev/null) || bound=''
+    if [ -n "$listed" ]; then say "$host is already listed on $app"; else retry 6 30 az containerapp hostname add -n "$app" -g "$AZURE_RESOURCE_GROUP" --hostname "$host" -o none; fi
     if [ "$bound" = SniEnabled ]; then
       say "$host is already bound on $app"
-      continue
+    else
+      retry 3 60 az containerapp hostname bind -n "$app" -g "$AZURE_RESOURCE_GROUP" --hostname "$host" --environment "$ENV_NAME" --validation-method CNAME -o none
     fi
-    retry 6 30 az containerapp hostname add -n "$app" -g "$AZURE_RESOURCE_GROUP" --hostname "$host" -o none
-    retry 3 60 az containerapp hostname bind -n "$app" -g "$AZURE_RESOURCE_GROUP" --hostname "$host" --environment "$ENV_NAME" --validation-method CNAME -o none
   done
   for host in "$HOST_API" "$HOST_PERSON" "$HOST_CLINIC" "$HOST_OPS"; do
     retry 20 30 cert_ready "$host" || die "the managed certificate for $host was not issued in 10 minutes; read it with: az containerapp env certificate list -n $ENV_NAME -g $AZURE_RESOURCE_GROUP --managed-certificates-only"
   done
-  # Part 2 turns the four CNAMEs to proxied and applies the zone rule.
+  # 9c. The zone rule goes in, then the four CNAMEs are proxied.
   run "$HERE/cloudflare.sh" part2
-  # Only now is the ingress locked, so the apps never refuse Cloudflare while it is still being set up.
+  # 9d. Until each hostname answers through Cloudflare nothing else moves. The API's /health answers on the old image too.
+  for pair in "$HOST_API:/health" "$HOST_PERSON:/" "$HOST_CLINIC:/" "$HOST_OPS:/"; do
+    if [ "$DRY_RUN" = 1 ]; then say "+ wait until https://${pair%%:*}${pair#*:} answers through Cloudflare"; continue; fi
+    wait_answers "https://${pair%%:*}${pair#*:}" 36 || die "https://${pair%%:*}${pair#*:} does not answer through Cloudflare (a 52x is Cloudflare failing to reach or trust the origin); the apps have not been moved, so the demo still runs on the default addresses"
+    say "https://${pair%%:*}${pair#*:} answers through Cloudflare"
+  done
+  # 9e. Now the apps move: the new images (built for the API hostname), the hostname settings, CLIENT_IP_HEADER.
+  step "9e. Rolling the apps to the new images and settings"
+  APPS_MODE=all
+  deploy_all
+  for app in "$APP_API" "$APP_PERSON" "$APP_CLINIC" "$APP_OPS"; do
+    retry 30 20 revision_ready "$app" || die "the new revision of $app is not ready; read its log (see README)"
+  done
+  if [ "$DRY_RUN" = 0 ]; then
+    for pair in "$HOST_API:/health" "$HOST_PERSON:/en/" "$HOST_CLINIC:/en/sign-in/" "$HOST_OPS:/en/sign-in/"; do
+      wait_for "https://${pair%%:*}${pair#*:}" 18 || die "https://${pair%%:*}${pair#*:} does not answer 200 on the new revision; the ingress is not locked yet"
+      say "https://${pair%%:*}${pair#*:} answers 200 on the new revision"
+    done
+  fi
+  # 9f. Only now is the ingress locked, in ONE update per app (never range by range, so no visitor is refused while it runs).
+  step "9f. Ingress lock to Cloudflare's address ranges"
   ranges=$(read_value '10.0.0.0/8' sh -c 'curl -fsS -m 20 https://www.cloudflare.com/ips-v4 && echo && curl -fsS -m 20 https://www.cloudflare.com/ips-v6')
   printf '%s\n' "$ranges" | grep -Eq '^[0-9a-fA-F:.]+/[0-9]+$' || die "could not read Cloudflare's address ranges"
-  # One Allow rule per range, named after the range, so a rerun adds only what is missing. If Container Apps refuses an IPv6
-  # range, the IPv6 ranges are skipped for that app (Cloudflare reaches the origin over IPv4, which the CNAME resolves to).
+  restrictions_filter='split("\n") | map(select(length > 0)) | map({name: ("cf-" + gsub("[./:]"; "-")), ipAddressRange: ., action: "Allow", description: "Cloudflare"}) | {properties: {configuration: {ingress: {ipSecurityRestrictions: .}}}}'
+  printf '%s\n' "$ranges" | jq -R -s -c "$restrictions_filter" >"$WORK/restrict-all.json"
+  printf '%s\n' "$ranges" | grep -v ':' | jq -R -s -c "$restrictions_filter" >"$WORK/restrict-v4.json"
+  # The list replaces the app's restrictions as a whole (these apps have no others). If Container Apps refuses the IPv6 ranges, the
+  # IPv4 ranges go in alone, still as one update: Cloudflare reaches the origin over IPv4, which the CNAME resolves to.
   for app in "$APP_API" "$APP_PERSON" "$APP_CLINIC" "$APP_OPS"; do
-    existing=$(read_value '' az containerapp ingress access-restriction list -n "$app" -g "$AZURE_RESOURCE_GROUP" --query '[].name' -o tsv 2>/dev/null | tr '\n' ' ') || existing=''
-    v6_refused=0
-    for cidr in $ranges; do
-      rule="cf-$(printf '%s' "$cidr" | tr './:' '---')"
-      case " $existing " in *" $rule "*) continue ;; esac
-      case "$cidr" in *:*) [ "$v6_refused" = 1 ] && continue ;; esac
-      if ! run az containerapp ingress access-restriction set -n "$app" -g "$AZURE_RESOURCE_GROUP" --rule-name "$rule" --ip-address "$cidr" --action Allow -o none; then
-        case "$cidr" in
-          *:*) say "  Container Apps refused the IPv6 range $cidr on $app; the other IPv6 ranges are skipped (IPv4 only)"; v6_refused=1 ;;
-          *) die "Container Apps refused the range $cidr on $app" ;;
-        esac
-      fi
-    done
+    url="/subscriptions/$SUB_ID/resourceGroups/$AZURE_RESOURCE_GROUP/providers/Microsoft.App/containerApps/$app?api-version=2024-03-01"
+    if ! run az rest --method patch --url "$url" --body "@$WORK/restrict-all.json" --output none; then
+      say "  Container Apps refused the full list for $app (the IPv6 ranges?); applying the IPv4 ranges alone, in one update"
+      run az rest --method patch --url "$url" --body "@$WORK/restrict-v4.json" --output none || die "Container Apps refused the address ranges for $app"
+    fi
+    if [ "$DRY_RUN" = 0 ]; then
+      say "$app now has $(az containerapp show -n "$app" -g "$AZURE_RESOURCE_GROUP" --query 'length(properties.configuration.ingress.ipSecurityRestrictions)' -o tsv) ingress rule(s)"
+    fi
   done
 fi
 
 # --- 10. first seed --------------------------------------------------------------------------------------------------------------
 step "10. First seed"
 # The API takes a moment to start; wait for it before judging anything.
-wait_for() { # wait_for <url> <tries>: until the URL answers 200
-  local n=0
-  until [ "$(curl -s -m 20 -o /dev/null -w '%{http_code}' "$1" || true)" = 200 ]; do
-    n=$((n + 1))
-    [ "$n" -ge "$2" ] && return 1
-    sleep 10
-  done
-}
 if [ "$DRY_RUN" = 1 ]; then
   say "+ wait for $URL_API/health"
   say "+ seed only if the API says demoMode true, its /services is [], and the demo admin's sign-in gives Fastify's own 404, twice, 5 s apart"
@@ -629,7 +681,7 @@ fi
 step "11. Smoke check"
 if [ "$DRY_RUN" = 1 ]; then
   say "+ GET $URL_API/clock (demoMode true), $URL_PERSON/en/, $URL_CLINIC/en/sign-in/, $URL_OPS/en/sign-in/ (each 200)"
-  [ "$EDGE" = cloudflare ] && say "+ each app's azurecontainerapps.io address must not answer 200; the clinician page policy must name $URL_API"
+  [ "$EDGE" = cloudflare ] && say "+ each app's azurecontainerapps.io address must answer 403 (the API on /health); the clinician page policy must name $URL_API"
 else
   smoke_api=$CHECK_API
   say "GET $smoke_api/clock: $(curl -s -m 30 "$smoke_api/clock")"
@@ -646,9 +698,11 @@ else
   done
   if [ "$EDGE" = cloudflare ]; then
     # Through Cloudflare the certificate is checked by curl; the origin's by Cloudflare (strict), so a 200 here means both chains hold.
-    for app in "$APP_API" "$APP_PERSON" "$APP_CLINIC" "$APP_OPS"; do
-      code=$(curl -s -m 20 -o /dev/null -w '%{http_code}' "https://$(fqdn_of "$app")/" || true)
-      if [ "$code" = 200 ]; then say "FAIL: https://$(fqdn_of "$app")/ still answers 200 directly"; failures=$((failures + 1)); else say "the direct address of $app refuses visitors (status $code)"; fi
+    # Each default address must answer exactly 403 (the ingress restriction): the API on /health, the web apps on /.
+    for pair in "$APP_API:/health" "$APP_PERSON:/" "$APP_CLINIC:/" "$APP_OPS:/"; do
+      direct=https://$(fqdn_of "${pair%%:*}")${pair#*:}
+      code=$(curl -s -m 20 -o /dev/null -w '%{http_code}' "$direct" || true)
+      if [ "$code" = 403 ]; then say "the direct address of ${pair%%:*} refuses visitors (403)"; else say "FAIL: $direct answered $code, not 403"; failures=$((failures + 1)); fi
     done
     # Cloudflare's Web Analytics, if it is on for the zone, injects its beacon script into HTML at the edge; the staff page policy blocks it.
     for url in "$URL_PERSON/en/" "$URL_CLINIC/en/sign-in/" "$URL_OPS/en/sign-in/"; do
