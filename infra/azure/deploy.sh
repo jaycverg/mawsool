@@ -4,6 +4,7 @@
 #   infra/azure/deploy.sh --init       create <workspace>/.local/azure.env and fill its secrets (nothing is printed)
 #   infra/azure/deploy.sh --check      read-only: login, subscription, providers, names, region (changes nothing)
 #   infra/azure/deploy.sh --dry-run    print every step and command it would run, with no call to Azure at all
+#   infra/azure/deploy.sh --probe=URL  read-only: say whether the API at URL is "seeded", "empty" or "unknown" (no Azure, no settings)
 #   infra/azure/deploy.sh [--yes]      deploy (asks for "yes" first unless --yes); safe to run again
 #
 # Settings come from azure.env (see azure.env.example): EDGE=azure|cloudflare picks the stage, AI=on|off the summary assistant.
@@ -11,8 +12,9 @@
 #   EDGE=cloudflare  stage 3B: the four hostnames under CF_DOMAIN, bound with a Cloudflare Origin CA certificate, then the
 #                    ingress is locked to Cloudflare's addresses. Needs infra/azure/cloudflare.sh (not written yet).
 #
-# It prints names and URLs, never a secret: every command is shown with secret values replaced by ***, and nothing runs under
-# `set -x`. A step that already holds (the resource exists, the image tag is pushed) is skipped, so a rerun picks up where a
+# It prints names and URLs, never a secret: every command is shown with secret values replaced by ***, nothing runs under
+# `set -x`, and every az call that creates or changes something runs with `-o none`, because some of them print what they were
+# given (az 2.92 `postgres flexible-server create` returns the admin password and a full connection string in its result). A step that already holds (the resource exists, the image tag is pushed) is skipped, so a rerun picks up where a
 # failed run stopped and a redeploy only replaces what changed. Written for bash 3.2 (macOS) and later.
 set -euo pipefail
 
@@ -29,9 +31,10 @@ for arg in "$@"; do
   case "$arg" in
     --init) MODE=init ;;
     --check) MODE=check ;;
+    --probe=*) MODE=probe; PROBE_URL=${arg#--probe=} ;;
     --dry-run) DRY_RUN=1 ;;
     --yes) ASSUME_YES=1 ;;
-    -h | --help) sed -n '2,20p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h | --help) sed -n '2,21p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown option: $arg (see --help)" >&2; exit 2 ;;
   esac
 done
@@ -61,10 +64,19 @@ show_command() {
   done
   printf '%s\n' "$out"
 }
-# run: show a command, then run it unless this is a dry run.
+# scrub: copies stdin to stdout with every remembered secret replaced. A second line of defence: the az calls that change
+# something also run with `-o none`, so they print no result at all.
+scrub() {
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    printf '%s\n' "$(redact "$line")"
+  done
+}
+# run: show a command, then run it unless this is a dry run. What it prints passes through scrub.
 run() {
   show_command "$@"
-  [ "$DRY_RUN" = 1 ] || "$@"
+  [ "$DRY_RUN" = 1 ] && return 0
+  "$@" 2>&1 | scrub
 }
 # retry <tries> <seconds> <command...>: for calls that fail until a role assignment or a DNS record has spread.
 retry() {
@@ -72,7 +84,7 @@ retry() {
   shift 2
   show_command "$@"
   [ "$DRY_RUN" = 1 ] && return 0
-  until "$@"; do
+  until "$@" 2>&1 | scrub; do
     [ "$n" -ge "$tries" ] && return 1
     say "  not yet (attempt $n of $tries); waiting ${pause}s"
     n=$((n + 1))
@@ -148,6 +160,32 @@ init_env_file() {
 
 if [ "$MODE" = init ]; then
   init_env_file
+  exit 0
+fi
+
+# --- is the database seeded? ----------------------------------------------------------------------------------------------
+# What Fastify answers to a route it does not have, which is also what the guest sign-in answers for a demo account that is not
+# in the database. A 404 from the Container Apps front end (during a revision swap, say) has some other body.
+FASTIFY_NOT_FOUND='{"message":"Route POST:/demo/guest-session not found","error":"Not Found","statusCode":404}'
+# seed_state <api-url>: prints "seeded" (the demo admin can sign in), "empty" (all of: the API says it is a demo, its directory
+# of services is an empty list, and the guest sign-in gives Fastify's own not-found body) or "unknown" (anything else, which
+# is never a reason to seed).
+seed_state() {
+  local clock services services_status guest guest_status guest_body
+  clock=$(curl -s -m 30 "$1/clock" || true)
+  case "$clock" in *'"demoMode":true'*) ;; *) echo unknown; return 0 ;; esac
+  guest=$(curl -s -m 30 -w '\n%{http_code}' -X POST -H 'content-type: application/json' -d '{"email":"admin@demo.mawsool.test"}' "$1/demo/guest-session" || true)
+  guest_status=${guest##*$'\n'}
+  guest_body=${guest%$'\n'*}
+  if [ "$guest_status" = 200 ]; then echo seeded; return 0; fi
+  [ "$guest_status" = 404 ] && [ "$guest_body" = "$FASTIFY_NOT_FOUND" ] || { echo unknown; return 0; }
+  services=$(curl -s -m 30 -w '\n%{http_code}' "$1/services" || true)
+  services_status=${services##*$'\n'}
+  [ "$services_status" = 200 ] && [ "${services%$'\n'*}" = '[]' ] || { echo unknown; return 0; }
+  echo empty
+}
+if [ "$MODE" = probe ]; then
+  seed_state "$PROBE_URL"
   exit 0
 fi
 
@@ -296,12 +334,12 @@ trap cleanup EXIT
 step "1. Resource providers"
 for ns in $REQUIRED_PROVIDERS; do
   state=$(read_value Unregistered az provider show -n "$ns" --query registrationState -o tsv)
-  if [ "$state" = Registered ]; then say "$ns is registered"; else run az provider register -n "$ns" --wait; fi
+  if [ "$state" = Registered ]; then say "$ns is registered"; else run az provider register -n "$ns" --wait -o none; fi
 done
 
 # --- 2. resource group ----------------------------------------------------------------------------------------------------
 step "2. Resource group"
-if exists az group show -n "$AZURE_RESOURCE_GROUP"; then say "$AZURE_RESOURCE_GROUP exists"; else run az group create -n "$AZURE_RESOURCE_GROUP" -l "$AZURE_LOCATION"; fi
+if exists az group show -n "$AZURE_RESOURCE_GROUP"; then say "$AZURE_RESOURCE_GROUP exists"; else run az group create -n "$AZURE_RESOURCE_GROUP" -l "$AZURE_LOCATION" -o none; fi
 
 # --- 3. container registry ------------------------------------------------------------------------------------------------
 step "3. Container Registry (Basic)"
@@ -311,24 +349,24 @@ else
   if [ "$DRY_RUN" = 0 ]; then
     [ "$(az acr check-name -n "$ACR_NAME" --query nameAvailable -o tsv)" = true ] || die "the registry name $ACR_NAME is taken by someone else; set ACR_NAME in $ENV_FILE"
   fi
-  run az acr create -n "$ACR_NAME" -g "$AZURE_RESOURCE_GROUP" -l "$AZURE_LOCATION" --sku Basic --admin-enabled false
+  run az acr create -n "$ACR_NAME" -g "$AZURE_RESOURCE_GROUP" -l "$AZURE_LOCATION" --sku Basic --admin-enabled false -o none
 fi
 
 # --- 4. identity that pulls images -----------------------------------------------------------------------------------------
 step "4. Managed identity with AcrPull on the registry"
-if exists az identity show -n "$IDENTITY_NAME" -g "$AZURE_RESOURCE_GROUP"; then say "$IDENTITY_NAME exists"; else run az identity create -n "$IDENTITY_NAME" -g "$AZURE_RESOURCE_GROUP" -l "$AZURE_LOCATION"; fi
+if exists az identity show -n "$IDENTITY_NAME" -g "$AZURE_RESOURCE_GROUP"; then say "$IDENTITY_NAME exists"; else run az identity create -n "$IDENTITY_NAME" -g "$AZURE_RESOURCE_GROUP" -l "$AZURE_LOCATION" -o none; fi
 IDENTITY_ID=$(read_value '<identity-id>' az identity show -n "$IDENTITY_NAME" -g "$AZURE_RESOURCE_GROUP" --query id -o tsv)
 IDENTITY_PRINCIPAL=$(read_value '<identity-principal>' az identity show -n "$IDENTITY_NAME" -g "$AZURE_RESOURCE_GROUP" --query principalId -o tsv)
 ACR_ID=$(read_value '<registry-id>' az acr show -n "$ACR_NAME" -g "$AZURE_RESOURCE_GROUP" --query id -o tsv)
 if [ "$DRY_RUN" = 0 ] && [ -n "$(az role assignment list --assignee "$IDENTITY_PRINCIPAL" --scope "$ACR_ID" --role AcrPull --query '[0].id' -o tsv)" ]; then
   say "AcrPull is already granted"
 else
-  run az role assignment create --assignee-object-id "$IDENTITY_PRINCIPAL" --assignee-principal-type ServicePrincipal --role AcrPull --scope "$ACR_ID"
+  run az role assignment create --assignee-object-id "$IDENTITY_PRINCIPAL" --assignee-principal-type ServicePrincipal --role AcrPull --scope "$ACR_ID" -o none
 fi
 
 # --- 5. container apps environment ---------------------------------------------------------------------------------------------
 step "5. Container Apps environment"
-if exists az containerapp env show -n "$ENV_NAME" -g "$AZURE_RESOURCE_GROUP"; then say "$ENV_NAME exists"; else run az containerapp env create -n "$ENV_NAME" -g "$AZURE_RESOURCE_GROUP" -l "$AZURE_LOCATION"; fi
+if exists az containerapp env show -n "$ENV_NAME" -g "$AZURE_RESOURCE_GROUP"; then say "$ENV_NAME exists"; else run az containerapp env create -n "$ENV_NAME" -g "$AZURE_RESOURCE_GROUP" -l "$AZURE_LOCATION" -o none; fi
 DEFAULT_DOMAIN=$(read_value '<environment-default-domain>' az containerapp env show -n "$ENV_NAME" -g "$AZURE_RESOURCE_GROUP" --query properties.defaultDomain -o tsv)
 VERIFICATION_ID=$(read_value '<verification-id>' az containerapp env show -n "$ENV_NAME" -g "$AZURE_RESOURCE_GROUP" --query properties.customDomainConfiguration.customDomainVerificationId -o tsv)
 say "default domain: $DEFAULT_DOMAIN"
@@ -356,12 +394,12 @@ else
   # --public-access 0.0.0.0 is the "allow Azure services" rule and nothing else.
   run az postgres flexible-server create -n "$PG_SERVER_NAME" -g "$AZURE_RESOURCE_GROUP" -l "$AZURE_LOCATION" \
     --tier Burstable --sku-name Standard_B1ms --version 17 --storage-size 32 --high-availability Disabled --backup-retention 7 \
-    --admin-user "$PG_ADMIN_USER" --admin-password "$POSTGRES_ADMIN_PASSWORD" --database-name "$PG_DATABASE" --public-access 0.0.0.0 --yes
+    --admin-user "$PG_ADMIN_USER" --admin-password "$POSTGRES_ADMIN_PASSWORD" --database-name "$PG_DATABASE" --public-access 0.0.0.0 --yes -o none
 fi
 if exists az postgres flexible-server db show -s "$PG_SERVER_NAME" -g "$AZURE_RESOURCE_GROUP" -d "$PG_DATABASE"; then
   say "database $PG_DATABASE exists"
 elif [ "$DRY_RUN" = 0 ]; then
-  run az postgres flexible-server db create -s "$PG_SERVER_NAME" -g "$AZURE_RESOURCE_GROUP" -d "$PG_DATABASE"
+  run az postgres flexible-server db create -s "$PG_SERVER_NAME" -g "$AZURE_RESOURCE_GROUP" -d "$PG_DATABASE" -o none
 fi
 # sslmode=require is the Flexible Server's own requirement. If pg, the migrator or pg-boss refuse it, the fallback is a
 # DATABASE_SSL option in the API (see README); nothing here works around it.
@@ -389,7 +427,7 @@ else
     mkdir -p "$WORK/context"
     git -C "$REPO" archive HEAD | tar -x -C "$WORK/context"
   fi
-  run az acr run -r "$ACR_NAME" --file infra/azure/acr-task.yaml --set "TAG=$TAG" --set "NEXT_PUBLIC_API_URL=$URL_API" "$WORK/context"
+  run az acr run -r "$ACR_NAME" --timeout 3600 --file infra/azure/acr-task.yaml --set "TAG=$TAG" --set "NEXT_PUBLIC_API_URL=$URL_API" "$WORK/context"
   if [ "$DRY_RUN" = 0 ]; then
     for repo in mawsool-api mawsool-person mawsool-clinician mawsool-ops; do
       az acr repository show-tags -n "$ACR_NAME" --repository "$repo" -o tsv | grep -qx "$TAG" || die "the ACR run did not push $repo:$TAG"
@@ -447,14 +485,14 @@ deploy_app() {
         if [ "$arg" = --env-vars ]; then mode='env'; continue; fi
         if [ "$mode" = secrets ]; then secrets+=("$arg"); else envs+=("$arg"); fi
       done
-      run az containerapp secret set -n "$name" -g "$AZURE_RESOURCE_GROUP" --secrets "${secrets[@]}"
-      run az containerapp update -n "$name" -g "$AZURE_RESOURCE_GROUP" --image "$image" --min-replicas "$min" --max-replicas "$max" --cpu "$cpu" --memory "$memory" --set-env-vars "${envs[@]}"
+      run az containerapp secret set -n "$name" -g "$AZURE_RESOURCE_GROUP" -o none --secrets "${secrets[@]}"
+      run az containerapp update -n "$name" -g "$AZURE_RESOURCE_GROUP" -o none --image "$image" --min-replicas "$min" --max-replicas "$max" --cpu "$cpu" --memory "$memory" --set-env-vars "${envs[@]}"
     else
-      run az containerapp update -n "$name" -g "$AZURE_RESOURCE_GROUP" --image "$image" --min-replicas "$min" --max-replicas "$max" --cpu "$cpu" --memory "$memory"
+      run az containerapp update -n "$name" -g "$AZURE_RESOURCE_GROUP" -o none --image "$image" --min-replicas "$min" --max-replicas "$max" --cpu "$cpu" --memory "$memory"
     fi
   else
     # The role assignment can take a minute to spread, and until it has the registry refuses the pull: so the create is retried.
-    retry 8 20 az containerapp create -n "$name" -g "$AZURE_RESOURCE_GROUP" --environment "$ENV_NAME" --image "$image" \
+    retry 8 20 az containerapp create -n "$name" -g "$AZURE_RESOURCE_GROUP" -o none --environment "$ENV_NAME" --image "$image" \
       --user-assigned "$IDENTITY_ID" --registry-server "$ACR_SERVER" --registry-identity "$IDENTITY_ID" \
       --ingress external --target-port "$port" --revisions-mode single --min-replicas "$min" --max-replicas "$max" --cpu "$cpu" --memory "$memory" \
       "$@"
@@ -492,12 +530,12 @@ if [ "$EDGE" = cloudflare ]; then
     remember_secret "$cert_password"
     openssl pkcs12 -export -inkey "$ORIGIN_KEY_FILE" -in "$ORIGIN_CERT_FILE" -out "$WORK/origin.pfx" -passout "pass:$cert_password"
   fi
-  run az containerapp env certificate upload -n "$ENV_NAME" -g "$AZURE_RESOURCE_GROUP" --certificate-file "$WORK/origin.pfx" --certificate-password "$cert_password" --certificate-name "$CERT_NAME"
+  run az containerapp env certificate upload -n "$ENV_NAME" -g "$AZURE_RESOURCE_GROUP" --certificate-file "$WORK/origin.pfx" --certificate-password "$cert_password" --certificate-name "$CERT_NAME" -o none
   for pair in "$APP_API:$HOST_API" "$APP_PERSON:$HOST_PERSON" "$APP_CLINIC:$HOST_CLINIC" "$APP_OPS:$HOST_OPS"; do
     app=${pair%%:*}
     host=${pair#*:}
-    retry 6 30 az containerapp hostname add -n "$app" -g "$AZURE_RESOURCE_GROUP" --hostname "$host"
-    run az containerapp hostname bind -n "$app" -g "$AZURE_RESOURCE_GROUP" --hostname "$host" --environment "$ENV_NAME" --certificate "$CERT_NAME"
+    retry 6 30 az containerapp hostname add -n "$app" -g "$AZURE_RESOURCE_GROUP" --hostname "$host" -o none
+    run az containerapp hostname bind -n "$app" -g "$AZURE_RESOURCE_GROUP" --hostname "$host" --environment "$ENV_NAME" --certificate "$CERT_NAME" -o none
   done
   # Part 2 turns the four CNAMEs to proxied and applies the zone rules.
   run "$HERE/cloudflare.sh" part2
@@ -508,14 +546,13 @@ if [ "$EDGE" = cloudflare ]; then
     n=0
     for cidr in $ranges; do
       n=$((n + 1))
-      run az containerapp ingress access-restriction set -n "$app" -g "$AZURE_RESOURCE_GROUP" --rule-name "cloudflare-$n" --ip-address "$cidr" --action Allow
+      run az containerapp ingress access-restriction set -n "$app" -g "$AZURE_RESOURCE_GROUP" --rule-name "cloudflare-$n" --ip-address "$cidr" --action Allow -o none
     done
   done
 fi
 
 # --- 10. first seed --------------------------------------------------------------------------------------------------------------
 step "10. First seed"
-guest_status() { curl -s -m 30 -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{"email":"admin@demo.mawsool.test"}' "$1/demo/guest-session" || true; }
 # The API takes a moment to start; wait for it before judging anything.
 wait_for() { # wait_for <url> <tries>: until the URL answers 200
   local n=0
@@ -526,27 +563,34 @@ wait_for() { # wait_for <url> <tries>: until the URL answers 200
   done
 }
 if [ "$DRY_RUN" = 1 ]; then
-  say "+ wait for $URL_API/health, then POST /demo/guest-session as the demo admin"
-  say "+ if that answers 404 (nothing seeded): az containerapp exec -n $APP_API -g $AZURE_RESOURCE_GROUP --command 'pnpm --filter @mawsool/api db:seed'"
+  say "+ wait for $URL_API/health"
+  say "+ seed only if the API says demoMode true, its /services is [], and the demo admin's sign-in gives Fastify's own 404, twice, 5 s apart"
+  say "+ then: az containerapp exec -n $APP_API -g $AZURE_RESOURCE_GROUP --command 'pnpm --filter @mawsool/api db:seed'"
   say "+ then sign in as the guest admin and POST /demo/reset"
 else
   # With EDGE=cloudflare the public address is not reachable until DNS is proxied; the default address is always there.
   CHECK_API=https://$(az containerapp show -n "$APP_API" -g "$AZURE_RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)
   [ "$EDGE" = cloudflare ] && say "(checks use the default address $CHECK_API; with the ingress locked to Cloudflare they may be refused, which is expected)"
   wait_for "$CHECK_API/health" 30 || die "the API did not answer /health at $CHECK_API; read its log (see README)"
-  if [ "$(guest_status "$CHECK_API")" = 404 ]; then
-    say "the database is empty: seeding it (once)"
-    az containerapp exec -n "$APP_API" -g "$AZURE_RESOURCE_GROUP" --command "pnpm --filter @mawsool/api db:seed" ||
-      die "the seed could not run non-interactively; run it by hand: az containerapp exec -n $APP_API -g $AZURE_RESOURCE_GROUP --command 'pnpm --filter @mawsool/api db:seed'   then run this script again"
-    token=$(curl -s -m 30 -X POST -H 'content-type: application/json' -d '{"email":"admin@demo.mawsool.test"}' "$CHECK_API/demo/guest-session" | sed -n 's/.*"sessionToken":"\([^"]*\)".*/\1/p')
-    [ -n "$token" ] || die "the demo admin could not sign in after the seed"
-    remember_secret "$token"
-    status=$(curl -s -m 120 -o /dev/null -w '%{http_code}' -X POST -H "authorization: Bearer $token" "$CHECK_API/demo/reset")
-    [ "$status" = 200 ] || die "the first reset answered $status, not 200"
-    say "seeded and reset: the 90 days end today and Noura's invite exists"
-  else
-    say "the demo admin can already sign in: the database is seeded, leaving it as it is"
-  fi
+  state=$(seed_state "$CHECK_API")
+  case "$state" in
+    seeded) say "the demo admin can already sign in: the database is seeded, leaving it as it is" ;;
+    empty)
+      # A 404 can be a passing one (a revision swap). Seed only when the same answer comes again.
+      sleep 5
+      [ "$(seed_state "$CHECK_API")" = empty ] || die "the first look said the database is empty and the second did not; not seeding. Run the script again."
+      say "the database is empty (confirmed twice): seeding it once"
+      az containerapp exec -n "$APP_API" -g "$AZURE_RESOURCE_GROUP" --command "pnpm --filter @mawsool/api db:seed" ||
+        die "the seed could not run non-interactively; run it by hand: az containerapp exec -n $APP_API -g $AZURE_RESOURCE_GROUP --command 'pnpm --filter @mawsool/api db:seed'   then run this script again"
+      token=$(curl -s -m 30 -X POST -H 'content-type: application/json' -d '{"email":"admin@demo.mawsool.test"}' "$CHECK_API/demo/guest-session" | sed -n 's/.*"sessionToken":"\([^"]*\)".*/\1/p')
+      [ -n "$token" ] || die "the demo admin could not sign in after the seed"
+      remember_secret "$token"
+      status=$(curl -s -m 120 -o /dev/null -w '%{http_code}' -X POST -H "authorization: Bearer $token" "$CHECK_API/demo/reset")
+      [ "$status" = 200 ] || die "the first reset answered $status, not 200"
+      say "seeded and reset: the 90 days end today and Noura's invite exists"
+      ;;
+    *) die "cannot tell whether the database is seeded (the API did not give a clear answer at $CHECK_API); not seeding. Look at its log and run the script again." ;;
+  esac
 fi
 
 # --- 11. smoke ---------------------------------------------------------------------------------------------------------------------
