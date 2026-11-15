@@ -217,7 +217,7 @@ describe.each(['en', 'ar'] as const)('the AI banner on the consent screen (%s)',
   }
 
   const banner = () => document.querySelector('[data-ai-unavailable]');
-  const availabilityRequests = (requests: { path: string }[]) => requests.filter((request) => request.path === '/summary/availability');
+  const availabilityRequests = <T extends { path: string }>(requests: T[]) => requests.filter((request) => request.path === '/summary/availability');
 
   it('with the flag and the AI switched off shows the off note above the AI tick', async () => {
     vi.stubEnv('NEXT_PUBLIC_PUBLIC_DEMO', 'true');
