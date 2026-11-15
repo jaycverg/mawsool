@@ -4,7 +4,7 @@
 #   infra/azure/cloudflare.sh part1 [--dry-run]   TXT asuid.<host> (the environment's verification ID) and CNAME <host> -> the app's
 #                                                 address, both DNS-only, so Azure's lookup sees them when a hostname is bound
 #   infra/azure/cloudflare.sh part2 [--dry-run]   the four CNAMEs proxied, then ONE Configuration Rule for the four hostnames only
-#                                                 (SSL strict, Rocket Loader off, email obfuscation off), then Web Analytics
+#                                                 (SSL strict, Rocket Loader off, email obfuscation off), then a read-only Web Analytics report
 #
 # --dry-run prints what would be written and makes no call at all (not even a read). Without it, a part first READS the zone, prints
 # every change it will make, saves the zone's DNS records and rules to <workspace>/.local/tmp/cloudflare-before-<time>.json, and only
@@ -100,7 +100,7 @@ print_desired() {
     say "Configuration Rule (phase $RULE_PHASE, ref $RULE_REF), the only rule this script writes:"
     say "  when $(host_expression)"
     say "  set ssl=strict, rocket_loader=false, email_obfuscation=false"
-    say "Web Analytics: if automatic injection is on for the zone, add a per-hostname exclusion for each of the four; the zone-wide setting is never changed"
+    say "Web Analytics: read-only; reports whether automatic injection is on for the zone and changes nothing"
   fi
 }
 if [ "$DRY_RUN" = 1 ]; then
@@ -244,34 +244,22 @@ ensure_rule() {
   fi
 }
 
-# web_analytics: the zone's automatic injection is one switch for the whole site, and this script never flips it. If it is on, it
-# adds an exclusion for each of the four hostnames (a rule that names its host). The call shapes are from Cloudflare's API reference
-# and have not been run against this account; any refusal is reported as "NOT DONE" and does not stop the run.
+# web_analytics: read-only. The zone's automatic injection is one switch for the whole site and its per-host API has not been run
+# against this account, so nothing is written here. It reports whether injection is on, so the page source of the four hostnames
+# (a beacon.min.js script) can be checked after the run, and says what to do by hand if it is.
 web_analytics() {
-  local sites site rs auto host rules_out pair
-  if [ -z "$ACCOUNT" ]; then say "Web Analytics: no CF_ACCOUNT_ID, NOT CHECKED"; return 0; fi
-  sites=$(cf GET "accounts/$ACCOUNT/rum/site_info/list?per_page=100" 2>/dev/null) || { say "Web Analytics: the token cannot read it, NOT CHECKED (is automatic injection on for $CF_DOMAIN? look in the dashboard)"; return 0; }
+  local sites site auto
+  if [ -z "$ACCOUNT" ]; then say "Web Analytics: no CF_ACCOUNT_ID, NOT CHECKED (check the page source of the four hostnames for beacon.min.js)"; return 0; fi
+  sites=$(cf GET "accounts/$ACCOUNT/rum/site_info/list?per_page=100" 2>/dev/null) || { say "Web Analytics: the token cannot read it, NOT CHECKED (check the page source of the four hostnames for beacon.min.js)"; return 0; }
   site=$(printf '%s' "$sites" | jq -c --arg d "$CF_DOMAIN" '[.result[]? | select((.host // "") == $d or (.ruleset.zone_name // "") == $d)] | .[0] // empty')
-  if [ -z "$site" ]; then say "Web Analytics: no site for $CF_DOMAIN, nothing to do"; return 0; fi
+  if [ -z "$site" ]; then say "Web Analytics: no site for $CF_DOMAIN, so nothing is injected"; return 0; fi
   auto=$(printf '%s' "$site" | jq -r '.auto_install // false')
-  if [ "$auto" != true ]; then say "Web Analytics: automatic injection is off for $CF_DOMAIN, nothing to do"; return 0; fi
-  rs=$(printf '%s' "$site" | jq -r '.ruleset.id // empty')
-  [ -n "$rs" ] || { say "Web Analytics: injection is ON for $CF_DOMAIN but the site has no ruleset id; NOT DONE"; return 0; }
-  say "Web Analytics: automatic injection is ON for $CF_DOMAIN; adding an exclusion per hostname (the zone switch stays as it is)"
-  rules_out=$(cf GET "accounts/$ACCOUNT/rum/v2/$rs/rules" 2>/dev/null || true)
-  for pair in $PAIRS; do
-    host=${pair%%:*}
-    if printf '%s' "$rules_out" | jq -e --arg h "$host" '[.result.rules[]? | select(.host == $h and .inclusive == false)] | length > 0' >/dev/null 2>&1; then
-      say "keep    Web Analytics exclusion for $host"
-      continue
-    fi
-    say "CREATE  Web Analytics exclusion for $host"
-    CHANGES=$((CHANGES + 1))
-    if [ "$APPLY" = 1 ]; then
-      cf POST "accounts/$ACCOUNT/rum/v2/$rs/rule" "$(jq -nc --arg h "$host" '{host:$h, inclusive:false, is_paused:false, paths:["*"]}')" >/dev/null 2>&1 ||
-        say "        NOT DONE: Cloudflare refused it; Web Analytics may still inject its script on $host (check the page source), the zone setting is unchanged"
-    fi
-  done
+  if [ "$auto" = true ]; then
+    say "Web Analytics: automatic injection is ON for $CF_DOMAIN. NOT CHANGED: the four hostnames may get the beacon script, which the staff page policy"
+    say "  would block. Check their page source after the run; to exclude them, add an exclusion per hostname in the dashboard (Web Analytics, the site's rules)."
+  else
+    say "Web Analytics: automatic injection is off for $CF_DOMAIN; the four hostnames get no beacon"
+  fi
 }
 
 plan_and_apply() {
