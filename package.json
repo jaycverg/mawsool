@@ -29,7 +29,8 @@
     "gate:phase3": "node scripts/gate-phase3.mjs",
     "gate:phase4": "node scripts/gate-phase4.mjs",
     "gate:c": "node scripts/gate-c.mjs",
-    "e2e:linux": "node scripts/e2e-linux.mjs"
+    "e2e:linux": "node scripts/e2e-linux.mjs",
+    "check:summary": "node scripts/with-env.mjs node scripts/check-summary.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
