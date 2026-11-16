@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="596" viewBox="0 0 1280 596" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>A person's journey through Mawsool</title>
+  <desc>Three lanes: the person's phone, the Ticket API and the clinic. On the phone: check-in, result, care options, then consent and send. The API issues the ticket with a code and a deadline, and the clinic sees it in its queue, acknowledges it and marks it seen. On day 7 the phone asks whether the person was seen. Six weeks after seen, a repeat check is offered, after which the ticket closes. If PHQ-9 item 9 is above 0, a crisis screen opens at once, on the phone, with no network needed.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <marker id="arrow-crisis" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b91c1c"/>
+    </marker>
+    <style>
+      .lane { fill: #f8fafc; stroke: #e2e8f0; }
+      .lane-label { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; fill: #64748b; }
+      .step { fill: #ffffff; stroke-width: 2; }
+      .num { font-size: 12px; font-weight: 700; fill: #ffffff; }
+      .title { font-size: 14.5px; font-weight: 700; fill: #0f172a; }
+      .line { font-size: 12.5px; fill: #334155; }
+      .edge { stroke: #475569; stroke-width: 1.6; fill: none; }
+      .lbl { font-size: 12px; fill: #334155; }
+    </style>
+  </defs>
+
+  <!-- Lanes -->
+  <rect class="lane" x="16" y="16" width="1248" height="290" rx="10"/>
+  <text class="lane-label" x="36" y="40">PERSON'S PHONE</text>
+  <rect class="lane" x="16" y="318" width="1248" height="118" rx="10"/>
+  <text class="lane-label" x="36" y="342">TICKET API</text>
+  <rect class="lane" x="16" y="448" width="1248" height="132" rx="10"/>
+  <text class="lane-label" x="36" y="472">CLINIC</text>
+
+  <!-- Phone steps -->
+  <rect class="step" x="36" y="56" width="180" height="104" rx="8" stroke="#0f766e"/>
+  <circle cx="58" cy="78" r="11" fill="#0f766e"/><text class="num" x="58" y="82" text-anchor="middle">1</text>
+  <text class="title" x="76" y="83">Check-in</text>
+  <text class="line" x="50" y="110">WHO-5; PHQ-9 and GAD-7</text>
+  <text class="line" x="50" y="128">if WHO-5 is 50 or less.</text>
+  <text class="line" x="50" y="146">Scored on the phone</text>
+
+  <rect class="step" x="246" y="56" width="180" height="104" rx="8" stroke="#0f766e"/>
+  <circle cx="268" cy="78" r="11" fill="#0f766e"/><text class="num" x="268" y="82" text-anchor="middle">2</text>
+  <text class="title" x="286" y="83">Result</text>
+  <text class="line" x="260" y="110">The band, a plain meaning:</text>
+  <text class="line" x="260" y="128">"a screening questionnaire,</text>
+  <text class="line" x="260" y="146">not a diagnosis"</text>
+
+  <rect class="step" x="456" y="56" width="180" height="104" rx="8" stroke="#0f766e"/>
+  <circle cx="478" cy="78" r="11" fill="#0f766e"/><text class="num" x="478" y="82" text-anchor="middle">3</text>
+  <text class="title" x="496" y="83">Care options</text>
+  <text class="line" x="470" y="110">One to three matches</text>
+  <text class="line" x="470" y="128">with "why this fits";</text>
+  <text class="line" x="470" y="146">rules run on the phone</text>
+
+  <rect class="step" x="666" y="56" width="180" height="104" rx="8" stroke="#0f766e"/>
+  <circle cx="688" cy="78" r="11" fill="#0f766e"/><text class="num" x="688" y="82" text-anchor="middle">4</text>
+  <text class="title" x="706" y="83">Consent and send</text>
+  <text class="line" x="680" y="110">Item by item, all off</text>
+  <text class="line" x="680" y="128">but the ticket itself;</text>
+  <text class="line" x="680" y="146">sends only those ticked</text>
+
+  <rect class="step" x="876" y="56" width="180" height="104" rx="8" stroke="#0f766e"/>
+  <circle cx="898" cy="78" r="11" fill="#0f766e"/><text class="num" x="898" y="82" text-anchor="middle">7</text>
+  <text class="title" x="916" y="83">Day-7 check</text>
+  <text class="line" x="890" y="110">"Did you get seen?"</text>
+  <text class="line" x="890" y="128">Yes: seen. Not yet: why,</text>
+  <text class="line" x="890" y="146">and a reroute. No: declined</text>
+
+  <rect class="step" x="1076" y="56" width="172" height="104" rx="8" stroke="#0f766e"/>
+  <circle cx="1098" cy="78" r="11" fill="#0f766e"/><text class="num" x="1098" y="82" text-anchor="middle">8</text>
+  <text class="title" x="1116" y="83">Repeat check</text>
+  <text class="line" x="1090" y="110">PHQ-9 and GAD-7, six</text>
+  <text class="line" x="1090" y="128">weeks after seen; totals</text>
+  <text class="line" x="1090" y="146">sent only if ticked</text>
+
+  <!-- Crisis -->
+  <rect x="36" y="196" width="600" height="96" rx="8" fill="#fef2f2" stroke="#b91c1c" stroke-width="2"/>
+  <text class="title" x="54" y="222" style="fill:#991b1b">Crisis screen, at any point in a check-in</text>
+  <text class="line" x="54" y="246">PHQ-9 item 9 above 0 stops the questions and opens a full-screen page with 800-SAKINA,</text>
+  <text class="line" x="54" y="264">999 and 998. No network needed. Matching and ticket screens stay blocked until the person</text>
+  <text class="line" x="54" y="282">says they are safe. Decided by fixed rules on the phone, never by AI.</text>
+
+  <!-- API -->
+  <rect class="step" x="666" y="354" width="180" height="70" rx="8" stroke="#1e293b"/>
+  <circle cx="688" cy="376" r="11" fill="#1e293b"/><text class="num" x="688" y="380" text-anchor="middle">5</text>
+  <text class="title" x="706" y="381">Ticket issued</text>
+  <text class="line" x="680" y="406">Code, QR and a deadline</text>
+
+  <rect class="step" x="876" y="354" width="180" height="70" rx="8" stroke="#1e293b" stroke-dasharray="5 4"/>
+  <text class="title" x="890" y="380">Overdue</text>
+  <text class="line" x="890" y="400">if the deadline passes</text>
+  <text class="line" x="890" y="416">before seen</text>
+
+  <rect class="step" x="1076" y="354" width="172" height="70" rx="8" stroke="#1e293b"/>
+  <text class="title" x="1090" y="380">Ticket closed</text>
+  <text class="line" x="1090" y="400">re-measured, then</text>
+  <text class="line" x="1090" y="416">closed</text>
+
+  <!-- Clinic -->
+  <rect class="step" x="666" y="480" width="390" height="86" rx="8" stroke="#4338ca"/>
+  <circle cx="688" cy="506" r="11" fill="#4338ca"/><text class="num" x="688" y="510" text-anchor="middle">6</text>
+  <text class="title" x="706" y="511">Queue, Acknowledge, Seen</text>
+  <text class="line" x="680" y="532">Reads only the consented items, ordered by deadline;</text>
+  <text class="line" x="680" y="550">or Unable to see, with a reason</text>
+
+  <!-- Edges -->
+  <line class="edge" x1="216" y1="108" x2="244" y2="108" marker-end="url(#arrow)"/>
+  <line class="edge" x1="426" y1="108" x2="454" y2="108" marker-end="url(#arrow)"/>
+  <line class="edge" x1="636" y1="108" x2="664" y2="108" marker-end="url(#arrow)"/>
+  <line class="edge" x1="756" y1="160" x2="756" y2="352" marker-end="url(#arrow)"/>
+  <text class="lbl" x="766" y="250">only the</text>
+  <text class="lbl" x="766" y="266">ticked items</text>
+  <line class="edge" x1="756" y1="424" x2="756" y2="478" marker-end="url(#arrow)"/>
+  <line class="edge" x1="846" y1="108" x2="874" y2="108" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+  <line class="edge" x1="1056" y1="108" x2="1074" y2="108" marker-end="url(#arrow)"/>
+  <line class="edge" x1="1162" y1="160" x2="1162" y2="352" marker-end="url(#arrow)"/>
+  <line x1="126" y1="160" x2="126" y2="194" stroke="#b91c1c" stroke-width="2" marker-end="url(#arrow-crisis)"/>
+</svg>

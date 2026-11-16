@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="470" viewBox="0 0 1200 470" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>Consent and sharing</title>
+  <desc>Three columns: the person's phone, the Ticket API and the clinic. Sharing: the phone keeps only the items the person ticked, the API redacts again, writes a consent row per item and encrypts the shared copy, and every clinic read checks consent is live, redacts again and writes an audit row. Stopping: revoking one item rewrites the shared copy without it; revoking the ticket empties it and withdraws an open ticket, after which the clinic's reads answer 410; Delete everything removes every shared copy.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <style>
+      .col { fill: #f8fafc; stroke: #e2e8f0; }
+      .col-label { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; fill: #64748b; }
+      .row-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; fill: #94a3b8; }
+      .title { font-size: 14.5px; font-weight: 700; fill: #0f172a; }
+      .line { font-size: 12.5px; fill: #334155; }
+      .edge { stroke: #475569; stroke-width: 1.6; fill: none; }
+      .pill { fill: #ffffff; stroke: #cbd5e1; }
+      .lbl { font-size: 12px; fill: #334155; }
+    </style>
+  </defs>
+
+  <!-- Columns -->
+  <rect class="col" x="16" y="16" width="340" height="438" rx="10"/>
+  <text class="col-label" x="36" y="40">PERSON'S PHONE</text>
+  <rect class="col" x="430" y="16" width="340" height="438" rx="10"/>
+  <text class="col-label" x="450" y="40">TICKET API</text>
+  <rect class="col" x="844" y="16" width="340" height="438" rx="10"/>
+  <text class="col-label" x="864" y="40">CLINIC</text>
+
+  <!-- Share row -->
+  <text class="row-label" x="36" y="70">SHARING</text>
+  <rect x="36" y="80" width="300" height="130" rx="8" fill="#ffffff" stroke="#0f766e" stroke-width="2"/>
+  <text class="title" x="54" y="106">Choose, item by item</text>
+  <text class="line" x="54" y="130">Scores, trajectory, a note, conditions,</text>
+  <text class="line" x="54" y="148">preferences: each starts off. Only</text>
+  <text class="line" x="54" y="166">the ticket itself is required. The</text>
+  <text class="line" x="54" y="184">phone drops every unticked item</text>
+
+  <rect x="450" y="80" width="300" height="130" rx="8" fill="#ffffff" stroke="#1e293b" stroke-width="2"/>
+  <text class="title" x="468" y="106">Redact again, record, encrypt</text>
+  <text class="line" x="468" y="130">Keeps only the consented items,</text>
+  <text class="line" x="468" y="148">writes one consent row per item,</text>
+  <text class="line" x="468" y="166">stores the shared copy encrypted</text>
+  <text class="line" x="468" y="184">(AES-256-GCM)</text>
+
+  <rect x="864" y="80" width="300" height="130" rx="8" fill="#ffffff" stroke="#4338ca" stroke-width="2"/>
+  <text class="title" x="882" y="106">Every read is checked</text>
+  <text class="line" x="882" y="130">Consent still live? Redact again and</text>
+  <text class="line" x="882" y="148">write an audit row the person can see.</text>
+  <text class="line" x="882" y="166">Anything not shared reads</text>
+  <text class="line" x="882" y="184">"Not shared by the person"</text>
+
+  <!-- Stop row -->
+  <text class="row-label" x="36" y="252">STOPPING</text>
+  <rect x="36" y="262" width="300" height="176" rx="8" fill="#ffffff" stroke="#0f766e" stroke-width="2"/>
+  <text class="title" x="54" y="288">Change of mind</text>
+  <text class="line" x="54" y="312">• Revoke one item</text>
+  <text class="line" x="54" y="334">• Revoke the ticket</text>
+  <text class="line" x="54" y="356">• Delete everything</text>
+
+  <rect x="450" y="262" width="300" height="176" rx="8" fill="#ffffff" stroke="#1e293b" stroke-width="2"/>
+  <text class="title" x="468" y="288">The shared copy goes with it</text>
+  <text class="line" x="468" y="312">• Rewritten without that item</text>
+  <text class="line" x="468" y="334">• Emptied; an open ticket is withdrawn</text>
+  <text class="line" x="468" y="356">• Every shared copy, note, number,</text>
+  <text class="line" x="480" y="374">invite and link removed; tickets</text>
+  <text class="line" x="480" y="392">stay only as pseudonymous timings</text>
+  <text class="line" x="480" y="410">for the dashboard's counts</text>
+
+  <rect x="864" y="262" width="300" height="176" rx="8" fill="#ffffff" stroke="#4338ca" stroke-width="2"/>
+  <text class="title" x="882" y="288">What the clinic gets</text>
+  <text class="line" x="882" y="312">• That item now reads "Not shared"</text>
+  <text class="line" x="882" y="334">• Ticket and shared data answer 410:</text>
+  <text class="line" x="894" y="352">the share has ended</text>
+
+  <!-- Edges -->
+  <line class="edge" x1="336" y1="145" x2="448" y2="145" marker-end="url(#arrow)"/>
+  <rect class="pill" x="346" y="114" width="92" height="22" rx="6"/>
+  <text class="lbl" x="392" y="129" text-anchor="middle">on Send</text>
+  <line class="edge" x1="750" y1="145" x2="862" y2="145" marker-end="url(#arrow)"/>
+  <rect class="pill" x="760" y="114" width="92" height="22" rx="6"/>
+  <text class="lbl" x="806" y="129" text-anchor="middle">each read</text>
+  <line class="edge" x1="336" y1="334" x2="448" y2="334" marker-end="url(#arrow)"/>
+  <line class="edge" x1="750" y1="334" x2="862" y2="334" marker-end="url(#arrow)"/>
+</svg>

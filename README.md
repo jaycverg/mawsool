@@ -7,13 +7,14 @@ hand-off shows up on a dashboard instead of disappearing.
 > The gap isn't that people aren't screened. It's that nobody owns them for the next 14 days.
 
 This is a hackathon prototype. It runs end to end on sample data, in Arabic and English, and is **not ready for use with
-real people**: see [Limitations](docs/limitations.md).
+real people**: see [Limitations](docs/limitations.md). A copy runs at [mawsool.thevergara.dev](https://mawsool.thevergara.dev),
+with one-click demo sign-in for the staff apps ([the hosted demo](docs/running-the-demo.md#the-hosted-demo)).
 
 ## Submission documents
 
 | Document                                                     | What it covers                                                                     |
 | ------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| [Demo video](https://youtu.be/mQG1EhDLy_o) | A 4-minute narrated walkthrough of the working prototype, with chapters |
+| [Demo video](https://youtu.be/QZM8wlpWVwY) | A 3-minute narrated walkthrough of the working prototype, with chapters, including the AI-drafted referral note |
 | [Presentation deck](https://claude.ai/artifact/KGqvadTVZmvEAYxm1veNDB) | The 15-slide pitch: problem, idea, the three apps, safety, privacy, AI use, architecture, checks, limits |
 | [Technical documentation](docs/technical-documentation.md)   | Architecture, flows, ticket lifecycle, privacy, AI use, security, API, testing, how to run it |
 | [Assumptions](docs/assumptions.md)                           | What the prototype takes for granted: clinical, local services, privacy, technology, demo |
@@ -35,8 +36,19 @@ real people**: see [Limitations](docs/limitations.md).
 - **A programme lead** sees where people drop off after a positive screen, how many are seen on time, how crises end,
   and which groups are being left behind, with every group under 10 people hidden.
 
+![A person's journey in three lanes: on the phone, check-in, result, care options, consent and send; the Ticket API issues the ticket; the clinic acknowledges and marks it seen; the phone asks on day 7 whether the person was seen, and six weeks later offers a repeat check, after which the ticket closes. A crisis answer opens the crisis screen at once, on the phone](docs/images/person-journey.svg)
+
+Source: drawn by hand from the code; the architecture, the ticket's states and the other flows are drawn in the
+[technical documentation](docs/technical-documentation.md).
+
+**What this tells us**
+- Scoring and matching happen on the phone, and the clinic sees only the items the person ticked.
+- A missed hand-off does not go quiet: from day 7 the ticket screen asks whether the person was seen, and the ticket is
+  marked overdue when its deadline passes.
+
 No AI is used in scoring, triage or the crisis path. One optional assistant can help the person draft their referral
-note, which they edit and approve; it is off by default.
+note, which they edit and approve; it is off by default, and the demo shows it at step 6
+([how](docs/running-the-demo.md#the-referral-summary-assistant-at-step-6)).
 
 ## Run it
 

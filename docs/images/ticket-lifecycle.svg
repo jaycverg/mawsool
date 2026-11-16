@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="580" viewBox="0 0 1200 580" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>Ticket lifecycle</title>
+  <desc>A ticket starts issued. While waiting it can be acknowledged by the clinic or marked overdue by the system. From any waiting state it can be seen (clinic, or the person on the day-7 check), rerouted or declined (person). From seen the person can take the repeat check after six weeks, which makes it remeasured and then closed by the system, or end it, which closes it. From any open state the person can withdraw. Rerouted, closed, declined and withdrawn are terminal.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <marker id="arrow-w" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c2410c"/>
+    </marker>
+    <style>
+      .group { fill: #f8fafc; stroke: #cbd5e1; stroke-dasharray: 6 4; }
+      .group-label { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; fill: #64748b; }
+      .open { fill: #ffffff; stroke: #2563eb; stroke-width: 2; }
+      .terminal { fill: #e2e8f0; stroke: #475569; stroke-width: 2; }
+      .state { font-size: 15px; font-weight: 700; fill: #0f172a; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .note { font-size: 12px; fill: #475569; }
+      .edge { stroke: #475569; stroke-width: 1.6; fill: none; }
+      .lbl { font-size: 12px; fill: #1e293b; }
+      .who { font-size: 12px; fill: #2563eb; font-weight: 600; }
+      .legend { font-size: 12px; fill: #334155; }
+    </style>
+  </defs>
+
+  <!-- Legend -->
+  <rect class="open" x="620" y="22" width="28" height="18" rx="4"/>
+  <text class="legend" x="656" y="36">open state</text>
+  <rect class="terminal" x="752" y="22" width="28" height="18" rx="4"/>
+  <text class="legend" x="788" y="36">terminal: accepts no further event</text>
+  <text class="legend" x="1010" y="36"><tspan class="who">blue</tspan> = who may make the move</text>
+
+  <!-- Waiting group -->
+  <rect class="group" x="30" y="56" width="440" height="270" rx="10"/>
+  <text class="group-label" x="48" y="80">WAITING TO BE SEEN</text>
+
+  <rect class="open" x="60" y="98" width="150" height="52" rx="8"/>
+  <text class="state" x="135" y="129" text-anchor="middle">issued</text>
+  <rect class="open" x="290" y="98" width="150" height="52" rx="8"/>
+  <text class="state" x="365" y="129" text-anchor="middle">acknowledged</text>
+  <rect class="open" x="175" y="208" width="150" height="52" rx="8"/>
+  <text class="state" x="250" y="239" text-anchor="middle">overdue</text>
+
+  <line class="edge" x1="210" y1="124" x2="288" y2="124" marker-end="url(#arrow)"/>
+  <text class="who" x="249" y="116" text-anchor="middle">clinic</text>
+  <line class="edge" x1="150" y1="150" x2="212" y2="206" marker-end="url(#arrow)"/>
+  <line class="edge" x1="350" y1="150" x2="288" y2="206" marker-end="url(#arrow)"/>
+  <text class="lbl" x="250" y="174" text-anchor="middle">deadline passes</text>
+  <text class="who" x="250" y="190" text-anchor="middle">system</text>
+
+  <text class="note" x="48" y="292">↻ Unable to see: the clinic records a coded reason and the</text>
+  <text class="note" x="48" y="308">state stays, so the person can be offered another option</text>
+
+  <!-- Seen, re-measured, closed -->
+  <rect class="open" x="620" y="160" width="150" height="52" rx="8"/>
+  <text class="state" x="695" y="191" text-anchor="middle">seen</text>
+  <line class="edge" x1="470" y1="186" x2="618" y2="186" marker-end="url(#arrow)"/>
+  <text class="lbl" x="544" y="148" text-anchor="middle">visit happened</text>
+  <text class="who" x="544" y="164" text-anchor="middle">clinic, or the person</text>
+  <text class="who" x="544" y="178" text-anchor="middle">on the day-7 check</text>
+
+  <rect class="open" x="900" y="160" width="160" height="52" rx="8"/>
+  <text class="state" x="980" y="191" text-anchor="middle">remeasured</text>
+  <line class="edge" x1="770" y1="186" x2="898" y2="186" marker-end="url(#arrow)"/>
+  <text class="lbl" x="834" y="164" text-anchor="middle">repeat check, from</text>
+  <text class="lbl" x="834" y="178" text-anchor="middle">6 weeks after seen</text>
+  <text class="who" x="834" y="204" text-anchor="middle">person</text>
+
+  <rect class="terminal" x="900" y="320" width="160" height="60" rx="8"/>
+  <text class="state" x="980" y="346" text-anchor="middle">closed</text>
+  <text class="note" x="980" y="366" text-anchor="middle">ticket ended</text>
+  <line class="edge" x1="980" y1="212" x2="980" y2="318" marker-end="url(#arrow)"/>
+  <text class="who" x="992" y="258">system,</text>
+  <text class="lbl" x="992" y="274">in the same transaction</text>
+  <line class="edge" x1="720" y1="212" x2="898" y2="340" marker-end="url(#arrow)"/>
+  <text class="lbl" x="800" y="296" text-anchor="end">ends the ticket</text>
+  <text class="who" x="800" y="312" text-anchor="end">person</text>
+
+  <!-- Rerouted and declined -->
+  <rect class="terminal" x="60" y="400" width="150" height="60" rx="8"/>
+  <text class="state" x="135" y="426" text-anchor="middle">rerouted</text>
+  <text class="note" x="135" y="446" text-anchor="middle">a child ticket carries on</text>
+  <line class="edge" x1="135" y1="326" x2="135" y2="398" marker-end="url(#arrow)"/>
+  <text class="lbl" x="145" y="356">picks another option</text>
+  <text class="who" x="145" y="372">person</text>
+
+  <rect class="terminal" x="290" y="400" width="150" height="60" rx="8"/>
+  <text class="state" x="365" y="426" text-anchor="middle">declined</text>
+  <text class="note" x="365" y="446" text-anchor="middle">the person said no</text>
+  <line class="edge" x1="365" y1="326" x2="365" y2="398" marker-end="url(#arrow)"/>
+  <text class="lbl" x="375" y="356">declines care</text>
+  <text class="who" x="375" y="372">person</text>
+
+  <!-- Withdrawn -->
+  <rect x="30" y="494" width="800" height="52" rx="8" fill="#fff7ed" stroke="#fdba74"/>
+  <text class="lbl" x="48" y="516">From any open state (issued, acknowledged, overdue, seen, remeasured), the person withdraws consent.</text>
+  <text class="note" x="48" y="534">The shared copy is deleted; the clinic's reads answer 410 from then on.</text>
+  <line x1="830" y1="520" x2="898" y2="520" stroke="#c2410c" stroke-width="1.6" marker-end="url(#arrow-w)"/>
+  <text class="who" x="864" y="512" text-anchor="middle">person</text>
+  <rect class="terminal" x="900" y="490" width="160" height="60" rx="8"/>
+  <text class="state" x="980" y="516" text-anchor="middle">withdrawn</text>
+  <text class="note" x="980" y="536" text-anchor="middle">shared copy deleted</text>
+</svg>

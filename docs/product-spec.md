@@ -6,6 +6,7 @@
 >
 > - **Loop closed** means a ticket reached `seen` or later. Gate C stops at `seen`; `closed` follows a re-measure or the person ending the ticket. Rejected: the day-7 "Yes" firing `closed`; the sweep closing `seen` tickets later. Reason: it matches demo step 9 and keeps MW-307 reachable.
 > - **The funnel's positive-screen stage** counts server-known screens only, and the tile says app-only screens are not counted. Rejected: an anonymous device count; a labelled seed figure. Reason: no new data leaves the device.
+> - **Demo step 6 shows the AI draft**, with the assistant on in the video, in the hosted demo and in a live demo; `pnpm gate:c` runs with the assistant off and checks the template path. Rejected: an AI draft in Gate C. Reason: no key in CI, and the model writes different text each run. See [`running-the-demo.md`](running-the-demo.md#the-referral-summary-assistant-at-step-6).
 > - **A `crisis_line` access value** is allowed in the MW-505 route test only for hand-offs the person consented to. Rejected: language and callback only; dropping MW-404 and MW-803. Reason: it keeps both stories with an explicit test. This belongs to the P1 stories, which are not built yet.
 >
 > The behaviour the build actually has, for example how metrics are suppressed, is in the root `CLAUDE.md`.
