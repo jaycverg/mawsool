@@ -36,7 +36,7 @@ with one-click demo sign-in for the staff apps ([the hosted demo](docs/running-t
 - **A programme lead** sees where people drop off after a positive screen, how many are seen on time, how crises end,
   and which groups are being left behind, with every group under 10 people hidden.
 
-![A person's journey in three lanes: on the phone, check-in, result, care options, consent and send; the Ticket API issues the ticket; the clinic acknowledges and marks it seen; the phone asks on day 7 whether the person was seen, and six weeks later offers a repeat check that closes the loop. A crisis answer opens the crisis screen at once, on the phone](docs/images/person-journey.svg)
+![A person's journey in three lanes: on the phone, check-in, result, care options, consent and send; the Ticket API issues the ticket; the clinic acknowledges and marks it seen; the phone asks on day 7 whether the person was seen, and six weeks later offers a repeat check, after which the ticket closes. A crisis answer opens the crisis screen at once, on the phone](docs/images/person-journey.svg)
 
 Source: drawn by hand from the code; the architecture, the ticket's states and the other flows are drawn in the
 [technical documentation](docs/technical-documentation.md).

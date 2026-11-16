@@ -30,8 +30,9 @@ Where it differs from a local run:
   still work but land in the server's log, which visitors cannot read.
 - **Everyone shares it.** The consent screen and the crisis hand-off panel say so: "Public demo: everything you enter
   here can be seen by anyone using this demo. Do not enter real details."
-- **The crisis screen does not dial.** It shows 800-SAKINA, 999 and 998 as text, and **Call now** says "Demo: this
-  button does not place a call. In a real emergency, dial the number yourself."
+- **The crisis screen does not dial.** It shows 800-SAKINA, 999 and 998 as text, with the note "Demo: this button does
+  not place a call. In a real emergency, dial the number yourself." above them; **Call now** places no call and goes
+  straight to "Did you reach someone?"
 - **It resets itself every night** at 23:00 UTC (03:00 in the UAE), and **Reset the demo** can be pressed once every
   5 minutes.
 - **The AI draft is on** (Anthropic's API), for at most 100 drafts a day (UTC) across all visitors. When it is off or

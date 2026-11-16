@@ -67,7 +67,7 @@
 
   <rect class="terminal" x="900" y="320" width="160" height="60" rx="8"/>
   <text class="state" x="980" y="346" text-anchor="middle">closed</text>
-  <text class="note" x="980" y="366" text-anchor="middle">loop complete</text>
+  <text class="note" x="980" y="366" text-anchor="middle">ticket ended</text>
   <line class="edge" x1="980" y1="212" x2="980" y2="318" marker-end="url(#arrow)"/>
   <text class="who" x="992" y="258">system,</text>
   <text class="lbl" x="992" y="274">in the same transaction</text>
