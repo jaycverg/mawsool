@@ -2,7 +2,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  CONSENTED_ELEMENTS,
   DRAFT_TIME_LIMIT_MS,
   DRAFT_WORD_LIMIT,
   LISTED_TERMS,
@@ -45,14 +44,16 @@ test('a template draft fails the source rule', () => {
 });
 
 test('a draft slower than the limit fails the time rule, and one at the limit passes', () => {
-  assert.deepEqual(failures('en', { elapsedMs: DRAFT_TIME_LIMIT_MS + 1 }), ['time']);
-  assert.deepEqual(failures('en', { elapsedMs: DRAFT_TIME_LIMIT_MS }), []);
+  assert.equal(DRAFT_TIME_LIMIT_MS, 8000);
+  assert.deepEqual(failures('en', { elapsedMs: 8001 }), ['time']);
+  assert.deepEqual(failures('en', { elapsedMs: 8000 }), []);
 });
 
 test('a draft over the word limit fails the words rule, and one at the limit passes', () => {
-  assert.equal(wordCount(words(DRAFT_WORD_LIMIT + 1)), DRAFT_WORD_LIMIT + 1);
-  assert.deepEqual(failures('en', { text: words(DRAFT_WORD_LIMIT + 1) }), ['words']);
-  assert.deepEqual(failures('en', { text: words(DRAFT_WORD_LIMIT) }), []);
+  assert.equal(DRAFT_WORD_LIMIT, 114);
+  assert.equal(wordCount(words(115)), 115);
+  assert.deepEqual(failures('en', { text: words(115) }), ['words']);
+  assert.deepEqual(failures('en', { text: words(114) }), []);
 });
 
 test('a draft with no closing punctuation fails the ending rule, and each closing mark passes', () => {
@@ -65,7 +66,8 @@ test('a draft with no closing punctuation fails the ending rule, and each closin
 });
 
 test('a draft holding the private-note marker fails the marker rule', () => {
-  assert.deepEqual(failures('en', { text: `${PASSING.en} ${PRIVATE_MARKER}.` }), ['marker']);
+  assert.equal(PRIVATE_MARKER, 'PRIVATE-NOTE-7Q3');
+  assert.deepEqual(failures('en', { text: `${PASSING.en} PRIVATE-NOTE-7Q3.` }), ['marker']);
 });
 
 test('a draft holding a private-note phrase fails the phrase rule, whatever its case', () => {
@@ -84,13 +86,17 @@ test('Arabic asked for but none written fails the language rule, and Arabic digi
 });
 
 test('each listed English term fails the term rule', () => {
-  for (const term of LISTED_TERMS.en) {
+  const listed = ['diagnos', 'disorder', 'depression', 'risk', 'suicid', 'self-harm', 'treatment', 'medication', 'you should', 'recommend'];
+  assert.deepEqual([...LISTED_TERMS.en], listed);
+  for (const term of listed) {
     assert.deepEqual(failures('en', { text: `I would like help with ${term.toUpperCase()} please.` }), ['term'], term);
   }
 });
 
 test('each listed Arabic term fails the term rule', () => {
-  for (const term of LISTED_TERMS.ar) {
+  const listed = ['تشخيص', 'اضطراب', 'اكتئاب', 'خطر', 'انتحار', 'علاج', 'دواء'];
+  assert.deepEqual([...LISTED_TERMS.ar], listed);
+  for (const term of listed) {
     assert.deepEqual(failures('ar', { text: `أرغب في أن يتواصل معي أحد بشأن ${term} من العيادة.` }), ['term'], term);
   }
 });
@@ -101,12 +107,12 @@ test('an English term does not fail an Arabic draft, nor an Arabic term an Engli
 });
 
 test('a draft that breaks two rules reports both', () => {
-  assert.deepEqual(failures('en', { source: 'template', elapsedMs: DRAFT_TIME_LIMIT_MS + 1 }), ['source', 'time']);
+  assert.deepEqual(failures('en', { source: 'template', elapsedMs: 8001 }), ['source', 'time']);
 });
 
 test('the draft request ticks only ticket, scores and trajectory and carries an unticked note with the marker', () => {
   const request = draftRequest('ar', '00000000-0000-4000-8000-000000000000');
-  assert.deepEqual(request.consented, CONSENTED_ELEMENTS);
+  assert.deepEqual(request.consented, ['ticket', 'scores', 'trajectory']);
   assert.equal(request.consented.includes('free_text'), false);
   assert.equal(request.useAi, true);
   assert.equal(request.locale, 'ar');
