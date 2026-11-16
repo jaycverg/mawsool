@@ -20,31 +20,9 @@ the route list in `apps/api/test/access.test.ts`, at commit `ce088c9`.
 
 ## 2. Architecture
 
-```
-  Person's phone (PWA, works offline)                  Staff browsers
-  ┌──────────────────────────────────────┐   ┌────────────────┐ ┌──────────────────────────┐
-  │ check-in, scoring, crisis trigger    │   │ Clinician app  │ │ Ops app                  │
-  │ matching (rules run on the device)   │   │ queue, detail, │ │ dashboard, admin, demo   │
-  │ encrypted local store                │   │ FHIR export    │ │ clock, crisis console    │
-  │ crisis numbers dialled directly ─────┼─► phone line (no server involved)          │
-  └──────────────┬───────────────────────┘   └───────┬────────┘ └────────────┬─────────────┘
-                 │ only what the person consents to   │ facility-scoped      │ aggregates; consented
-                 │                                    │                      │ crisis-line notes
-                 ▼                                    ▼                      ▼
-        ┌──────────────────────────────────────────────────────────────────────────┐
-        │ Ticket API (Fastify + Zod)                                               │
-        │ tickets and events · consent ledger · encrypted shared bundles · audit   │
-        │ metrics with small-number suppression · signed inbound · sweep job       │
-        └───────────────┬──────────────────────────────────────────┬───────────────┘
-                        ▼                                          ▼
-                 Postgres (Drizzle, pg-boss)          Referral-summary assistant (optional, off
-                                                      by default; the only code that calls an LLM)
-        ▲
-        │ signed (HMAC) positive screens → invites
-  Front doors: TAMM, health centre, school (mocked)
-```
+![Mawsool architecture in three layers: the person's phone, the clinician app, the ops app and the mocked front doors call only the Ticket API; behind it sit Postgres and the optional referral-summary assistant; crisis numbers go from the phone straight to the phone lines](images/architecture.svg)
 
-Source: a summary of the code at `ce088c9` (`apps/*`, `packages/*`), drawn by hand; it is a description of verified code,
+Source: a summary of the code at `a40b68d` (`apps/*`, `packages/*`), drawn by hand; it is a description of verified code,
 not a proposed design.
 
 Design choices that shape everything else:
@@ -81,6 +59,20 @@ Source: the repository tree at `ce088c9`.
 
 ## 4. The main flows
 
+![A person's journey in three lanes: on the phone, check-in, result, care options, consent and send; the Ticket API issues the ticket; the clinic acknowledges and marks it seen; the phone asks on day 7 whether the person was seen, and six weeks later offers a repeat check that closes the loop. A crisis answer opens the crisis screen at once, on the phone](images/person-journey.svg)
+
+Source: drawn by hand from sections 4.1 to 4.6 below and the person app's screens under `apps/person/app/[locale]` at
+`a40b68d`; numbers are the order a typical journey takes.
+
+**What this tells us**
+- Steps 1 to 4 run on the phone, and the answers to each question never leave it. At step 5 the server receives only
+  the items the person ticked, and before that only if they ask the assistant for a draft (or a crisis event, without
+  answers).
+- Once issued, the ticket is watched from three sides: the clinic acts on it, from day 7 (or the deadline, if sooner) the
+  ticket screen asks the person whether they were seen, and the system marks it overdue when the deadline passes.
+- The crisis screen sits outside the main line: it can interrupt any check-in, and the matching and ticket screens stay
+  closed while it is open.
+
 ### 4.1 Check-in and result
 
 WHO-5 opens (five items, scored 0–100). A score of 50 or less offers PHQ-9 and GAD-7, and a person can choose them
@@ -101,6 +93,17 @@ answers) is queued on the phone and sent when it can be.
 Two optional extras sit beside it, never on it: a note to the crisis line the person can choose to send (with a stop
 control that deletes it), and a gentle next-day check. Each has its own bounded wait and its own failure message; the
 crisis screen never waits on either. `pnpm gate:a` proves the trigger fires with every network entry point stubbed to fail.
+
+![The crisis path in three layers: on the phone with no network, the trigger, the full-screen crisis page, the block and its release by the person; then a crisis event without answers, queued and counted on the dashboard; then two optional extras beside it, the note to the mock crisis line and the next-day check](images/crisis-path.svg)
+
+Source: drawn by hand from `packages/instruments/src/crisis.ts`, `apps/person/lib/crisis.ts`, `apps/person/lib/routes.ts`
+(`GUARDED_ROUTES`) and [`crisis-line-handoff.md`](crisis-line-handoff.md) at `a40b68d`.
+
+**What this tells us**
+- Everything the person needs in a crisis is in the top layer, on the phone; none of it waits for a server.
+- The two lower layers can fail without touching the top one: a crisis event that cannot be sent waits on the phone and
+  goes later, and a note that cannot be sent says so on the screen while the numbers stay where they are. Releasing
+  the screen waits at most half a second for the next-day check to be scheduled.
 
 ### 4.3 Matching
 
@@ -154,6 +157,15 @@ totals; this moves the ticket to `remeasured` and then `closed`.
 HMAC-SHA256 key, a timestamp within 300 seconds and a one-time nonce. It creates an invite with a claim code, never a
 ticket; nothing is shared until the person claims it and consents. The demo includes a labelled mock TAMM result page.
 
+![A sequence between a front door, the Ticket API and the person's phone: the front door sends a signed positive screen, the API checks the key, the time window, the signature and the nonce, answers with an invite and a claim code, the front door shows the code to the person, who claims it and later sends a ticket with consent](images/inbound-screen.svg)
+
+Source: drawn by hand from [`inbound-screens.md`](inbound-screens.md) and `apps/api/src/inbound/` at `a40b68d`.
+
+**What this tells us**
+- A front door can start a journey but cannot make a referral: it gets back a code, and only the person turns it into a ticket.
+- A forged, late or replayed request leaves nothing behind. A missing or wrong signature, a time outside the window and
+  an unknown source all get the same 401; a reused nonce is a 401 `replayed`.
+
 ### 4.8 The dashboard
 
 Funnel, timeliness, crisis completion, symptom change and equity (age band, gender, language, region, all opt-in) are
@@ -163,6 +175,8 @@ numerator and denominator (generated into [`metric-definitions.md`](metric-defin
 gap the dashboard finds: Urdu-language tickets close the loop about 20 points below the overall rate.
 
 ## 5. Ticket lifecycle
+
+![The ticket's states: issued, acknowledged and overdue while waiting to be seen; then seen, remeasured and closed; rerouted and declined from any waiting state; withdrawn from any open state; with who may make each move](images/ticket-lifecycle.svg)
 
 | State          | Entered when                                                        | Can move to                                                              |
 | -------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------ |
@@ -178,13 +192,30 @@ gap the dashboard finds: Urdu-language tickets close the loop about 20 points be
 
 Source: `RULES` in `apps/api/src/tickets/transitions.ts` at `ce088c9`, which also records who may fire each move. It
 widens the product spec's table so a person can decline, reroute or be seen from any open waiting state, and withdraw
-from any state that is not terminal.
+from any state that is not terminal. The diagram is drawn by hand from the same `RULES` at `a40b68d`.
+
+**What this tells us**
+- Every move has a named owner, and anyone else who tries it gets a 403; the system's only moves are marking a ticket
+  overdue and closing it after a repeat check.
+- A waiting ticket leaves the waiting states only as seen, rerouted (a child ticket carries on), declined or withdrawn;
+  until then it stays in the clinic's queue. Once the sweep marks it overdue (within a minute of the deadline), it counts
+  in the dashboard's "Overdue now" list, which appears only when 10 or more tickets are overdue.
 
 An illegal move is a 409; a move the caller may not make is a 403. Only the clinic acknowledges, only the system marks a
 ticket overdue, and only the system closes a ticket after a repeat check. Crisis is not a ticket state: it is a separate
 event that blocks matching, so a crisis never sits in a queue.
 
 ## 6. Privacy and data protection
+
+![Consent and sharing in three columns, the person's phone, the Ticket API and the clinic: sharing, where the phone and the API keep only the consented items, the API encrypts them, and every clinic read is checked and audited; and stopping, where revoking an item, the ticket or everything rewrites or deletes the shared copy and the clinic's reads then answer 410](images/consent-sharing.svg)
+
+Source: drawn by hand from `packages/consent`, `apps/api/src/crypto.ts` and the bundle and consent routes under
+`apps/api/src` at `a40b68d`, as described in sections 4.4, 4.5 and below.
+
+**What this tells us**
+- An item the person did not tick is dropped three times over: on the phone, on arrival, and again at every clinic read.
+- Stopping is not a flag the clinic is trusted to respect: the shared copy itself is rewritten or deleted, so the server
+  has nothing left to give. A FHIR export the clinic already downloaded stays with the clinic.
 
 - **No account, no name.** The phone makes a random id and secret on first run; the server keeps only the secret's hash.
   No name, email, Emirates ID or phone number is needed.
@@ -217,6 +248,9 @@ event that blocks matching, so a crisis never sits in a queue.
   (`SUMMARY_LLM_ENABLED`, default off) and the person ticks "Use AI to help write my note". The prompt sees only the
   elements the person consented to, forbids diagnosis, advice and risk scoring, and is capped at 120 words. The person edits
   and approves the text; only approved text is shared. Without the flag, or on any failure, a fill-in template is used.
+- **In the demo:** the scripted demo, `pnpm gate:c` and the demo video run with the assistant off, so step 6 shows the
+  template. [`running-the-demo.md`](running-the-demo.md#the-referral-summary-assistant-optional) says how to turn it on
+  for a live showing.
 - **Enforced in code:** a lint rule and a package-manifest check fail when anything outside `packages/summary` imports an
   LLM SDK, and `packages/summary/test/boundary.test.ts` proves the rule with cases that must fail.
 - The client is Anthropic's SDK or its Foundry client, chosen by `SUMMARY_PROVIDER` (`anthropic` or `foundry`; there is no

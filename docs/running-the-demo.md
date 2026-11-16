@@ -12,4 +12,27 @@ The demo clock's offset is kept in the database as you move it, so restarting th
 
 `pnpm gate:c` runs the whole script in Arabic and English with `DEMO_MODE` on, on ports 450 above the dev ports, and does not use your `.env`'s demo setting. The demo's spec is in [`demo-e2e-spec.md`](demo-e2e-spec.md).
 
+## The referral-summary assistant (optional)
+
+The scripted demo runs with the assistant off, as the product does by default. At step 6, **Help me draft** fills in a
+template ("A fill-in template. Complete it in your own words.") and Noura writes the summary herself before approving
+it. `pnpm gate:c` runs it this way, and the demo video has her write it herself.
+
+To show the AI draft instead:
+
+1. In `.env`, set `SUMMARY_LLM_ENABLED=true` and choose a provider: `SUMMARY_PROVIDER=anthropic` with
+   `ANTHROPIC_API_KEY`, or `SUMMARY_PROVIDER=foundry` with `SUMMARY_FOUNDRY_API_KEY` and `SUMMARY_FOUNDRY_RESOURCE`
+   (`.env.example` explains each). With the flag on and the provider or its key missing, the API refuses to start.
+2. Restart `pnpm dev`.
+3. At step 6, after ticking what Noura shares, tick **Use AI to help write my note**, then press **Help me draft**. The
+   draft is marked "Drafted by AI. Check every word before you approve it."; edit it and approve it as before.
+
+The model sees only the items ticked on the consent screen, and the draft is capped at 120 words. If the provider fails
+or returns nothing, the template appears instead, so the step never blocks. No automated check calls a real provider:
+the browser tests stand in for one with a stubbed reply (`answerAiDrafts` in `apps/person/e2e/phase3-acceptance.spec.ts`),
+and `packages/summary` is tested with a stub provider. Before the assistant is used outside a demo, see
+[Limitations](limitations.md), item 7.
+
+## Labels
+
 Every directory entry, insurance figure, Malaffi export, TAMM page, message and crisis console in the demo is sample data and is labelled as such on screen.

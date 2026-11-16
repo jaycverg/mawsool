@@ -4,6 +4,15 @@ A service that screens people (TAMM, a primary health centre, a school programme
 Mawsool. It never creates a ticket: it creates an **invite**, and the person claims it on their own phone, then chooses
 what to share. Nothing about the person is sent, only that a screen was positive.
 
+![A sequence between a front door, the Ticket API and the person's phone: the front door sends a signed positive screen, the API checks the key, the time window, the signature and the nonce, answers with an invite and a claim code, the front door shows the code to the person, who claims it and later sends a ticket with consent](images/inbound-screen.svg)
+
+Source: drawn by hand from this page and `apps/api/src/inbound/` at `a40b68d`. Steps 1 to 3 are the request, the
+signing and the answer below; 4 to 6 are under "What the person sees".
+
+**What this tells us**
+- The front door's whole part is steps 1 to 4: it never sees what the person later shares, and cannot make a ticket for them.
+- Step 2 either stores the invite and spends the nonce together, or does neither, which is what makes a retry safe.
+
 ## The request
 
 `POST /inbound/screens`, JSON body, exactly these fields (any other is refused):
