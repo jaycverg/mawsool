@@ -9,7 +9,7 @@
 // "Reset the demo" in the ops app deletes the device. Exits non-zero if any draft fails a rule or any request fails.
 import { randomUUID } from 'node:crypto';
 import { resolveEnv } from './lib.mjs';
-import { checkDraft, draftRequest, nonLoopbackHost, templateHint, throwawayDevice, wordCount } from './check-summary-lib.mjs';
+import { apiBaseUrl, checkDraft, draftRequest, nonLoopbackHost, templateHint, throwawayDevice, wordCount } from './check-summary-lib.mjs';
 
 const DRAFTS_PER_LANGUAGE = 3;
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -21,7 +21,7 @@ if (refusal) {
   console.error(`check:summary: ${refusal}. It sends sample content and only runs against a local API.`);
   process.exit(2);
 }
-const api = `http://${host}:${env.API_PORT}`;
+const api = apiBaseUrl(host, String(env.API_PORT));
 
 /**
  * @param {string} path
@@ -41,11 +41,16 @@ async function post(path, body, authorization) {
 }
 
 const device = throwawayDevice();
+/** @type {Awaited<ReturnType<typeof post>>} */
+let registered;
 try {
-  const registered = await post('/persons', { id: device.id, secret: device.secret, locale: 'en' });
-  if (registered.status !== 201) throw new Error(`registering a throwaway device answered ${registered.status}`);
+  registered = await post('/persons', { id: device.id, secret: device.secret, locale: 'en' });
 } catch (error) {
   console.error(`check:summary: could not reach the API at ${api} (${error instanceof Error ? error.message : String(error)}). Start pnpm dev first.`);
+  process.exit(2);
+}
+if (registered.status !== 201) {
+  console.error(`check:summary: the API refused the throwaway device (status ${registered.status}).`);
   process.exit(2);
 }
 

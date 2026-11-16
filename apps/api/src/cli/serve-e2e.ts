@@ -9,20 +9,19 @@
 //
 // The referral-summary assistant is off here, as in every gate. Setting E2E_SUMMARY_FROM_ENV=1 turns it on from the
 // environment instead (SUMMARY_LLM_ENABLED, SUMMARY_PROVIDER and the provider's own settings, read the way the API reads
-// them), so a recording can show a real draft; it stops at start-up if that leaves the assistant off or with no provider.
-// Only the demo-video recording sets it, and no gate does. Start it through `node scripts/with-env.mjs` to have `.env` loaded.
+// them, and SUMMARY_DAILY_LIMIT too, so a cap in .env limits a recording as it limits the API), so a recording can show a
+// real draft; it stops at start-up if that leaves the assistant off or with no provider. With it unset the assistant is off
+// and there is no cap. Only the demo-video recording sets it, and no gate does. Start it through `node scripts/with-env.mjs` to have `.env` loaded.
 //
 // Usage: tsx src/cli/serve-e2e.ts   (E2E_API_PORT, E2E_INSPECT_PORT, E2E_ORIGIN, E2E_CLINICIAN_URL, E2E_OPS_URL, E2E_SUMMARY_FROM_ENV)
 import { PGlite } from '@electric-sql/pglite';
 import { and, asc, eq, gt, gte, isNull, sql } from 'drizzle-orm';
 import { validateFhir } from '@mawsool/fhir/validate';
-import { createSummaryProvider, type SummaryProvider } from '@mawsool/summary';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { createServer } from 'node:http';
 import { buildApp } from '../app';
 import { systemClock } from '../clock';
-import { loadConfig } from '../config';
 import { createCipher } from '../crypto';
 import { schema, type Db } from '../db/client';
 import { MIGRATIONS_FOLDER } from '../db/migrate';
@@ -32,6 +31,7 @@ import { reminderPhoneContext } from '../reminders/service';
 import { readStaffAccess, runSeed } from '../seed/run';
 import { startOfDubaiDay } from '../metrics/facts';
 import { E2E_INBOUND_KEYS } from './e2e-keys';
+import { summaryFromEnvironment } from './e2e-summary';
 import { FACILITY_A_ID, STAFF } from '../seed/fixtures';
 import { sha256Hex } from '../security';
 import { sweep } from '../sweep';
@@ -45,20 +45,7 @@ const origin = process.env.E2E_ORIGIN ?? 'http://localhost:3450';
 const clinicianUrl = process.env.E2E_CLINICIAN_URL ?? 'http://localhost:3001';
 const opsUrl = process.env.E2E_OPS_URL ?? 'http://localhost:3002';
 
-/**
- * The referral-summary assistant for this run: off with no provider unless `E2E_SUMMARY_FROM_ENV` is `1`, in which case the
- * real settings come from the environment. Throws, naming only setting names, when the switch is on and the environment
- * leaves the assistant off or with no provider, so a recording can never fall back to the template unnoticed.
- */
-function summaryFromEnvironment(env: NodeJS.ProcessEnv): { enabled: boolean; provider: SummaryProvider | null } {
-  if (env.E2E_SUMMARY_FROM_ENV !== '1') return { enabled: false, provider: null };
-  const config = loadConfig({ ...env, BUNDLE_ENCRYPTION_KEY: E2E_ENCRYPTION_KEY });
-  if (!config.summaryLlmEnabled || !config.summaryProvider) {
-    throw new Error('E2E_SUMMARY_FROM_ENV=1 needs the assistant on: set SUMMARY_LLM_ENABLED=true and SUMMARY_PROVIDER (with that provider\'s key) in .env');
-  }
-  return { enabled: true, provider: createSummaryProvider(config.summaryProvider) };
-}
-const summary = summaryFromEnvironment(process.env);
+const summary = summaryFromEnvironment(process.env, E2E_ENCRYPTION_KEY);
 
 /**
  * The API's own log, kept in memory instead of printed: the staff sign-in link is "logged, not sent", so the end-to-end
@@ -115,6 +102,7 @@ const app = await buildApp({
     inboundKeys: E2E_INBOUND_KEYS,
     encryptionKey: E2E_ENCRYPTION_KEY,
     summaryLlmEnabled: summary.enabled,
+    summaryDailyLimit: summary.dailyLimit,
     // Only the demo gate sets this; every other end-to-end run keeps the demo routes unregistered.
     demoMode: process.env.E2E_DEMO_MODE === '1',
   },
