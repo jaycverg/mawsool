@@ -190,3 +190,58 @@ describe('the API request log', () => {
     expect(overridden.serializers.req({ method: 'GET', routeOptions: { url: '/x' } })).toEqual({ method: 'GET', route: '/x' });
   });
 });
+
+describe('the request log on a rate-limited request', () => {
+  let testDb: TestDb;
+  let lines: Line[];
+  let raw: string[];
+  let app: Awaited<ReturnType<typeof buildApp>>;
+
+  beforeAll(async () => {
+    testDb = await createTestDb();
+    await runSeed(testDb.db, testDb.cipher);
+    raw = [];
+    lines = [];
+    const stream = new Writable({
+      write(chunk, _encoding, done) {
+        raw.push(String(chunk));
+        lines.push(JSON.parse(String(chunk)) as Line);
+        done();
+      },
+    });
+    app = await buildApp({
+      db: testDb.db,
+      clock: new ManualClock(TEST_START),
+      config: { ...TEST_CONFIG, demoMode: false, notifierDriver: 'console', rateLimit: true, clientIpHeader: 'cf-connecting-ip' },
+      logger: { level: 'trace', stream },
+    });
+  });
+
+  afterAll(async () => {
+    await app.close();
+    await testDb.close();
+  });
+
+  it('writes a provoked 429 as the method and the route pattern only, with no address, header value or body', async () => {
+    const send = () =>
+      app.inject({
+        method: 'POST',
+        url: '/auth/magic-link',
+        remoteAddress: '203.0.113.77',
+        headers: { 'cf-connecting-ip': '198.51.100.88' },
+        payload: { email: 'nobody-marker-5521@example.test' },
+      });
+    const statuses: number[] = [];
+    for (let i = 0; i < 6; i += 1) statuses.push((await send()).statusCode);
+    expect(statuses).toEqual([202, 202, 202, 202, 202, 429]);
+
+    const log = raw.join('');
+    for (const secret of ['203.0.113.77', '198.51.100.88', 'nobody-marker-5521', 'cf-connecting-ip']) expect(log, secret).not.toContain(secret);
+    const limited = lines.filter((line) => line.res?.statusCode === 429);
+    expect(limited).toHaveLength(1);
+    const requests = lines.filter((line) => line.req?.route === '/auth/magic-link');
+    expect(requests).toHaveLength(6);
+    for (const line of requests) expect(Object.keys(line.req!).sort()).toEqual(['method', 'route']);
+    expect(lines.filter((line) => line.err !== undefined)).toEqual([]);
+  });
+});

@@ -43,6 +43,10 @@ export type MagicLinkRequest = z.infer<typeof MagicLinkRequestSchema>;
 export const VerifyMagicLinkRequestSchema = z.object({ token: z.string().min(20).max(200) });
 export type VerifyMagicLinkRequest = z.infer<typeof VerifyMagicLinkRequestSchema>;
 
+/** `POST /demo/guest-session` (demo mode only): the seeded demo account to sign in as. Role and facility come from its row, never from the request. */
+export const GuestSessionRequestSchema = z.object({ email: z.email() }).strict();
+export type GuestSessionRequest = z.infer<typeof GuestSessionRequestSchema>;
+
 export const SessionSchema = z.object({
   sessionToken: z.string(),
   expiresAt: z.iso.datetime({ offset: true }),
@@ -158,6 +162,14 @@ export const ErrorResponseSchema = z.object({
   message: z.string(),
 });
 export type ErrorResponse = z.infer<typeof ErrorResponseSchema>;
+
+/** A 429 from the per-client limiter (`RATE_LIMIT` on): too many calls from one client in a minute. Carries no address. */
+export const RateLimitedSchema = z.object({ error: z.literal('rate_limited'), message: z.string() });
+export type RateLimited = z.infer<typeof RateLimitedSchema>;
+
+/** A 429 from `POST /demo/reset` while the cool-down (`DEMO_RESET_COOLDOWN_MS`) runs; distinct from `rate_limited`. */
+export const ResetCooldownSchema = z.object({ error: z.literal('reset_cooldown'), message: z.string(), retryAfterSeconds: z.number().int().min(1) });
+export type ResetCooldown = z.infer<typeof ResetCooldownSchema>;
 
 export const HealthResponseSchema = z.object({ status: z.literal('ok') });
 
@@ -414,8 +426,21 @@ export const SummaryDraftRequestSchema = z
   .strict();
 export type SummaryDraftRequest = z.infer<typeof SummaryDraftRequestSchema>;
 
-export const SummaryDraftSchema = z.object({ source: z.enum(['ai', 'template']), text: z.string() });
+/** Why the AI is not writing drafts: switched off in this deployment, or today's allowance of AI drafts is spent. */
+export const SummaryUnavailableReasonSchema = z.enum(['off', 'daily_cap']);
+export type SummaryUnavailableReason = z.infer<typeof SummaryUnavailableReasonSchema>;
+
+export const SummaryDraftSchema = z.object({
+  source: z.enum(['ai', 'template']),
+  text: z.string(),
+  /** Present only when the person asked for the AI (`useAi: true`) and the template was written because of this reason. */
+  aiUnavailable: SummaryUnavailableReasonSchema.optional(),
+});
 export type SummaryDraft = z.infer<typeof SummaryDraftSchema>;
+
+/** GET /summary/availability: whether an AI draft can be had right now. Holds no data about anyone. */
+export const SummaryAvailabilitySchema = z.object({ ai: z.enum(['available', 'off', 'daily_cap']) });
+export type SummaryAvailability = z.infer<typeof SummaryAvailabilitySchema>;
 
 /** PUT /persons/me/equity. Opting out clears the buckets on the server. */
 export const EquityRequestSchema = z.object({ optIn: z.boolean(), buckets: DemographicsSchema.optional() }).strict();

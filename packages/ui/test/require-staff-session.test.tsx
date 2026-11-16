@@ -171,10 +171,15 @@ describe('staffCall', () => {
   });
 
   it('keeps the API’s error code for any other refusal, and none when the body has none', async () => {
-    expect(await call(answer(410, { error: 'withdrawn' }))).toEqual({ status: 'refused', httpStatus: 410, error: 'withdrawn' });
-    expect(await call(answer(404, { error: 'not_found' }))).toEqual({ status: 'refused', httpStatus: 404, error: 'not_found' });
-    expect(await call(vi.fn(async () => new Response('nope', { status: 502 })))).toEqual({ status: 'refused', httpStatus: 502, error: null });
-    expect(await call(answer(409, { error: 42 }))).toEqual({ status: 'refused', httpStatus: 409, error: null });
+    expect(await call(answer(410, { error: 'withdrawn' }))).toEqual({ status: 'refused', httpStatus: 410, error: 'withdrawn', body: { error: 'withdrawn' } });
+    expect(await call(answer(404, { error: 'not_found' }))).toEqual({ status: 'refused', httpStatus: 404, error: 'not_found', body: { error: 'not_found' } });
+    expect(await call(vi.fn(async () => new Response('nope', { status: 502 })))).toEqual({ status: 'refused', httpStatus: 502, error: null, body: null });
+    expect(await call(answer(409, { error: 42 }))).toEqual({ status: 'refused', httpStatus: 409, error: null, body: { error: 42 } });
+  });
+
+  it('carries the parsed error body of a refusal, so a 429 can be read for the seconds to wait', async () => {
+    const body = { error: 'reset_cooldown', message: 'The demo was reset a moment ago', retryAfterSeconds: 240 };
+    expect(await call(answer(429, body))).toEqual({ status: 'refused', httpStatus: 429, error: 'reset_cooldown', body });
   });
 
   it('says unreachable when the network fails', async () => {

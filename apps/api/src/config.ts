@@ -1,5 +1,6 @@
 import { DEFAULT_SUMMARY_MODEL, type SummaryProviderSettings } from '@mawsool/summary';
 import type { InboundSource } from '@mawsool/types';
+import { CronExpressionParser } from 'cron-parser';
 import { z } from 'zod';
 import { NOTIFIER_DRIVERS, type NotifierDriverName } from './notifier';
 
@@ -33,6 +34,45 @@ const DemoFlag = z
  */
 const NotifierDriver = z.preprocess((value) => (value === '' ? undefined : value), z.enum(NOTIFIER_DRIVERS, { error: 'NOTIFIER_DRIVER must be console or log (or be left unset)' }).default('log'));
 
+/** An unset variable and an empty one are the same: a blank line in a `.env` or a container setting must not read as a value. */
+const blankIsUnset = (value: unknown) => (value === '' ? undefined : value);
+
+/** `RATE_LIMIT` turns the per-client limits on. Strict like `DEMO_MODE`: only `true` or `1` is on, and any other value (`1x`, `yes`) stops the API from starting. */
+const RateLimitFlag = z
+  .preprocess(blankIsUnset, z.enum(['true', 'false', '1', '0'], { error: 'RATE_LIMIT must be true or false (or be left unset)' }).default('false'))
+  .transform((value) => value === 'true' || value === '1');
+
+/** A header name, lower-case letters, digits and hyphens (`cf-connecting-ip`), so a typo cannot become a header nobody sends. */
+const ClientIpHeader = z.preprocess(
+  blankIsUnset,
+  z.string().regex(/^[a-z0-9-]+$/, { error: 'CLIENT_IP_HEADER must be a header name in lower-case letters, digits and hyphens (for example cf-connecting-ip)' }).optional(),
+);
+
+/** A whole number of at least zero. The message never repeats the value. */
+const wholeNumber = (name: string) => {
+  const error = `${name} must be a whole number of at least 0`;
+  return z.coerce.number({ error }).int({ error }).min(0, { error });
+};
+
+/** `DEMO_RESET_CRON` is a five-field cron expression, checked by the parser pg-boss schedules with, so a bad one stops startup instead of making `boss.schedule` throw. */
+const DemoResetCron = z.preprocess(
+  blankIsUnset,
+  z
+    .string()
+    .refine(
+      (value) => {
+        try {
+          CronExpressionParser.parse(value, { tz: 'UTC', strict: false });
+          return value.trim().split(/\s+/).length === 5;
+        } catch {
+          return false;
+        }
+      },
+      { error: 'DEMO_RESET_CRON must be a five-field cron expression (for example 0 23 * * *)' },
+    )
+    .optional(),
+);
+
 /**
  * `SUMMARY_PROVIDER` says which client sends the referral-summary request: `anthropic` (Anthropic's API) or `foundry` (Claude on
  * Microsoft Foundry). Unset or empty means not chosen, and there is no default, so where a person's consented details go and
@@ -53,6 +93,11 @@ const EnvSchema = z
   .object({
     DEMO_MODE: DemoFlag,
     NOTIFIER_DRIVER: NotifierDriver,
+    RATE_LIMIT: RateLimitFlag,
+    CLIENT_IP_HEADER: ClientIpHeader,
+    SUMMARY_DAILY_LIMIT: z.preprocess(blankIsUnset, wholeNumber('SUMMARY_DAILY_LIMIT').optional()),
+    DEMO_RESET_COOLDOWN_MS: z.preprocess(blankIsUnset, wholeNumber('DEMO_RESET_COOLDOWN_MS').default(0)),
+    DEMO_RESET_CRON: DemoResetCron,
     API_PORT: z.coerce.number().int().min(1).max(65535).default(4000),
     API_HOST: z.string().default('127.0.0.1'),
     DATABASE_URL: z.string().default('postgres://mawsool:mawsool@localhost:54329/mawsool'),
@@ -111,6 +156,16 @@ export interface AppConfig {
   demoMode: boolean;
   /** Which mock "delivers" outbound messages. */
   notifierDriver: NotifierDriverName;
+  /** Turns the per-client rate limits on. Off by default, so nothing changes unless a hosted demo asks. */
+  rateLimit: boolean;
+  /** The header that carries the real client address behind a proxy (`cf-connecting-ip`); unset means the socket address. */
+  clientIpHeader: string | undefined;
+  /** At most this many AI calls per UTC day, then the template. Unset means no cap; 0 means no AI call at all. */
+  summaryDailyLimit: number | undefined;
+  /** Milliseconds after a reset during which another reset is refused (429). 0 means no cool-down. */
+  demoResetCooldownMs: number;
+  /** When set (and `DEMO_MODE` is on), the demo resets itself on this cron schedule (UTC). */
+  demoResetCron: string | undefined;
 }
 
 /** Reads and validates the environment. Throws with a readable message on a bad or missing value, the key included. */
@@ -134,5 +189,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     summaryProvider: summaryProviderSettings(parsed),
     demoMode: parsed.DEMO_MODE,
     notifierDriver: parsed.NOTIFIER_DRIVER,
+    rateLimit: parsed.RATE_LIMIT,
+    clientIpHeader: parsed.CLIENT_IP_HEADER,
+    summaryDailyLimit: parsed.SUMMARY_DAILY_LIMIT,
+    demoResetCooldownMs: parsed.DEMO_RESET_COOLDOWN_MS,
+    demoResetCron: parsed.DEMO_RESET_CRON,
   };
 }

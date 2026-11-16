@@ -1,0 +1,19 @@
+# What the image build never needs. `.pnpmfile.cjs` is not listed on purpose: pnpm reads it at install, and without it a second copy of Next is resolved.
+.git
+.claude
+.local
+.turbo
+.DS_Store
+**/node_modules
+**/.next*
+**/out
+**/dist
+**/coverage
+**/test-results
+**/playwright-report
+**/*.tsbuildinfo
+**/next-env.d.ts
+**/*.log
+# No environment file ever goes into an image: settings come from the platform at run time.
+.env
+.env.*

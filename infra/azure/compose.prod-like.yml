@@ -1,0 +1,86 @@
+# The four production images run together on this machine, with their own Postgres, to check them before they go anywhere.
+# Its own Compose project and its own ports (offset 900), so it cannot collide with `pnpm dev` or another copy of the repo
+# (the other sessions use offsets 0, 200 and 600): api 4900, person 3900, clinician 3901, ops 3902, Postgres 55229.
+#
+# Build the images from the repo root (the API address is fixed at build time, so it is the published API port):
+#
+#   for t in api person clinician ops; do
+#     docker build --target $t -t mawsool-$t:prodlike \
+#       --build-arg NEXT_PUBLIC_API_URL=http://localhost:4900 --build-arg NEXT_PUBLIC_PUBLIC_DEMO=true .
+#   done
+#
+# Then, because the guest buttons need the seeded staff users:
+#
+#   docker compose -f infra/azure/compose.prod-like.yml up -d --wait
+#   docker compose -f infra/azure/compose.prod-like.yml exec api pnpm --filter @mawsool/api db:seed
+#   ... check ...
+#   docker compose -f infra/azure/compose.prod-like.yml down -v
+#
+# The keys below are the public throwaway ones from .env.example. They protect nothing; the real deploy generates its own.
+name: mawsool-prodlike-900
+
+x-api-origins: &origins
+  CORS_ORIGINS: http://localhost:3900,http://localhost:3901,http://localhost:3902
+  PERSON_APP_URL: http://localhost:3900
+  CLINICIAN_APP_URL: http://localhost:3901
+  OPS_APP_URL: http://localhost:3902
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: mawsool
+      POSTGRES_PASSWORD: mawsool
+      POSTGRES_DB: mawsool
+    ports:
+      - "127.0.0.1:55229:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mawsool -d mawsool"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    image: mawsool-api:prodlike
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *origins
+      DATABASE_URL: postgres://mawsool:mawsool@postgres:5432/mawsool
+      BUNDLE_ENCRYPTION_KEY: bWF3c29vbC1sb2NhbC1kZXZlbG9wbWVudC1rZXktMSE=
+      INBOUND_KEY_TAMM: dev-only-tamm-signing-key-not-a-secret-0001
+      INBOUND_KEY_PHC: dev-only-phc-signing-key-not-a-secret-00002
+      INBOUND_KEY_SCHOOL: dev-only-school-signing-key-not-a-secret-03
+      DEMO_MODE: "true"
+      RATE_LIMIT: "true"
+      DEMO_RESET_COOLDOWN_MS: "300000"
+      # The AI is off, so the template is used and nothing is billed.
+      SUMMARY_LLM_ENABLED: "false"
+    ports:
+      - "127.0.0.1:4900:4000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  person:
+    image: mawsool-person:prodlike
+    ports:
+      - "127.0.0.1:3900:80"
+
+  clinician:
+    image: mawsool-clinician:prodlike
+    ports:
+      - "127.0.0.1:3901:3000"
+
+  ops:
+    image: mawsool-ops:prodlike
+    ports:
+      - "127.0.0.1:3902:3000"
+
+volumes:
+  pgdata:
