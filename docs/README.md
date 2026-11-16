@@ -2,7 +2,7 @@
 
 Submission documents:
 
-- [Demo video](https://youtu.be/mQG1EhDLy_o): a 4-minute narrated walkthrough of the working prototype, with chapters.
+- [Demo video](https://youtu.be/QZM8wlpWVwY): a 3-minute narrated walkthrough of the working prototype, with chapters, including the AI-drafted referral note.
 - [Presentation deck](https://claude.ai/artifact/KGqvadTVZmvEAYxm1veNDB): the 15-slide pitch, with speaker notes.
 - [`technical-documentation.md`](technical-documentation.md): architecture, flows, ticket lifecycle, privacy, AI use, security, API, testing and how to run it.
 - [`assumptions.md`](assumptions.md): what the prototype takes for granted, and what would change if an assumption were wrong.

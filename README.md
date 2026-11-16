@@ -14,7 +14,7 @@ with one-click demo sign-in for the staff apps ([the hosted demo](docs/running-t
 
 | Document                                                     | What it covers                                                                     |
 | ------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| [Demo video](https://youtu.be/mQG1EhDLy_o) | A 4-minute narrated walkthrough of the working prototype, with chapters |
+| [Demo video](https://youtu.be/QZM8wlpWVwY) | A 3-minute narrated walkthrough of the working prototype, with chapters, including the AI-drafted referral note |
 | [Presentation deck](https://claude.ai/artifact/KGqvadTVZmvEAYxm1veNDB) | The 15-slide pitch: problem, idea, the three apps, safety, privacy, AI use, architecture, checks, limits |
 | [Technical documentation](docs/technical-documentation.md)   | Architecture, flows, ticket lifecycle, privacy, AI use, security, API, testing, how to run it |
 | [Assumptions](docs/assumptions.md)                           | What the prototype takes for granted: clinical, local services, privacy, technology, demo |
