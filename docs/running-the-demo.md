@@ -52,6 +52,8 @@ To show it from your own machine:
 2. Restart `pnpm dev`.
 3. Run `pnpm check:summary` before the demo (below).
 
+**The pre-demo check.** `pnpm check:summary` checks the referral-summary assistant against a running API before the draft is shown. Start `pnpm dev` with `SUMMARY_LLM_ENABLED=true`, `SUMMARY_PROVIDER` and that provider's key in `.env`, then run it: it registers one throwaway device, asks for three drafts in English and three in Arabic from sample scores and a sample note the person did not tick, prints each draft with its time, and exits non-zero if any draft is not from the assistant, takes over 8 s (the phone gives up at 10 s), is over 114 words or cut off, repeats the unticked note, is in the wrong language or holds a listed word (a diagnosis, treatment, advice or risk term). With `SUMMARY_LLM_ENABLED` unset it fails with the "source is template" hint naming the settings to check. It never prints a setting's value, leaves six drafts and the device in the database (the sweep removes the drafts after 24 hours, **Reset the demo** (with `DEMO_MODE` on) or `pnpm db:seed` removes the device) and is not part of `pnpm verify`, because it needs a key. It cannot judge tone, so read the drafts. `E2E_SUMMARY_FROM_ENV=1` makes the end-to-end API harness (`pnpm --filter @mawsool/api serve:e2e`, started through `node scripts/with-env.mjs`) use the assistant from `.env` instead of keeping it off; it stops at start-up if `.env` does not turn the assistant on. Only the demo-video recording sets it, and no gate does.
+
 **If no draft comes during a live demo:**
 
 - **If the draft takes longer than 10 seconds,** the phone says "The draft could not be made. You can write the summary
