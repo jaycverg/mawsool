@@ -7,7 +7,8 @@ hand-off shows up on a dashboard instead of disappearing.
 > The gap isn't that people aren't screened. It's that nobody owns them for the next 14 days.
 
 This is a hackathon prototype. It runs end to end on sample data, in Arabic and English, and is **not ready for use with
-real people**: see [Limitations](docs/limitations.md).
+real people**: see [Limitations](docs/limitations.md). A copy runs at [mawsool.thevergara.dev](https://mawsool.thevergara.dev),
+with one-click demo sign-in for the staff apps ([the hosted demo](docs/running-the-demo.md#the-hosted-demo)).
 
 ## Submission documents
 
@@ -46,8 +47,8 @@ Source: drawn by hand from the code; the architecture, the ticket's states and t
   marked overdue when its deadline passes.
 
 No AI is used in scoring, triage or the crisis path. One optional assistant can help the person draft their referral
-note, which they edit and approve; it is off by default, and the demo runs with it off
-([how to turn it on](docs/running-the-demo.md#the-referral-summary-assistant-optional)).
+note, which they edit and approve; it is off by default, and the demo shows it at step 6
+([how](docs/running-the-demo.md#the-referral-summary-assistant-at-step-6)).
 
 ## Run it
 

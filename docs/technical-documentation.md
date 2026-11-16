@@ -248,9 +248,8 @@ Source: drawn by hand from `packages/consent`, `apps/api/src/crypto.ts` and the 
   (`SUMMARY_LLM_ENABLED`, default off) and the person ticks "Use AI to help write my note". The prompt sees only the
   elements the person consented to, forbids diagnosis, advice and risk scoring, and is capped at 120 words. The person edits
   and approves the text; only approved text is shared. Without the flag, or on any failure, a fill-in template is used.
-- **In the demo:** the scripted demo, `pnpm gate:c` and the demo video run with the assistant off, so step 6 shows the
-  template. [`running-the-demo.md`](running-the-demo.md#the-referral-summary-assistant-optional) says how to turn it on
-  for a live showing.
+- **In the demo:** the video, the hosted demo and a live demo show the AI draft at step 6
+  ([how](running-the-demo.md#the-referral-summary-assistant-at-step-6)); `pnpm gate:c` checks the template path.
 - **Enforced in code:** a lint rule and a package-manifest check fail when anything outside `packages/summary` imports an
   LLM SDK, and `packages/summary/test/boundary.test.ts` proves the rule with cases that must fail.
 - The client is Anthropic's SDK or its Foundry client, chosen by `SUMMARY_PROVIDER` (`anthropic` or `foundry`; there is no
@@ -315,13 +314,13 @@ Source: the command table in `CLAUDE.md` and `package.json` at `ce088c9`.
 
 The browser gates hold 149 named acceptance tests across their four registries (30 + 65 + 34 + 20, each run in both
 languages) and include pixel snapshots of key screens at a 390×844 phone size. On commit `ce088c9`, all ten local gates
-passed on 2026-11-13, and the four browser gates also passed in the Linux container CI uses. On GitHub, the four browser
-gates passed; the `verify` job stopped early when one test timed out, so part of it did not run there (see
-[`limitations.md`](limitations.md)).
+passed on 2026-11-13, and the four browser gates also passed in the Linux container CI uses. On GitHub that commit's
+`verify` job stopped early when one test timed out; the timeout was fixed in `bc1c505`, and CI has since passed in full,
+most recently on `3d73438` (see [`limitations.md`](limitations.md), item 22).
 
 Source: registry sizes from `apps/person/e2e/acceptance*.json`; local results from the gate log of 2026-11-13
-21:51–22:45 PHT recorded in the build's final report; GitHub results from Actions run 43542562936 (2026-11-14 01:46 UTC /
-09:46 PHT).
+21:51–22:45 PHT recorded in the build's final report; GitHub results from Actions runs 43542562936 (2026-11-14 01:46 UTC /
+09:46 PHT, the timeout) and 43808236336 (`3d73438`, 2026-11-16 05:07 UTC / 13:07 PHT, passed).
 
 **What this tells us**
 - The central guarantees (the crisis path without a network, facility scoping, consent and revoke, no employer route,
@@ -352,6 +351,10 @@ Staff sign-in links are printed in the API log. Demo accounts: `admin@demo.mawso
 (ops app), `clinician.a@demo.mawsool.test`, `clinician.b@demo.mawsool.test` (clinician app),
 `crisisline@demo.mawsool.test` (crisis console). The 12-step demo walkthrough is in
 [`running-the-demo.md`](running-the-demo.md) and [`product-spec.md`](product-spec.md#demo-script-and-seed-data).
+
+The hosted demo (Azure Container Apps and a PostgreSQL Flexible Server, behind Cloudflare) is deployed by
+`infra/azure/deploy.sh`; its runbook is [`infra/azure/README.md`](../infra/azure/README.md), and how it differs from a local
+run is in [`running-the-demo.md`](running-the-demo.md#the-hosted-demo).
 
 `.env.example` lists the variables you need to set, with their purpose. The important ones: `BUNDLE_ENCRYPTION_KEY`
 (required), `INBOUND_KEY_TAMM|PHC|SCHOOL` (one per front door), `DEMO_MODE`, `SUMMARY_LLM_ENABLED` with
