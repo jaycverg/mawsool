@@ -130,10 +130,10 @@ Cloudflare part, run 2026-11-16 with the project token on `thevergara.dev`:
   `disable_rum` in the zone rule fixed it for the four hostnames.
 - Cloudflare's IPv6 ranges are refused by Container Apps; the IPv4 ranges are accepted.
 
-AI check, run 2026-11-16 after the AI was switched on (a Playwright script in Chromium against the four hostnames, 10 of 10
-checks passed): `GET /summary/availability` answered `{"ai":"available"}`, the consent screen showed no "AI off" note, and
+AI check, run 2026-11-16 after the AI was switched on (a Playwright script in Chromium against the person app and the API,
+10 of 10 checks passed): `GET /summary/availability` answered `{"ai":"available"}`, the consent screen showed no "AI off" note, and
 one draft with **Use AI to help write my note** ticked came back from the model (`source: ai`, labelled "Drafted by AI") in
-3.3 seconds, under the phone's 10-second wait, 49 words, with nothing from the unticked note and no listed term. One draft
+3.3 seconds, under the phone's 10-second wait, 49 words, with nothing from the unticked note and no diagnosis, risk or advice term. One draft
 is one sample, not a latency figure.
 
 **The trial's end date: not established.** The free trial ends 30 days from sign-up or when the $200 credit is used up,
@@ -254,7 +254,7 @@ and `part2`, the `--probe`, the smoke check, and one pass of a Playwright check 
 hostnames (16 checks passed). Not run, or not established:
 - the AI beyond one draft (step 11b): its latency over many drafts, and the daily cap being reached;
 - the nightly reset (`DEMO_RESET_CRON`) on the live app;
-- a phone viewport on the live hostnames, and Arabic beyond the person app's home page loading right to left (checked once, with clinic B's queue, the programme lead's dashboard and the crisis-line console, on 2026-11-16);
+- a phone viewport on the live hostnames, and Arabic beyond the person app's home page loading right to left. That page, clinic B's queue, the programme lead's dashboard and the crisis-line console (all in English) were each opened once on 2026-11-16;
 - rate-limit behaviour under load, and the API's cold start after a restart;
 - renewal of the managed certificates behind the proxy and the lock;
 - the rollback to stage 3A in "Rolling back to 3A": written, never run;
