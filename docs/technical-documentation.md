@@ -316,7 +316,7 @@ The browser gates hold 149 named acceptance tests across their four registries (
 languages) and include pixel snapshots of key screens at a 390×844 phone size. On commit `ce088c9`, all ten local gates
 passed on 2026-11-13, and the four browser gates also passed in the Linux container CI uses. On GitHub that commit's
 `verify` job stopped early when one test timed out; the timeout was fixed in `bc1c505`, and CI has passed in full on every
-commit to the main branch since (see [`limitations.md`](limitations.md), item 22).
+push to the main branch since (see [`limitations.md`](limitations.md), item 22).
 
 Source: registry sizes from `apps/person/e2e/acceptance*.json`; local results from the gate log of 2026-11-13
 21:51–22:45 PHT recorded in the build's final report; GitHub results from Actions runs 43542562936 (2026-11-14 01:46 UTC /
