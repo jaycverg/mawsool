@@ -21,7 +21,7 @@ if (refusal) {
   console.error(`check:summary: ${refusal}. It sends sample content and only runs against a local API.`);
   process.exit(2);
 }
-const api = apiBaseUrl(host, env.API_PORT);
+const api = apiBaseUrl(host, String(env.API_PORT));
 
 /**
  * @param {string} path
