@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="530" viewBox="0 0 1200 530" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>The crisis path</title>
+  <desc>Top layer, on the phone with no network needed: PHQ-9 item 9 above 0 stops the questions, a full-screen crisis page opens with tap-to-call numbers, and only the person releases it. Middle layer: a crisis event without answers is queued and sent when it can be (not in anonymous mode), and counted on the dashboard. Bottom layer, optional, which the crisis screen never depends on: a note to the mock crisis line, sent only once the crisis event is on the server, and a next-day check.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <marker id="arrow-crisis" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b91c1c"/>
+    </marker>
+    <style>
+      .band { fill: #f8fafc; stroke: #e2e8f0; }
+      .band-crisis { fill: #fff5f5; stroke: #fecaca; }
+      .band-label { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; fill: #64748b; }
+      .title { font-size: 14.5px; font-weight: 700; fill: #0f172a; }
+      .line { font-size: 12.5px; fill: #334155; }
+      .edge { stroke: #475569; stroke-width: 1.6; fill: none; }
+      .lbl { font-size: 12px; fill: #334155; }
+      .tag { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; }
+    </style>
+  </defs>
+
+  <!-- Layer 1 -->
+  <rect class="band-crisis" x="16" y="16" width="1168" height="176" rx="10"/>
+  <text class="band-label" x="36" y="40" style="fill:#991b1b">ON THE PHONE · NO NETWORK NEEDED · FIXED RULES, NO AI</text>
+
+  <rect x="36" y="56" width="250" height="118" rx="8" fill="#ffffff" stroke="#b91c1c" stroke-width="2"/>
+  <text class="title" x="54" y="82">Trigger</text>
+  <text class="line" x="54" y="106">PHQ-9 item 9 answered above 0</text>
+  <text class="line" x="54" y="124">stops the questions at once</text>
+
+  <rect x="326" y="56" width="270" height="118" rx="8" fill="#ffffff" stroke="#b91c1c" stroke-width="2"/>
+  <text class="title" x="344" y="82">Full-screen crisis page</text>
+  <text class="line" x="344" y="106">800-SAKINA, 999 and 998 as</text>
+  <text class="line" x="344" y="124">tap-to-call buttons and as text.</text>
+  <text class="line" x="344" y="142">Precached, so it opens offline</text>
+
+  <rect x="636" y="56" width="260" height="118" rx="8" fill="#ffffff" stroke="#b91c1c" stroke-width="2"/>
+  <text class="title" x="654" y="82">Block until released</text>
+  <text class="line" x="654" y="106">Every matching and ticket screen</text>
+  <text class="line" x="654" y="124">sends the person back here</text>
+
+  <rect x="936" y="56" width="228" height="118" rx="8" fill="#ffffff" stroke="#b91c1c" stroke-width="2"/>
+  <text class="title" x="954" y="82">Only the person releases it</text>
+  <text class="line" x="954" y="106">"I'm with someone safe"</text>
+  <text class="line" x="954" y="124">or "I'm safe right now".</text>
+  <text class="line" x="954" y="142">Nothing dismisses it alone</text>
+
+  <!-- Layer 2 -->
+  <rect class="band" x="16" y="208" width="1168" height="124" rx="10"/>
+  <text class="band-label" x="326" y="232">RECORDED · SENT WHEN IT CAN BE</text>
+
+  <rect x="326" y="246" width="270" height="72" rx="8" fill="#ffffff" stroke="#334155" stroke-width="2"/>
+  <text class="title" x="344" y="270">Crisis event, queued</text>
+  <text class="line" x="344" y="290">Trigger, number tapped, contact</text>
+  <text class="line" x="344" y="306">confirmed. Never the answers</text>
+
+  <rect x="636" y="246" width="260" height="72" rx="8" fill="#ffffff" stroke="#334155" stroke-width="2"/>
+  <text class="title" x="654" y="270">Dashboard</text>
+  <text class="line" x="654" y="290">Crisis-response completion,</text>
+  <text class="line" x="654" y="306">small numbers hidden</text>
+
+  <!-- Layer 3 -->
+  <rect class="band" x="16" y="348" width="1168" height="166" rx="10" stroke-dasharray="6 4"/>
+  <text class="band-label" x="36" y="372">OPTIONAL · THE CRISIS SCREEN NEVER DEPENDS ON THEM</text>
+
+  <rect x="326" y="388" width="270" height="110" rx="8" fill="#ffffff" stroke="#7c3aed" stroke-width="2" stroke-dasharray="6 4"/>
+  <text class="title" x="344" y="412">Note to the crisis line</text>
+  <text class="line" x="344" y="434">Off until ticked; sent only once the</text>
+  <text class="line" x="344" y="452">crisis event is on the server. Trigger,</text>
+  <text class="line" x="344" y="470">up to three totals, a callback number</text>
+  <text class="line" x="344" y="488">only if typed. Stop deletes it</text>
+
+  <rect x="636" y="388" width="260" height="100" rx="8" fill="#ffffff" stroke="#7c3aed" stroke-width="2" stroke-dasharray="6 4"/>
+  <text class="title" x="654" y="412">Crisis-line console</text>
+  <rect x="826" y="398" width="50" height="20" rx="4" fill="#f1f5f9" stroke="#94a3b8"/>
+  <text class="tag" x="835" y="412" style="fill:#475569">MOCK</text>
+  <text class="line" x="654" y="434">Reads the note while consent is</text>
+  <text class="line" x="654" y="452">live; "contact made" completes</text>
+  <text class="line" x="654" y="470">the crisis event</text>
+
+  <rect x="936" y="388" width="228" height="100" rx="8" fill="#ffffff" stroke="#7c3aed" stroke-width="2" stroke-dasharray="6 4"/>
+  <text class="title" x="954" y="412">Next-day check</text>
+  <text class="line" x="954" y="434">A day after release: a neutral</text>
+  <text class="line" x="954" y="452">home card that leads to the</text>
+  <text class="line" x="954" y="470">GP and specialist options</text>
+
+  <!-- Edges -->
+  <line x1="286" y1="115" x2="324" y2="115" stroke="#b91c1c" stroke-width="2" marker-end="url(#arrow-crisis)"/>
+  <line x1="596" y1="115" x2="634" y2="115" stroke="#b91c1c" stroke-width="2" marker-end="url(#arrow-crisis)"/>
+  <line x1="896" y1="115" x2="934" y2="115" stroke="#b91c1c" stroke-width="2" marker-end="url(#arrow-crisis)"/>
+  <path class="edge" d="M161,174 V282 H324" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+  <text class="lbl" x="172" y="272">not in anonymous mode</text>
+  <line class="edge" x1="596" y1="282" x2="634" y2="282" marker-end="url(#arrow)"/>
+  <path class="edge" d="M461,318 V386" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+  <line class="edge" x1="596" y1="438" x2="634" y2="438" marker-end="url(#arrow)"/>
+  <line class="edge" x1="1050" y1="174" x2="1050" y2="386" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+  <rect x="1060" y="266" width="96" height="22" rx="6" fill="#ffffff" stroke="#cbd5e1"/>
+  <text class="lbl" x="1108" y="281" text-anchor="middle">after release</text>
+</svg>

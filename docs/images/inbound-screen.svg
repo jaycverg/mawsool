@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="640" viewBox="0 0 1200 640" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>Handing over a positive screen</title>
+  <desc>A front door sends a signed positive screen to the Ticket API. The API checks the source has a key, the timestamp is within 300 seconds, the signature matches and the nonce is new; a wrong key, time or signature is the same 401, a reused nonce is a 401 replayed, a bad body a 400, and none stores anything. It answers 201 with an invite and a claim code shown once. The front door shows the person the link or code. The person claims it on their phone with a button press, then chooses what to share and sends a ticket that carries the source.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <style>
+      .head { stroke-width: 2; fill: #ffffff; }
+      .head-text { font-size: 15px; font-weight: 700; fill: #0f172a; }
+      .head-sub { font-size: 12px; fill: #64748b; }
+      .life { stroke: #cbd5e1; stroke-width: 2; stroke-dasharray: 6 5; }
+      .msg { stroke: #475569; stroke-width: 1.6; fill: none; }
+      .num { font-size: 12px; font-weight: 700; fill: #ffffff; }
+      .m { font-size: 13px; font-weight: 600; fill: #0f172a; }
+      .s { font-size: 12px; fill: #475569; }
+      .code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; fill: #0f172a; }
+    </style>
+  </defs>
+
+  <!-- Lifelines -->
+  <rect class="head" x="50" y="20" width="260" height="54" rx="8" stroke="#64748b" stroke-dasharray="6 4"/>
+  <text class="head-text" x="180" y="44" text-anchor="middle">Front door</text>
+  <text class="head-sub" x="180" y="62" text-anchor="middle">TAMM, health centre, school (mock)</text>
+  <rect class="head" x="500" y="20" width="200" height="54" rx="8" stroke="#1e293b"/>
+  <text class="head-text" x="600" y="44" text-anchor="middle">Ticket API</text>
+  <text class="head-sub" x="600" y="62" text-anchor="middle">signed inbound route</text>
+  <rect class="head" x="920" y="20" width="200" height="54" rx="8" stroke="#0f766e"/>
+  <text class="head-text" x="1020" y="44" text-anchor="middle">Person's phone</text>
+  <text class="head-sub" x="1020" y="62" text-anchor="middle">Mawsool app</text>
+  <line class="life" x1="180" y1="74" x2="180" y2="624"/>
+  <line class="life" x1="600" y1="74" x2="600" y2="624"/>
+  <line class="life" x1="1020" y1="74" x2="1020" y2="624"/>
+
+  <!-- 1 -->
+  <circle cx="200" cy="104" r="10" fill="#1e293b"/><text class="num" x="200" y="108" text-anchor="middle">1</text>
+  <text class="m" x="218" y="108"><tspan class="code">POST /inbound/screens</tspan></text>
+  <text class="s" x="218" y="126">{ result: positive, screenedAt, locale }: nothing about the person</text>
+  <text class="s" x="218" y="142">signed with the source's own key (HMAC-SHA256)</text>
+  <line class="msg" x1="180" y1="154" x2="596" y2="154" marker-end="url(#arrow)"/>
+
+  <!-- 2 -->
+  <rect x="612" y="168" width="390" height="176" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+  <circle cx="632" cy="190" r="10" fill="#1e293b"/><text class="num" x="632" y="194" text-anchor="middle">2</text>
+  <text class="m" x="650" y="194">Checks, in order</text>
+  <text class="s" x="632" y="216">• the source has a key</text>
+  <text class="s" x="632" y="234">• the timestamp is within 300 seconds</text>
+  <text class="s" x="632" y="252">• the signature matches</text>
+  <text class="s" x="632" y="270">• the nonce has not been used</text>
+  <text class="s" x="632" y="292">The nonce is spent and the invite stored in one step.</text>
+  <text class="s" x="632" y="312" style="fill:#b91c1c">Wrong key, time or signature: the same 401. A reused</text>
+  <text class="s" x="632" y="328" style="fill:#b91c1c">nonce: 401 replayed. A bad body: 400. None stores anything</text>
+
+  <!-- 3 -->
+  <circle cx="220" cy="356" r="10" fill="#1e293b"/><text class="num" x="220" y="360" text-anchor="middle">3</text>
+  <text class="m" x="238" y="360">201: invite, claim code, link</text>
+  <text class="s" x="238" y="378">code shown once, only its hash kept, valid 30 days</text>
+  <line class="msg" x1="600" y1="390" x2="184" y2="390" marker-end="url(#arrow)"/>
+
+  <!-- 4 -->
+  <circle cx="200" cy="420" r="10" fill="#1e293b"/><text class="num" x="200" y="424" text-anchor="middle">4</text>
+  <text class="m" x="218" y="424">Shows the person the link, or the code to type</text>
+  <line class="msg" x1="180" y1="438" x2="1016" y2="438" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+
+  <!-- 5 -->
+  <circle cx="640" cy="472" r="10" fill="#0f766e"/><text class="num" x="640" y="476" text-anchor="middle">5</text>
+  <text class="m" x="658" y="476">Claim the invite</text>
+  <text class="s" x="658" y="494">only when the person presses the button</text>
+  <line class="msg" x1="1020" y1="506" x2="604" y2="506" marker-end="url(#arrow)"/>
+
+  <!-- 6 -->
+  <circle cx="640" cy="540" r="10" fill="#0f766e"/><text class="num" x="640" y="544" text-anchor="middle">6</text>
+  <text class="m" x="658" y="544">Ticket, with the person's consent</text>
+  <text class="s" x="658" y="562">the person chooses what to share;</text>
+  <text class="s" x="658" y="578">the ticket keeps the source</text>
+  <line class="msg" x1="1020" y1="590" x2="604" y2="590" marker-end="url(#arrow)"/>
+</svg>

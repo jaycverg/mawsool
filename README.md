@@ -35,8 +35,19 @@ real people**: see [Limitations](docs/limitations.md).
 - **A programme lead** sees where people drop off after a positive screen, how many are seen on time, how crises end,
   and which groups are being left behind, with every group under 10 people hidden.
 
+![A person's journey in three lanes: on the phone, check-in, result, care options, consent and send; the Ticket API issues the ticket; the clinic acknowledges and marks it seen; the phone asks on day 7 whether the person was seen, and six weeks later offers a repeat check that closes the loop. A crisis answer opens the crisis screen at once, on the phone](docs/images/person-journey.svg)
+
+Source: drawn by hand from the code; the architecture, the ticket's states and the other flows are drawn in the
+[technical documentation](docs/technical-documentation.md).
+
+**What this tells us**
+- Scoring and matching happen on the phone, and the clinic sees only the items the person ticked.
+- A missed hand-off does not go quiet: from day 7 the ticket screen asks whether the person was seen, and the ticket is
+  marked overdue when its deadline passes.
+
 No AI is used in scoring, triage or the crisis path. One optional assistant can help the person draft their referral
-note, which they edit and approve; it is off by default.
+note, which they edit and approve; it is off by default, and the demo runs with it off
+([how to turn it on](docs/running-the-demo.md#the-referral-summary-assistant-optional)).
 
 ## Run it
 
