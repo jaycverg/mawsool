@@ -87,7 +87,7 @@ in `phase4-acceptance.spec.ts` and the text-reminder sample's in `phase3-accepta
     only.
 22. **A CI timeout, since fixed.** On 2026-11-14 the `verify` job on GitHub stopped when the first case of the test that
     proves the "no AI outside the summary package" lint rule took 5.2 seconds against its 5-second limit. `bc1c505` loads
-    ESLint once before those cases; CI has passed in full since, most recently on `3d73438` (2026-11-16).
+    ESLint once before those cases; CI has passed in full on every commit to the main branch since.
 23. **Test precision.** Some browser and unit checks are weaker than they look: for example, real two-tab behaviour of some
     settings is not tested, and neither is the cancellation when registering a phone passes its 10-second limit.
 

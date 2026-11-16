@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="596" viewBox="0 0 1280 596" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
   <title>A person's journey through Mawsool</title>
-  <desc>Three lanes: the person's phone, the Ticket API and the clinic. On the phone: check-in, result, care options, then consent and send. The API issues the ticket with a code and a deadline, and the clinic sees it in its queue, acknowledges it and marks it seen. On day 7 the phone asks whether the person was seen. Six weeks after seen, a repeat check closes the loop. If PHQ-9 item 9 is above 0, a crisis screen opens at once, on the phone, with no network needed.</desc>
+  <desc>Three lanes: the person's phone, the Ticket API and the clinic. On the phone: check-in, result, care options, then consent and send. The API issues the ticket with a code and a deadline, and the clinic sees it in its queue, acknowledges it and marks it seen. On day 7 the phone asks whether the person was seen. Six weeks after seen, a repeat check is offered, after which the ticket closes. If PHQ-9 item 9 is above 0, a crisis screen opens at once, on the phone, with no network needed.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
@@ -90,7 +90,7 @@
   <text class="line" x="890" y="416">before seen</text>
 
   <rect class="step" x="1076" y="354" width="172" height="70" rx="8" stroke="#1e293b"/>
-  <text class="title" x="1090" y="380">Loop closed</text>
+  <text class="title" x="1090" y="380">Ticket closed</text>
   <text class="line" x="1090" y="400">re-measured, then</text>
   <text class="line" x="1090" y="416">closed</text>
 

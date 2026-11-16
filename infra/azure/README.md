@@ -17,7 +17,7 @@ PostgreSQL Flexible Server and a container registry, in one resource group on an
 
 ## Live state (2026-11-16)
 
-Both stages have run. The demo is live in stage 3B, `EDGE=cloudflare`, `AI=off`:
+Both stages have run. The demo is live in stage 3B, `EDGE=cloudflare`, `AI=on`:
 
 | Part | State |
 | --- | --- |
@@ -28,7 +28,7 @@ Both stages have run. The demo is live in stage 3B, `EDGE=cloudflare`, `AI=off`:
 | Ingress lock | Cloudflare's IPv4 ranges only: Container Apps refused the IPv6 ranges (`IpRestrictionsAddressEnteredInvalid`). Cloudflare reaches the origin over IPv4. |
 | Zone rule | One Configuration Rule, ref `mawsool_demo_hostnames`, for the four hostnames only: SSL strict, Rocket Loader off, email obfuscation off, `disable_rum` true (Web Analytics injection was on for the zone and put its script on the pages; the rule keeps it off these four hostnames and the zone setting is untouched). |
 | DNS | Eight records: four `asuid.` TXT and four CNAMEs. The zone has no CAA records (read by the orchestrator on 2026-11-16), so Azure's certificate authority is not blocked. |
-| AI | Off (`SUMMARY_LLM_ENABLED=false`): the free credit is the only budget, and the Anthropic prepaid key would be extra payment. Every draft is the template. |
+| AI | On since 2026-11-16 (`SUMMARY_LLM_ENABLED=true`, `SUMMARY_PROVIDER=anthropic`, the owner's prepaid Anthropic key as the Container Apps secret `anthropic-api-key`), capped at `SUMMARY_DAILY_LIMIT=100` drafts a UTC day. It was switched on in place (`az containerapp secret set` and `az containerapp update`), and `azure.env` holds `AI=on` and the key, so a redeploy keeps it on. |
 
 ## The two stages
 
@@ -37,7 +37,7 @@ Both stages have run. The demo is live in stage 3B, `EDGE=cloudflare`, `AI=off`:
   deploy and is also the rollback target.
 - **Stage 3B: Cloudflare, `EDGE=cloudflare` (live).** The four hostnames under `thevergara.dev`, with Container Apps managed
   certificates (free, no certificate file), `CLIENT_IP_HEADER=cf-connecting-ip`, then the ingress locked to Cloudflare's
-  address ranges. See "How stage 3B runs". `AI=on` (the Anthropic key) has never run on the hosted demo.
+  address ranges. See "How stage 3B runs". `AI=on` (the Anthropic key) is live: see "Live state".
 
 ## What the deploy sets up
 
@@ -101,7 +101,7 @@ Change the code, commit, and run `deploy.sh` again: it builds the new commit, up
 Changes to `azure.env` (a secret, `AI`) are applied to the API at the same time. Updating the API starts a new revision, so
 for a minute two API processes run and the in-memory rate limits and AI budget are split; that is accepted.
 
-`AI=on` needs `ANTHROPIC_API_KEY` in `azure.env` (a prepaid key: extra payment) and has not run on the hosted demo; with `AI=off`, as now, the key is not read or required.
+`AI=on`, as now, needs `ANTHROPIC_API_KEY` in `azure.env` (a prepaid key: extra payment); with `AI=off` the key is not read or required.
 
 ## Step 11b: platform check
 
@@ -130,8 +130,11 @@ Cloudflare part, run 2026-11-16 with the project token on `thevergara.dev`:
   `disable_rum` in the zone rule fixed it for the four hostnames.
 - Cloudflare's IPv6 ranges are refused by Container Apps; the IPv4 ranges are accepted.
 
-Not run: the AI check (one draft with `SUMMARY_PROVIDER=anthropic` and a prepaid key, with its latency against the phone's
-10-second wait), because the AI is off on the hosted demo.
+AI check, run 2026-11-16 after the AI was switched on (a Playwright script in Chromium against the four hostnames, 10 of 10
+checks passed): `GET /summary/availability` answered `{"ai":"available"}`, the consent screen showed no "AI off" note, and
+one draft with **Use AI to help write my note** ticked came back from the model (`source: ai`, labelled "Drafted by AI") in
+3.3 seconds, under the phone's 10-second wait, 49 words, with nothing from the unticked note and no listed term. One draft
+is one sample, not a latency figure.
 
 **The trial's end date: not established.** The free trial ends 30 days from sign-up or when the $200 credit is used up,
 whichever is first; after that the subscription is disabled unless it is moved to pay-as-you-go, and moving within 30 days
@@ -142,7 +145,7 @@ keeps the 12-month free services. The sign-up date is the account owner's to rea
 This is what `deploy.sh` does with `EDGE=cloudflare`, and what ran on 2026-11-16. To move a stage 3A deployment, set the
 settings in step 1 and run it.
 
-1. `AI=off` stays unless a prepaid Anthropic key is wanted (extra payment); the AI check in step 11b has not run.
+1. `AI=on` uses a prepaid Anthropic key (extra payment); `AI=off` turns it off. The AI check in step 11b ran once with it on.
 2. Put `ANTHROPIC_API_KEY` (a prepaid key, auto-reload off, a spend limit in the Anthropic Console) in `azure.env` when `AI=on`;
    set `EDGE=cloudflare`. `CF_API_TOKEN` and `CF_ACCOUNT_ID` are read from `azure.env`, else from `<workspace>/.claude/settings.local.json`
    (`env`); the token needs Zone DNS edit and Zone Config Rules edit (Web Analytics read is optional). `CF_ZONE_ID` is
@@ -249,9 +252,9 @@ Both need the owner's go-ahead.
 Run live on 2026-11-16: every step of `deploy.sh` with `EDGE=cloudflare` (apart from the seed, done by hand), `cloudflare.sh part1`
 and `part2`, the `--probe`, the smoke check, and one pass of a Playwright check in Chromium, in English, against the four
 hostnames (16 checks passed). Not run, or not established:
-- the AI (`AI=on`, a prepaid key): never run on the hosted demo;
-- the nightly reset (`DEMO_RESET_CRON`) on the live app, and a second clinic's queue;
-- Arabic and right-to-left, and a phone viewport, on the live hostnames;
+- the AI beyond one draft (step 11b): its latency over many drafts, and the daily cap being reached;
+- the nightly reset (`DEMO_RESET_CRON`) on the live app;
+- a phone viewport on the live hostnames, and Arabic beyond the person app's home page loading right to left (checked once, with clinic B's queue, the programme lead's dashboard and the crisis-line console, on 2026-11-16);
 - rate-limit behaviour under load, and the API's cold start after a restart;
 - renewal of the managed certificates behind the proxy and the lock;
 - the rollback to stage 3A in "Rolling back to 3A": written, never run;

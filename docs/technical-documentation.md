@@ -59,7 +59,7 @@ Source: the repository tree at `ce088c9`.
 
 ## 4. The main flows
 
-![A person's journey in three lanes: on the phone, check-in, result, care options, consent and send; the Ticket API issues the ticket; the clinic acknowledges and marks it seen; the phone asks on day 7 whether the person was seen, and six weeks later offers a repeat check that closes the loop. A crisis answer opens the crisis screen at once, on the phone](images/person-journey.svg)
+![A person's journey in three lanes: on the phone, check-in, result, care options, consent and send; the Ticket API issues the ticket; the clinic acknowledges and marks it seen; the phone asks on day 7 whether the person was seen, and six weeks later offers a repeat check, after which the ticket closes. A crisis answer opens the crisis screen at once, on the phone](images/person-journey.svg)
 
 Source: drawn by hand from sections 4.1 to 4.6 below and the person app's screens under `apps/person/app/[locale]` at
 `a40b68d`; numbers are the order a typical journey takes.
@@ -315,8 +315,8 @@ Source: the command table in `CLAUDE.md` and `package.json` at `ce088c9`.
 The browser gates hold 149 named acceptance tests across their four registries (30 + 65 + 34 + 20, each run in both
 languages) and include pixel snapshots of key screens at a 390×844 phone size. On commit `ce088c9`, all ten local gates
 passed on 2026-11-13, and the four browser gates also passed in the Linux container CI uses. On GitHub that commit's
-`verify` job stopped early when one test timed out; the timeout was fixed in `bc1c505`, and CI has since passed in full,
-most recently on `3d73438` (see [`limitations.md`](limitations.md), item 22).
+`verify` job stopped early when one test timed out; the timeout was fixed in `bc1c505`, and CI has passed in full on every
+commit to the main branch since (see [`limitations.md`](limitations.md), item 22).
 
 Source: registry sizes from `apps/person/e2e/acceptance*.json`; local results from the gate log of 2026-11-13
 21:51–22:45 PHT recorded in the build's final report; GitHub results from Actions runs 43542562936 (2026-11-14 01:46 UTC /
