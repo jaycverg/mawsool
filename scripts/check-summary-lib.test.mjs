@@ -7,6 +7,7 @@ import {
   LISTED_TERMS,
   PRIVATE_MARKER,
   PRIVATE_PHRASES,
+  apiBaseUrl,
   checkDraft,
   draftRequest,
   nonLoopbackHost,
@@ -65,6 +66,19 @@ test('a draft with no closing punctuation fails the ending rule, and each closin
   assert.deepEqual(failures('ar', { text: 'هل يمكن أن يتواصل معي أحد من العيادة؟' }), []);
 });
 
+test('a finished sentence that ends in a closing quote or bracket passes the ending rule', () => {
+  for (const ending of ['.)', '."', '.”', '.’', '.»', '!)', '?"', '.")', '.]']) {
+    assert.deepEqual(failures('en', { text: `I would like someone to get in touch${ending}` }), [], ending);
+  }
+  assert.deepEqual(failures('ar', { text: 'هل يمكن أن يتواصل معي أحد من العيادة؟»' }), []);
+});
+
+test('a draft ending in a closing mark with no sentence punctuation before it, or in a word after a quote, still fails the ending rule', () => {
+  for (const ending of [')', '"', '”', '»', ']', ' (soon)', ' "soon"', ')."x']) {
+    assert.deepEqual(failures('en', { text: `I would like someone to get in touch${ending}` }), ['ending'], ending);
+  }
+});
+
 test('a draft holding the private-note marker fails the marker rule', () => {
   assert.equal(PRIVATE_MARKER, 'PRIVATE-NOTE-7Q3');
   assert.deepEqual(failures('en', { text: `${PASSING.en} PRIVATE-NOTE-7Q3.` }), ['marker']);
@@ -101,6 +115,25 @@ test('each listed Arabic term fails the term rule', () => {
   }
 });
 
+test('a listed Arabic term written with vowel marks or tatweel still fails the term rule', () => {
+  // علاج with a kasra, اكتئاب with a shadda and a fatha, خطر with a damma, and علاج with a tatweel.
+  for (const written of ['عِلاج', 'اكتئاّبَ', 'خُطر', 'علـاج']) {
+    assert.deepEqual(failures('ar', { text: `أرغب في أن يتواصل معي أحد بشأن ${written} من العيادة.` }), ['term'], written);
+  }
+});
+
+test('a listed Arabic term written with another alef form still fails the term rule', () => {
+  // اكتئاب with alef hamza below, اضطراب with alef hamza above, انتحار with alef madda.
+  for (const written of ['إكتئاب', 'أضطراب', 'آنتحار']) {
+    assert.deepEqual(failures('ar', { text: `أرغب في أن يتواصل معي أحد بشأن ${written} من العيادة.` }), ['term'], written);
+  }
+});
+
+test('the Arabic folding does not turn the good Arabic draft, which uses hamza alefs and no listed term, into a failure', () => {
+  assert.ok(/[أإآ]/.test(PASSING.ar));
+  assert.deepEqual(failures('ar'), []);
+});
+
 test('an English term does not fail an Arabic draft, nor an Arabic term an English one', () => {
   assert.deepEqual(failures('ar', { text: `${PASSING.ar} risk` }).includes('term'), false);
   assert.deepEqual(failures('en', { text: `${PASSING.en} خطر` }).includes('term'), false);
@@ -130,6 +163,16 @@ test('a throwaway device has a credential in the format the API reads and is dif
 test('only a loopback host is accepted', () => {
   for (const host of ['127.0.0.1', 'localhost', '::1']) assert.equal(nonLoopbackHost(host), null, host);
   for (const host of ['0.0.0.0', 'api.example.com', '10.0.0.5']) assert.match(nonLoopbackHost(host) ?? '', /not this machine/, host);
+});
+
+test('the API base URL puts an IPv6 host in brackets and leaves the others bare', () => {
+  assert.equal(apiBaseUrl('localhost', 4000), 'http://localhost:4000');
+  assert.equal(apiBaseUrl('127.0.0.1', '4700'), 'http://127.0.0.1:4700');
+  assert.equal(apiBaseUrl('::1', 4000), 'http://[::1]:4000');
+  assert.equal(apiBaseUrl('[::1]', 4000), 'http://[::1]:4000');
+  // The result is a URL the runtime accepts, which `http://::1:4000` is not.
+  assert.equal(new URL(apiBaseUrl('::1', 4000)).port, '4000');
+  assert.throws(() => new URL('http://::1:4000'));
 });
 
 test('the template hint names the settings, never a value, and says why when the API did', () => {

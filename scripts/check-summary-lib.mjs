@@ -30,8 +30,17 @@ export const LISTED_TERMS = Object.freeze({
   ar: ['تشخيص', 'اضطراب', 'اكتئاب', 'خطر', 'انتحار', 'علاج', 'دواء'],
 });
 
-/** Sentence-ending punctuation: full stop, exclamation, question mark, Arabic question mark, ideographic full stop. */
-const SENTENCE_END = /[.!?؟。]$/;
+/**
+ * Sentence-ending punctuation (full stop, exclamation, question mark, Arabic question mark, ideographic full stop),
+ * optionally followed by closing quotes or brackets, so `... soon.)` and `... soon."` count as a finished sentence.
+ */
+const SENTENCE_END = /[.!?؟。]["'”’»)\]]*$/;
+
+/** Arabic vowel marks (U+064B to U+065F, U+0670) and tatweel (U+0640), which a listed term is written without. */
+const ARABIC_MARKS = /[ً-ٰٟـ]/g;
+
+/** Alef with hamza above, hamza below or madda (U+0623, U+0625, U+0622): the same word is often written with any of them. */
+const ALEF_VARIANTS = /[أإآ]/g;
 
 /** Any Arabic letter (digits and punctuation do not count). */
 const ARABIC_LETTER = /[\p{Script=Arabic}&&\p{L}]/v;
@@ -86,6 +95,16 @@ export function throwawayDevice() {
  */
 export function nonLoopbackHost(host) {
   return ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(host) ? null : `API_HOST is "${host}", which is not this machine`;
+}
+
+/**
+ * The API's base URL for a loopback host, with an IPv6 host in brackets (`http://[::1]:4000`) so the URL is valid.
+ * @param {string} host
+ * @param {string | number} port
+ */
+export function apiBaseUrl(host, port) {
+  const bare = host.replace(/^\[|\]$/g, '');
+  return `http://${bare.includes(':') ? `[${bare}]` : bare}:${port}`;
 }
 
 /**
@@ -153,13 +172,22 @@ export function languageProblem(text, locale) {
 }
 
 /**
+ * The form a draft and a listed term are both compared in: lower case, with Arabic vowel marks and tatweel dropped and
+ * every alef form written as a plain alef, so a term cannot slip past by being diacritised or spelled with another alef.
+ * @param {string} text
+ */
+export function foldForMatching(text) {
+  return text.toLowerCase().replace(ARABIC_MARKS, '').replace(ALEF_VARIANTS, 'ا');
+}
+
+/**
  * @param {string} text
  * @param {Locale} locale
  * @returns {string | null}
  */
 export function termProblem(text, locale) {
-  const folded = text.toLowerCase();
-  const found = LISTED_TERMS[locale].filter((term) => folded.includes(term));
+  const folded = foldForMatching(text);
+  const found = LISTED_TERMS[locale].filter((term) => folded.includes(foldForMatching(term)));
   return found.length > 0 ? `holds listed terms: ${found.map((term) => `"${term}"`).join(', ')}` : null;
 }
 
