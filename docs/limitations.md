@@ -76,19 +76,18 @@ in `phase4-acceptance.spec.ts` and the text-reminder sample's in `phase3-accepta
 
 ## Technical limits
 
-18. **Not deployed.** The prototype runs on one machine with Docker (Postgres in a container, the API and three web apps
-    on local ports). There is no hosted environment, scaling or backup set-up.
+18. **Hosted only for the demo.** A copy runs on an Azure free trial behind Cloudflare, on sample data: one API replica,
+    a burstable database with the default automatic backups (restore not tested), and no scaling set up. It is a demo, not
+    a service: everything typed into it is visible to everyone using it, and it is reset every night.
 19. **Tested in Chromium only.** The browser tests run in Chromium; the anonymous mode's clean-up relies on browser
     features (Web Locks, listing databases) that are unproven in Safari and Firefox.
 20. **Foundry not tried live.** The optional note assistant can reach Claude through Anthropic's API or Microsoft
     Foundry. The Foundry route is tested against a stand-in, but has not been tried against a real Foundry deployment.
 21. **Demo clock overlap.** In demo mode, the every-minute deadline check can overlap a demo reset. This affects demos
     only.
-22. **One CI check is red on GitHub.** In the latest run, the four browser gates passed but the `verify` job failed: the
-    first case of the test that proves the "no AI outside the summary package" lint rule took 5.2 seconds against its
-    5-second limit, while the other cases in that test took under a second. Because of that stop, the API, person-app, UI
-    and FHIR unit tests did not finish, and the builds and the start-up smoke test did not run, in that job. All of them passed locally on the
-    same commit.
+22. **A CI timeout, since fixed.** On 2026-11-14 the `verify` job on GitHub stopped when the first case of the test that
+    proves the "no AI outside the summary package" lint rule took 5.2 seconds against its 5-second limit. `bc1c505` loads
+    ESLint once before those cases; CI has passed in full since, most recently on `3d73438` (2026-11-16).
 23. **Test precision.** Some browser and unit checks are weaker than they look: for example, real two-tab behaviour of some
     settings is not tested, and neither is the cancellation when registering a phone passes its 10-second limit.
 

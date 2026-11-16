@@ -12,26 +12,60 @@ The demo clock's offset is kept in the database as you move it, so restarting th
 
 `pnpm gate:c` runs the whole script in Arabic and English with `DEMO_MODE` on, on ports 450 above the dev ports, and does not use your `.env`'s demo setting. The demo's spec is in [`demo-e2e-spec.md`](demo-e2e-spec.md).
 
-## The referral-summary assistant (optional)
+## The hosted demo
 
-The scripted demo runs with the assistant off, as the product does by default. At step 6, **Help me draft** fills in a
-template ("A fill-in template. Complete it in your own words.") and Noura writes the summary herself before approving
-it. `pnpm gate:c` runs it this way, and the demo video has her write it herself.
+A copy runs on sample data with `DEMO_MODE` on, on an Azure free trial behind Cloudflare
+([runbook](../infra/azure/README.md)):
 
-To show the AI draft instead:
+- **Person app:** <https://mawsool.thevergara.dev>. No sign-in.
+- **Clinician app:** <https://mawsool-clinic.thevergara.dev>. **Continue as demo clinician, Clinic A (Sample PHC ·
+  Khalifa City)** or **… Clinic B (Sample Clinic · Al Ain)**.
+- **Ops app:** <https://mawsool-ops.thevergara.dev>. **Continue as demo programme lead** (the dashboard), **Continue as
+  demo admin** (the demo clock, reset and Noura's invite) or **Continue as demo crisis-line operator** (the mock console).
+- **API:** <https://mawsool-api.thevergara.dev>.
+
+Where it differs from a local run:
+
+- **Sign-in is one button.** The guest buttons appear only on a server with `DEMO_MODE` on; the logged sign-in links
+  still work but land in the server's log, which visitors cannot read.
+- **Everyone shares it.** The consent screen and the crisis hand-off panel say so: "Public demo: everything you enter
+  here can be seen by anyone using this demo. Do not enter real details."
+- **The crisis screen does not dial.** It shows 800-SAKINA, 999 and 998 as text, and **Call now** says "Demo: this
+  button does not place a call. In a real emergency, dial the number yourself."
+- **It resets itself every night** at 23:00 UTC (03:00 in the UAE), and **Reset the demo** can be pressed once every
+  5 minutes.
+- **The AI draft is on** (Anthropic's API), for at most 100 drafts a day (UTC) across all visitors. When it is off or
+  used up, the consent screen says so and **Help me draft** gives the template.
+
+## The referral-summary assistant at step 6
+
+Step 6 shows the one place the product uses AI. After ticking what Noura shares, tick **Use AI to help write my note**,
+then press **Help me draft**. The draft is marked "Drafted by AI. Check every word before you approve it."; she adds a
+line and approves it. The demo video and the hosted demo show it this way. The model sees only the items ticked on the
+consent screen, and the draft is capped at 120 words.
+
+To show it from your own machine:
 
 1. In `.env`, set `SUMMARY_LLM_ENABLED=true` and choose a provider: `SUMMARY_PROVIDER=anthropic` with
    `ANTHROPIC_API_KEY`, or `SUMMARY_PROVIDER=foundry` with `SUMMARY_FOUNDRY_API_KEY` and `SUMMARY_FOUNDRY_RESOURCE`
    (`.env.example` explains each). With the flag on and the provider or its key missing, the API refuses to start.
 2. Restart `pnpm dev`.
-3. At step 6, after ticking what Noura shares, tick **Use AI to help write my note**, then press **Help me draft**. The
-   draft is marked "Drafted by AI. Check every word before you approve it."; edit it and approve it as before.
+3. Run `pnpm check:summary` before the demo (below).
 
-The model sees only the items ticked on the consent screen, and the draft is capped at 120 words. If the provider fails
-or returns nothing, the template appears instead, so the step never blocks. No automated check calls a real provider:
-the browser tests stand in for one with a stubbed reply (`answerAiDrafts` in `apps/person/e2e/phase3-acceptance.spec.ts`),
-and `packages/summary` is tested with a stub provider. Before the assistant is used outside a demo, see
-[Limitations](limitations.md), item 7.
+**If no draft comes during a live demo:**
+
+- **If the draft takes longer than 10 seconds,** the phone says "The draft could not be made. You can write the summary
+  yourself." and shows no summary.
+- **If the provider fails sooner,** the template appears.
+- **Either way,** untick **Use AI to help write my note**, press **Help me draft** for the template and carry on: the
+  model is unavailable, so she writes it herself. Keep the video's step 6 ready to show the AI draft.
+
+`pnpm gate:c` runs with the assistant off and checks the template path: CI has no key, and the model writes different
+text each run.
+
+No automated check calls a real provider: the browser tests stand in for one with a stubbed reply (`answerAiDrafts` in
+`apps/person/e2e/phase3-acceptance.spec.ts`), and `packages/summary` is tested with a stub provider. Before the assistant
+is used outside a demo, see [Limitations](limitations.md), item 7.
 
 ## Labels
 
