@@ -1,9 +1,9 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
-import type { StaffRole } from '@mawsool/types';
-import { requestSignInLink, storeStaffSession, verifySignIn } from '../staff-signin';
+import { useEffect, useState, type FormEvent } from 'react';
+import { ClockStateSchema, type StaffRole } from '@mawsool/types';
+import { requestSignInLink, startGuestSession, storeStaffSession, verifySignIn } from '../staff-signin';
 
 export interface StaffSignInLabels {
   heading: string;
@@ -21,6 +21,18 @@ export interface StaffSignInLabels {
   requestAction: string;
   requestSent: string;
   requestFailed: string;
+  /** The heading of the demo block, shown only with demo access (`guestAccounts` and a demo API). */
+  demoHeading?: string;
+  /** "Demo only: synthetic data, shared with everyone using this demo". */
+  demoNote?: string;
+  /** The guest sign-in did not work (the API was not reachable, or refused). */
+  demoFailed?: string;
+}
+
+/** One demo account a guest may sign in as: its seeded address and the button's wording. */
+export interface GuestAccount {
+  email: string;
+  label: string;
 }
 
 export interface StaffSignInProps {
@@ -33,8 +45,16 @@ export interface StaffSignInProps {
   homeHref: string;
   /** A different "Continue" target for a role whose screen is not the app's home (the crisis-line console). */
   homeHrefByRole?: Partial<Record<StaffRole, string>>;
+  /**
+   * The demo accounts a guest may sign in as, one button each. They show only when `GET /clock` says the API is a demo
+   * (`demoMode: true`); with none given the page never asks. A failed read shows nothing and leaves the link form as it is.
+   */
+  guestAccounts?: readonly GuestAccount[];
+  /** Where to go after a guest signs in. Defaults to `window.location.assign`; a test passes its own. */
+  navigate?: (href: string) => void;
 }
 
+type GuestPhase = 'idle' | 'signing_in' | 'failed' | 'wrong_app' | 'not_saved';
 type Phase = 'idle' | 'signing_in' | 'signed_in' | 'not_saved' | 'failed' | 'wrong_app';
 type RequestPhase = 'idle' | 'sending' | 'sent' | 'failed';
 
@@ -47,8 +67,38 @@ type RequestPhase = 'idle' | 'sending' | 'sent' | 'failed';
  * With no token, or after a link that failed, belonged to the other app or could not be kept, it offers a form to
  * request a new link. The form's answer is the same whether or not the address is registered.
  */
-export function StaffSignIn({ token, apiUrl, allowedRoles, labels, homeHref, homeHrefByRole }: StaffSignInProps) {
+export function StaffSignIn({ token, apiUrl, allowedRoles, labels, homeHref, homeHrefByRole, guestAccounts = [], navigate }: StaffSignInProps) {
   const [phase, setPhase] = useState<Phase>('idle');
+  const [demoMode, setDemoMode] = useState(false);
+  const [guestPhase, setGuestPhase] = useState<GuestPhase>('idle');
+  const hasGuestAccounts = guestAccounts.length > 0;
+
+  // Asks the API whether it is a demo, only when there is a guest button to show. Never touches /auth/verify: the one-time link is not spent.
+  useEffect(() => {
+    if (!hasGuestAccounts) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await globalThis.fetch(`${apiUrl}/clock`);
+        const parsed = ClockStateSchema.safeParse(await response.json());
+        if (!cancelled && response.ok && parsed.success && parsed.data.demoMode) setDemoMode(true);
+      } catch {
+        // No answer: no demo block, and the link form is all there is.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiUrl, hasGuestAccounts]);
+
+  async function continueAsGuest(email: string) {
+    setGuestPhase('signing_in');
+    const result = await startGuestSession({ fetch: globalThis.fetch.bind(globalThis), apiUrl, email, allowedRoles });
+    if (result.status !== 'signed_in') return setGuestPhase(result.status);
+    if (!storeStaffSession(safeSessionStorage(), result.session)) return setGuestPhase('not_saved');
+    const href = homeHrefByRole?.[result.session.role] || homeHref;
+    (navigate ?? ((to: string) => window.location.assign(to)))(href);
+  }
   const [role, setRole] = useState<StaffRole | null>(null);
   const [requestPhase, setRequestPhase] = useState<RequestPhase>('idle');
   const [email, setEmail] = useState('');
@@ -82,6 +132,26 @@ export function StaffSignIn({ token, apiUrl, allowedRoles, labels, homeHref, hom
   return (
     <main className="mx-auto flex max-w-md flex-col gap-4 p-6">
       <h1 className="t-h1">{labels.heading}</h1>
+      {demoMode && hasGuestAccounts ? (
+        <section aria-labelledby="demo-access" data-demo-access className="flex flex-col gap-3">
+          {labels.demoHeading ? (
+            <h2 id="demo-access" className="t-label">
+              {labels.demoHeading}
+            </h2>
+          ) : null}
+          {guestAccounts.map((account) => (
+            <button key={account.email} type="button" disabled={guestPhase === 'signing_in'} onClick={() => void continueAsGuest(account.email)} className="btn-primary" data-guest={account.email}>
+              {account.label}
+            </button>
+          ))}
+          {labels.demoNote ? <p className="t-body">{labels.demoNote}</p> : null}
+          {guestPhase === 'failed' || guestPhase === 'wrong_app' || guestPhase === 'not_saved' ? (
+            <p role="status" aria-live="polite" data-phase={`guest_${guestPhase}`} className="t-body">
+              {{ failed: labels.demoFailed ?? labels.failed, wrong_app: labels.wrongApp, not_saved: labels.notSaved }[guestPhase]}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
       {canSignIn ? (
         <button type="button" onClick={signIn} className="btn-primary">
           {labels.action}

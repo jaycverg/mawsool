@@ -26,6 +26,9 @@ const labels: StaffSignInLabels = {
   requestAction: 'Request a sign-in link',
   requestSent: 'If that address is registered, a sign-in link has been issued.',
   requestFailed: 'Request not sent',
+  demoHeading: 'Demo access',
+  demoNote: 'Demo only: synthetic data, shared with everyone using this demo.',
+  demoFailed: 'Demo sign-in failed',
 };
 
 const reply = (status: number, body: unknown = {}) => vi.fn(async () => new Response(JSON.stringify(body), { status }));
@@ -44,7 +47,7 @@ describe('pressing Sign in', () => {
     const fetchFn = reply(200, SESSION);
     vi.stubGlobal('fetch', fetchFn);
     show('tok');
-    expect(fetchFn).not.toHaveBeenCalled();
+    expect((fetchFn.mock.calls as unknown as [string][]).filter(([url]) => String(url).includes('/auth/verify'))).toHaveLength(0);
     expect(window.sessionStorage.getItem(STAFF_SESSION_KEY)).toBeNull();
   });
 
@@ -219,7 +222,7 @@ describe('the page reads the token from the link it was opened with', () => {
     const fetchFn = reply(200, SESSION);
     vi.stubGlobal('fetch', fetchFn);
     openAt(link);
-    expect(fetchFn).not.toHaveBeenCalled();
+    expect((fetchFn.mock.calls as unknown as [string][]).filter(([url]) => String(url).includes('/auth/verify'))).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     await screen.findByText(labels.signedIn);
     expect(JSON.parse(callOf(fetchFn)[1].body as string)).toEqual({ token: TOKEN });
@@ -263,5 +266,134 @@ describe('where Continue goes', () => {
     showWith();
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     expect((await screen.findByRole('link', { name: 'Continue' })).getAttribute('href')).toBe('/en/');
+  });
+});
+
+describe('demo access', () => {
+  const ACCOUNTS = [
+    { email: 'clinician.a@demo.mawsool.test', label: 'Continue as demo clinician, Clinic A' },
+    { email: 'clinician.b@demo.mawsool.test', label: 'Continue as demo clinician, Clinic B' },
+  ];
+
+  /** An API that answers `GET /clock` with `clock` and `POST /demo/guest-session` with `guest`. */
+  const api = (clock: Response | Error, guest: Response | Error = new Response(JSON.stringify(SESSION), { status: 200 })) =>
+    vi.fn(async (url: string) => {
+      const answer = String(url).endsWith('/clock') ? clock : guest;
+      if (answer instanceof Error) throw answer;
+      return answer.clone();
+    });
+  const demoOn = () => new Response(JSON.stringify({ demoMode: true, offsetMs: 0 }), { status: 200 });
+  const showGuests = (navigate = vi.fn(), extra: Partial<React.ComponentProps<typeof StaffSignIn>> = {}) => ({
+    navigate,
+    ...render(<StaffSignIn token={null} apiUrl="http://api.test" allowedRoles={['clinician']} labels={labels} homeHref="/en/" guestAccounts={ACCOUNTS} navigate={navigate} {...extra} />),
+  });
+  const verifyCalls = (fetchFn: ReturnType<typeof api>) => fetchFn.mock.calls.filter(([url]) => String(url).includes('/auth/verify'));
+
+  it('reads GET /clock on load, never calls /auth/verify, and shows no demo block while the API says it is not a demo', async () => {
+    const fetchFn = api(new Response(JSON.stringify({ demoMode: false, offsetMs: 0 }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchFn);
+    showGuests();
+    await waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
+    expect(String(fetchFn.mock.calls[0]![0])).toBe('http://api.test/clock');
+    expect(verifyCalls(fetchFn)).toHaveLength(0);
+    expect(screen.queryByText(labels.demoHeading!)).toBeNull();
+    expect(screen.queryByRole('button', { name: ACCOUNTS[0]!.label })).toBeNull();
+    expect(screen.getByLabelText(labels.emailLabel)).toBeTruthy();
+  });
+
+  it('shows no demo block, and leaves the link form as it is, when the /clock read fails or answers nonsense', async () => {
+    for (const clock of [new TypeError('Failed to fetch'), new Response('{}', { status: 500 }), new Response(JSON.stringify({ demoMode: 'yes' }), { status: 200 })]) {
+      const fetchFn = api(clock);
+      vi.stubGlobal('fetch', fetchFn);
+      const view = showGuests();
+      await waitFor(() => expect(fetchFn).toHaveBeenCalled());
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(screen.queryByText(labels.demoHeading!)).toBeNull();
+      expect(screen.queryByRole('button', { name: ACCOUNTS[0]!.label })).toBeNull();
+      expect(screen.getByLabelText(labels.emailLabel)).toBeTruthy();
+      view.unmount();
+    }
+  });
+
+  it('never asks the API anything when the page has no guest accounts', async () => {
+    const fetchFn = api(demoOn());
+    vi.stubGlobal('fetch', fetchFn);
+    showGuests(vi.fn(), { guestAccounts: [] });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(screen.queryByText(labels.demoHeading!)).toBeNull();
+  });
+
+  it('shows one button per account and the shared-data note when the API says it is a demo', async () => {
+    vi.stubGlobal('fetch', api(demoOn()));
+    showGuests();
+    for (const account of ACCOUNTS) expect(await screen.findByRole('button', { name: account.label })).toBeTruthy();
+    expect(screen.getByText(labels.demoHeading!)).toBeTruthy();
+    expect(screen.getByText(labels.demoNote!)).toBeTruthy();
+    expect(screen.getByLabelText(labels.emailLabel)).toBeTruthy();
+  });
+
+  it('on a click posts that account, stores the session and goes to the app home', async () => {
+    const fetchFn = api(demoOn());
+    vi.stubGlobal('fetch', fetchFn);
+    const { navigate } = showGuests();
+    fireEvent.click(await screen.findByRole('button', { name: ACCOUNTS[1]!.label }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/en/'));
+    const post = fetchFn.mock.calls.find(([url]) => String(url).endsWith('/demo/guest-session'))! as unknown as [string, RequestInit];
+    expect(JSON.parse(post[1].body as string)).toEqual({ email: 'clinician.b@demo.mawsool.test' });
+    expect(JSON.parse(window.sessionStorage.getItem(STAFF_SESSION_KEY)!)).toEqual(SESSION);
+    expect(verifyCalls(fetchFn)).toHaveLength(0);
+  });
+
+  it('goes to the role’s own home when it has one', async () => {
+    const operator = { ...SESSION, role: 'crisis_line' as const, facilityId: null };
+    vi.stubGlobal('fetch', api(demoOn(), new Response(JSON.stringify(operator), { status: 200 })));
+    const navigate = vi.fn();
+    render(
+      <StaffSignIn
+        token={null}
+        apiUrl="http://api.test"
+        allowedRoles={['ops', 'crisis_line']}
+        labels={labels}
+        homeHref="/en/"
+        homeHrefByRole={{ crisis_line: '/en/crisis-line/' }}
+        guestAccounts={[{ email: 'crisisline@demo.mawsool.test', label: 'Continue as demo crisis-line operator' }]}
+        navigate={navigate}
+      />,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue as demo crisis-line operator' }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/en/crisis-line/'));
+  });
+
+  it('shows the existing wrong-app message and stores nothing when the session belongs to the other app', async () => {
+    vi.stubGlobal('fetch', api(demoOn(), new Response(JSON.stringify({ ...SESSION, role: 'ops', facilityId: null }), { status: 200 })));
+    const { navigate } = showGuests();
+    fireEvent.click(await screen.findByRole('button', { name: ACCOUNTS[0]!.label }));
+    await screen.findByText(labels.wrongApp);
+    expect(navigate).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem(STAFF_SESSION_KEY)).toBeNull();
+  });
+
+  it('says the demo sign-in failed, stores nothing and stays put when the API refuses it', async () => {
+    vi.stubGlobal('fetch', api(demoOn(), new Response(JSON.stringify({ error: 'rate_limited' }), { status: 429 })));
+    const { navigate } = showGuests();
+    fireEvent.click(await screen.findByRole('button', { name: ACCOUNTS[0]!.label }));
+    await screen.findByText(labels.demoFailed!);
+    expect(navigate).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem(STAFF_SESSION_KEY)).toBeNull();
+    expect((screen.getByRole('button', { name: ACCOUNTS[0]!.label }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('says not saved and does not navigate when the browser will not keep the session', async () => {
+    vi.stubGlobal('fetch', api(demoOn()));
+    const { navigate } = showGuests();
+    const button = await screen.findByRole('button', { name: ACCOUNTS[0]!.label });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError');
+    });
+    fireEvent.click(button);
+    await screen.findByText(labels.notSaved);
+    expect(navigate).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
   });
 });

@@ -1,6 +1,7 @@
 // What PGlite cannot show, checked against the real Compose Postgres (`pnpm gate:postgres`):
 //   1. several connections sweeping at once leave exactly one `overdue` event per ticket, and every due ticket gets one;
-//   2. pg-boss starts, the sweep's schedule exists, and one fire of the queue runs the sweep;
+//   2. pg-boss starts, the sweep's schedule exists, and one fire of the queue runs the sweep; with a demo reset and its cron given, the
+//      `demo-reset` schedule exists too, and one fire of that queue runs the reset;
 //   2b. a sweep that fails leaves only a fixed message and the SQLSTATE in the job queue's tables, with no ticket id, query, constraint name, error name or stack;
 //   3. every migration, through the invite tables, is applied and leaves the tables, checks and indexes the code relies on;
 //   4. two connections spending the same signed-request nonce at once leave exactly one invite and one nonce;
@@ -26,7 +27,7 @@ import { ManualClock } from '../clock';
 import { loadConfig } from '../config';
 import { connect, schema, type Db } from '../db/client';
 import { MIGRATIONS_FOLDER } from '../db/migrate';
-import { SWEEP_FAILED_MESSAGE, SWEEP_QUEUE, startJobs } from '../jobs';
+import { DEMO_RESET_QUEUE, SWEEP_FAILED_MESSAGE, SWEEP_QUEUE, startJobs } from '../jobs';
 import { moveAdverseEvent, recordAdverseEvent } from '../adverse-events/service';
 import { actOnClinicLink, type ClinicLinkDeps } from '../clinic-links/service';
 import { acceptScreen, formatInviteCode } from '../inbound/service';
@@ -134,10 +135,20 @@ try {
   await runSeed(db, cipher);
   const dueAgain = (await open()).length;
   const eventsBefore = (await overdue()).length;
-  const jobs = await startJobs({ databaseUrl: gateUrl.toString(), db, clock, log: { error: console.error, info: () => undefined } as never });
+  let nightlyResets = 0;
+  const nightlyReset = async () => {
+    nightlyResets += 1;
+    return { kind: 'cooldown' as const, retryAfterSeconds: 1 };
+  };
+  const jobs = await startJobs({ databaseUrl: gateUrl.toString(), db, clock, log: { error: console.error, info: () => undefined } as never, demoReset: nightlyReset, demoResetCron: '0 23 * * *' });
   try {
     const schedules = await jobs.boss.getSchedules();
     check(schedules.some((schedule) => schedule.name === SWEEP_QUEUE && schedule.cron === '* * * * *'), 'the sweep is scheduled every minute');
+    check(schedules.some((schedule) => schedule.name === DEMO_RESET_QUEUE && schedule.cron === '0 23 * * *'), 'the demo reset is scheduled at the cron given');
+    await jobs.boss.send(DEMO_RESET_QUEUE, {});
+    const resetDeadline = performance.now() + 40_000;
+    while (performance.now() < resetDeadline && nightlyResets === 0) await new Promise((resolve) => setTimeout(resolve, 500));
+    check(nightlyResets >= 1, 'one fire of the demo-reset queue ran the reset');
     await jobs.boss.send(SWEEP_QUEUE, {});
     const deadline = performance.now() + 40_000;
     while (performance.now() < deadline && (await overdue()).length - eventsBefore < dueAgain) await new Promise((resolve) => setTimeout(resolve, 500));

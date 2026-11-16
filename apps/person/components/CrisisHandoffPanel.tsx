@@ -9,6 +9,7 @@ import { deviceNow } from '../lib/clock';
 import { buildHandoffPreview, HandoffMemory, handoffFor, offerState, reloadHandoffs, sendHandoff, stopHandoff, type HandoffRecord, type SendOutcome } from '../lib/crisis-handoff';
 import { flushOutbox } from '../lib/crisis-outbox';
 import { parsePhone } from '../lib/reminders';
+import { isPublicDemo } from '../lib/public-demo';
 import { loadScreenings } from '../lib/screening-store';
 import type { ServerDeps } from '../lib/server';
 import type { Device } from '../lib/use-device';
@@ -188,6 +189,11 @@ export function CrisisHandoffPanel({ device, lang, mode, open }: { device: Devic
                 {t('handoffCallbackLabel')}
                 <input type="tel" inputMode="tel" dir="ltr" autoComplete="off" value={callback} onChange={(event) => setCallback(event.target.value)} className="h-11 rounded-input border border-[#9AAAA7] bg-surface px-2.5 text-[16px]" data-handoff-number />
                 <span className="text-[13px] text-[#4D3330]">{t.rich('handoffCallbackHint', { num: (chunks) => <bdi dir="ltr" className="whitespace-nowrap">{chunks}</bdi> })}</span>
+                {isPublicDemo() && (
+                  <span role="note" className="rounded-chip bg-mock px-2.5 py-1.5 text-[13px] font-semibold text-mock-ink" data-public-demo-note>
+                    {t('publicDemoNote')}
+                  </span>
+                )}
               </label>
               <label className="flex min-h-tap cursor-pointer items-center gap-3 text-[15px] font-semibold">
                 <input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} className="size-[22px] accent-accent" data-handoff-consent />

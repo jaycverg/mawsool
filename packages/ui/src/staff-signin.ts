@@ -10,6 +10,34 @@ export type SignInResult =
   | { status: 'wrong_app'; role: StaffRole };
 
 /**
+ * Signs in as one of the seeded demo accounts, for a demo that has the guest route on (`POST /demo/guest-session`, which the API
+ * registers only with `DEMO_MODE` set). Same result shape and role check as `verifySignIn`: a session for a role this app does
+ * not serve is `wrong_app` and nothing is kept. Any other answer, including the route's 404 and a network error, is `failed`.
+ */
+export async function startGuestSession(options: {
+  fetch: typeof fetch;
+  apiUrl: string;
+  email: string;
+  /** Roles this app serves. A session for any other role is refused. */
+  allowedRoles: readonly StaffRole[];
+}): Promise<SignInResult> {
+  try {
+    const response = await options.fetch(`${options.apiUrl}/demo/guest-session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: options.email }),
+    });
+    if (response.status !== 200) return { status: 'failed' };
+    const parsed = SessionSchema.safeParse(await response.json());
+    if (!parsed.success) return { status: 'failed' };
+    if (!options.allowedRoles.includes(parsed.data.role)) return { status: 'wrong_app', role: parsed.data.role };
+    return { status: 'signed_in', session: parsed.data };
+  } catch {
+    return { status: 'failed' };
+  }
+}
+
+/**
  * Exchanges a sign-in token for a staff session. The token is one-time, so this must run only when the person
  * asks for it, never on page load: a prefetch or a double render would use the link up.
  */
@@ -73,12 +101,12 @@ export function clearStaffSession(storage: Pick<Storage, 'removeItem'> | undefin
 }
 
 /** How a staff request ended. `unauthorized` means the session is no longer good and the person must sign in again. */
-export type StaffCall<T> = { status: 'ok'; httpStatus: number; body: T } | { status: 'unauthorized' } | { status: 'refused'; httpStatus: number; error: string | null } | { status: 'unreachable' };
+export type StaffCall<T> = { status: 'ok'; httpStatus: number; body: T } | { status: 'unauthorized' } | { status: 'refused'; httpStatus: number; error: string | null; body: unknown } | { status: 'unreachable' };
 
 /**
  * One call to the Ticket API with a staff session. A 401 is `unauthorized` (the caller drops the session and goes to
  * sign-in), any other failure answer is `refused` with the API's error code (404 not found, 410 withdrawn, 409 conflict,
- * ...), and a network failure is `unreachable`.
+ * ...) and its parsed body (so a 429's `retryAfterSeconds` can be read), and a network failure is `unreachable`.
  */
 export async function staffCall<T = unknown>(options: {
   fetch: typeof fetch;
@@ -96,7 +124,7 @@ export async function staffCall<T = unknown>(options: {
     });
     if (response.status === 401) return { status: 'unauthorized' };
     const body: unknown = await response.json().catch(() => null);
-    if (!response.ok) return { status: 'refused', httpStatus: response.status, error: typeof (body as { error?: unknown } | null)?.error === 'string' ? (body as { error: string }).error : null };
+    if (!response.ok) return { status: 'refused', httpStatus: response.status, error: typeof (body as { error?: unknown } | null)?.error === 'string' ? (body as { error: string }).error : null, body };
     return { status: 'ok', httpStatus: response.status, body: body as T };
   } catch {
     return { status: 'unreachable' };

@@ -1,0 +1,22 @@
+# Serves the person app's static export. Every page is a folder with an index.html, so a path is tried as a file, then as a folder.
+{
+	admin off
+	auto_https off
+}
+
+:80 {
+	root * /srv
+	encode zstd gzip
+
+	# The service worker must be fetched fresh on every load, or an update to it could not reach a phone.
+	@worker path /sw.js
+	header @worker Cache-Control "no-cache"
+
+	try_files {path} {path}/index.html
+	file_server
+
+	handle_errors {
+		rewrite * /404.html
+		file_server
+	}
+}

@@ -399,7 +399,7 @@ describe('nothing else writes the log with a number or a reminder\'s text', () =
         'cli/serve-e2e.ts: if (/"level":(50|60)/.test(line)) process.stdout.write(line);',
         'cli/serve-e2e.ts: console.log(`e2e api ready on http://127.0.0.1:${apiPort}, inspect on http://127.0.0.1:${inspectPort}`);',
         "cli/verify-postgres.ts: const say = (message: string) => console.log(`[gate:postgres] ${message}`);",
-        "cli/verify-postgres.ts: const jobs = await startJobs({ databaseUrl: gateUrl.toString(), db, clock, log: { error: console.error, info: () => undefined } as never });",
+        "cli/verify-postgres.ts: const jobs = await startJobs({ databaseUrl: gateUrl.toString(), db, clock, log: { error: console.error, info: () => undefined } as never, demoReset: nightlyReset, demoResetCron: '0 23 * * *' });",
         "jobs.ts: boss.on('error', (error) => options.log.error({ err: error }, 'job queue error'));",
         "jobs.ts: options.log.error({ err: error }, 'ticket sweep failed');",
         "jobs.ts: if (result.marked > 0) options.log.info(result, 'tickets marked overdue');",

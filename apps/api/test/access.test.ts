@@ -64,6 +64,7 @@ const REVIEWED: Record<string, { access: RouteAccess; kind: Kind }> = {
   'PUT /me/reminder-phone': { access: 'person', kind: 'person-own' },
   'DELETE /me/reminder-phone': { access: 'person', kind: 'person-own' },
   'POST /me/reminder-phone/sample': { access: 'person', kind: 'person-own' },
+  'GET /summary/availability': { access: 'public', kind: 'open' },
   'POST /summary/draft': { access: 'person', kind: 'person-own' },
   'POST /me/invites/claim': { access: 'person', kind: 'person-own' },
   'GET /tickets': { access: 'clinician', kind: 'clinician-scoped' },
@@ -340,17 +341,20 @@ describe('the demo routes (clock and reset)', () => {
     await testDb.close();
   });
 
-  const demoRoutes = ['POST /demo/clock/advance', 'POST /demo/reset'];
+  const demoRoutes = ['POST /demo/clock/advance', 'POST /demo/reset', 'POST /demo/noura-invite'];
+  /** Demo-only routes open to anyone: each exists only with `DEMO_MODE` set, and opens no more than the demo's seeded accounts. */
+  const publicDemoRoutes = ['POST /demo/guest-session'];
 
   it('are not registered at all with DEMO_MODE unset: the paths are 404 for every principal, the admin included', async () => {
     const ctx = await createTestApp(testDb.db);
     try {
       const live = ctx.app.routeRegistry.map((route) => `${route.method} ${route.url}`);
-      for (const route of demoRoutes) expect(live).not.toContain(route);
+      for (const route of [...demoRoutes, ...publicDemoRoutes]) expect(live).not.toContain(route);
       const admin = await signIn(ctx, 'admin@demo.mawsool.test');
-      for (const [method, url] of [['POST', '/demo/clock/advance'], ['POST', '/demo/reset']] as const) {
+      for (const [method, url] of [['POST', '/demo/clock/advance'], ['POST', '/demo/reset'], ['POST', '/demo/noura-invite'], ['POST', '/demo/guest-session']] as const) {
         for (const headers of [{}, { authorization: `Bearer ${admin}` }]) {
-          const res = await ctx.app.inject({ method, url, headers, payload: url.endsWith('advance') ? { by: '7d' } : undefined });
+          const payload = url.endsWith('advance') ? { by: '7d' } : url.endsWith('guest-session') ? { email: 'admin@demo.mawsool.test' } : undefined;
+          const res = await ctx.app.inject({ method, url, headers, payload });
           expect(res.statusCode, `${url} ${JSON.stringify(Object.keys(headers))}`).toBe(404);
         }
       }
@@ -380,12 +384,36 @@ describe('the demo routes (clock and reset)', () => {
         expect([401, 403], `advance as ${name}`).toContain(advance.statusCode);
         const reset = await ctx.app.inject({ method: 'POST', url: '/demo/reset', headers });
         expect([401, 403], `reset as ${name}`).toContain(reset.statusCode);
+        const invite = await ctx.app.inject({ method: 'POST', url: '/demo/noura-invite', headers });
+        expect([401, 403], `Noura's invite as ${name}`).toContain(invite.statusCode);
       }
       const clock = await ctx.app.inject({ method: 'GET', url: '/clock' });
       expect(clock.json()).toEqual({ demoMode: true, offsetMs: 0 });
       const advanced = await ctx.app.inject({ method: 'POST', url: '/demo/clock/advance', headers: { authorization: `Bearer ${tokens.admin}` }, payload: { by: '7d' } });
       expect(advanced.statusCode).toBe(200);
       expect(advanced.json().offsetMs).toBe(7 * 86_400_000);
+      const invite = await ctx.app.inject({ method: 'POST', url: '/demo/noura-invite', headers: { authorization: `Bearer ${tokens.admin}` } });
+      expect(invite.statusCode).toBe(200);
+    } finally {
+      await ctx.app.close();
+    }
+  });
+
+  it('opens the guest sign-in to anyone with the demo on, and a guest admin reaches the admin routes while a guest ops session gets 403 there', async () => {
+    const ctx = await createTestApp(testDb.db, { demoMode: true });
+    try {
+      const live = ctx.app.routeRegistry.map((route) => `${route.method} ${route.url}`);
+      for (const route of publicDemoRoutes) {
+        expect(live).toContain(route);
+        expect(ctx.app.routeRegistry.find((entry) => `${entry.method} ${entry.url}` === route)?.access, route).toBe('public');
+      }
+      const guest = async (email: string) => (await ctx.app.inject({ method: 'POST', url: '/demo/guest-session', payload: { email } })).json().sessionToken as string;
+      const admin = await guest('admin@demo.mawsool.test');
+      const ops = await guest('ops@demo.mawsool.test');
+      for (const route of ['/demo/reset', '/demo/noura-invite']) {
+        expect((await ctx.app.inject({ method: 'POST', url: route, headers: { authorization: `Bearer ${admin}` } })).statusCode, `${route} as guest admin`).toBe(200);
+        expect((await ctx.app.inject({ method: 'POST', url: route, headers: { authorization: `Bearer ${ops}` } })).statusCode, `${route} as guest ops`).toBe(403);
+      }
     } finally {
       await ctx.app.close();
     }

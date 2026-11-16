@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { and, gt, isNull, sql } from 'drizzle-orm';
 import type { Cipher } from '../crypto';
 import { schema, type Db } from '../db/client';
 import { bundleContext } from '../tickets/service';
@@ -18,9 +18,19 @@ export interface KeptStaffAccess {
   magicLinks: (typeof schema.staffMagicLinks.$inferSelect)[];
 }
 
-/** The sign-ins in the database now, to be handed back to `runSeed` as `keep`. */
-export async function readStaffAccess(db: Db): Promise<KeptStaffAccess> {
-  return { sessions: await db.select().from(schema.staffSessions), magicLinks: await db.select().from(schema.staffMagicLinks) };
+/**
+ * The sign-ins in the database that are still good at `now`, to be handed back to `runSeed` as `keep`: sessions not yet
+ * expired, and links neither spent nor expired. `now` is the security (wall) clock, the one these windows run on. Expired and
+ * spent rows are dropped, so a public guest sign-in that makes a session on every press cannot grow what a reset re-inserts.
+ */
+export async function readStaffAccess(db: Db, now: Date): Promise<KeptStaffAccess> {
+  return {
+    sessions: await db.select().from(schema.staffSessions).where(gt(schema.staffSessions.expiresAt, now)),
+    magicLinks: await db
+      .select()
+      .from(schema.staffMagicLinks)
+      .where(and(isNull(schema.staffMagicLinks.usedAt), gt(schema.staffMagicLinks.expiresAt, now))),
+  };
 }
 
 /**
@@ -46,8 +56,8 @@ export async function runSeed(db: Db, cipher: Cipher, anchor: Date = SEED_ANCHOR
       sessions: keep?.sessions.filter((session) => staffIds.has(session.staffUserId)) ?? [],
       magicLinks: keep?.magicLinks.filter((link) => staffIds.has(link.staffUserId)) ?? [],
     };
-    if (kept.sessions.length > 0) await tx.insert(schema.staffSessions).values(kept.sessions);
-    if (kept.magicLinks.length > 0) await tx.insert(schema.staffMagicLinks).values(kept.magicLinks);
+    await insertChunked(kept.sessions, (chunk) => tx.insert(schema.staffSessions).values(chunk));
+    await insertChunked(kept.magicLinks, (chunk) => tx.insert(schema.staffMagicLinks).values(chunk));
     await insertChunked(data.persons, (chunk) => tx.insert(schema.persons).values(chunk));
     await insertChunked(data.tickets, (chunk) => tx.insert(schema.tickets).values(chunk));
     await insertChunked(data.ticketEvents, (chunk) => tx.insert(schema.ticketEvents).values(chunk));
