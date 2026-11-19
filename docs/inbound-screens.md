@@ -6,7 +6,7 @@ what to share. Nothing about the person is sent, only that a screen was positive
 
 ![A sequence between a front door, the Ticket API and the person's phone: the front door sends a signed positive screen, the API checks the key, the time window, the signature and the nonce, answers with an invite and a claim code, the front door shows the code to the person, who claims it and later sends a ticket with consent](images/inbound-screen.svg)
 
-Source: drawn by hand from this page and `apps/api/src/inbound/` at `a40b68d`. Steps 1 to 3 are the request, the
+Source: drawn by hand from this page and `apps/api/src/inbound/` at `02515fb`. Steps 1 to 3 are the request, the
 signing and the answer below; 4 to 6 are under "What the person sees".
 
 **What this tells us**

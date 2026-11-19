@@ -16,13 +16,13 @@ does not do, or does not do yet, is in [`limitations.md`](limitations.md).
 | A crisis line (mock) | A console that receives a short note the person chose to send from the crisis screen, and a "contact made" button                                                                                             |
 
 Source: the apps' screens under `apps/person/app/[locale]`, `apps/clinician/app/[locale]` and `apps/ops/app/[locale]`, and
-the route list in `apps/api/test/access.test.ts`, at commit `ce088c9`.
+the route list in `apps/api/test/access.test.ts`, at commit `fc1aedd`.
 
 ## 2. Architecture
 
 ![Mawsool architecture in three layers: the person's phone, the clinician app, the ops app and the mocked front doors call only the Ticket API; behind it sit Postgres and the optional referral-summary assistant; crisis numbers go from the phone straight to the phone lines](images/architecture.svg)
 
-Source: a summary of the code at `a40b68d` (`apps/*`, `packages/*`), drawn by hand; it is a description of verified code,
+Source: a summary of the code at `02515fb` (`apps/*`, `packages/*`), drawn by hand; it is a description of verified code,
 not a proposed design.
 
 Design choices that shape everything else:
@@ -55,14 +55,14 @@ Design choices that shape everything else:
 | `infra/`                 | `docker-compose.yml` for Postgres                                                                          |
 | `docs/`                  | This document and the topic notes listed in [`docs/README.md`](README.md)                                  |
 
-Source: the repository tree at `ce088c9`.
+Source: the repository tree at `fc1aedd`.
 
 ## 4. The main flows
 
 ![A person's journey in three lanes: on the phone, check-in, result, care options, consent and send; the Ticket API issues the ticket; the clinic acknowledges and marks it seen; the phone asks on day 7 whether the person was seen, and six weeks later offers a repeat check, after which the ticket closes. A crisis answer opens the crisis screen at once, on the phone](images/person-journey.svg)
 
 Source: drawn by hand from sections 4.1 to 4.6 below and the person app's screens under `apps/person/app/[locale]` at
-`a40b68d`; numbers are the order a typical journey takes.
+`02515fb`; numbers are the order a typical journey takes.
 
 **What this tells us**
 - Steps 1 to 4 run on the phone, and the answers to each question never leave it. At step 5 the server receives only
@@ -97,7 +97,7 @@ crisis screen never waits on either. `pnpm gate:a` proves the trigger fires with
 ![The crisis path in three layers: on the phone with no network, the trigger, the full-screen crisis page, the block and its release by the person; then a crisis event without answers, queued and counted on the dashboard; then two optional extras beside it, the note to the mock crisis line and the next-day check](images/crisis-path.svg)
 
 Source: drawn by hand from `packages/instruments/src/crisis.ts`, `apps/person/lib/crisis.ts`, `apps/person/lib/routes.ts`
-(`GUARDED_ROUTES`) and [`crisis-line-handoff.md`](crisis-line-handoff.md) at `a40b68d`.
+(`GUARDED_ROUTES`) and [`crisis-line-handoff.md`](crisis-line-handoff.md) at `02515fb`.
 
 **What this tells us**
 - Everything the person needs in a crisis is in the top layer, on the phone; none of it waits for a server.
@@ -122,7 +122,7 @@ with the scoring in `packages/instruments`.
 | PHQ-9 5–9 or GAD-7 5–9     | Guided self-help or community        | 14 days         | 4 weeks  |
 | Below 5                    | Self-help                           | none            | 4 weeks  |
 
-Source: `STEP_ROWS` in `packages/rules/src/config.ts` at `ce088c9`. These are proposed defaults from the product spec,
+Source: `STEP_ROWS` in `packages/rules/src/config.ts` at `fc1aedd`. These are proposed defaults from the product spec,
 not clinically signed off (see [`assumptions.md`](assumptions.md)).
 
 ### 4.4 Consent and the ticket
@@ -159,7 +159,7 @@ ticket; nothing is shared until the person claims it and consents. The demo incl
 
 ![A sequence between a front door, the Ticket API and the person's phone: the front door sends a signed positive screen, the API checks the key, the time window, the signature and the nonce, answers with an invite and a claim code, the front door shows the code to the person, who claims it and later sends a ticket with consent](images/inbound-screen.svg)
 
-Source: drawn by hand from [`inbound-screens.md`](inbound-screens.md) and `apps/api/src/inbound/` at `a40b68d`.
+Source: drawn by hand from [`inbound-screens.md`](inbound-screens.md) and `apps/api/src/inbound/` at `02515fb`.
 
 **What this tells us**
 - A front door can start a journey but cannot make a referral: it gets back a code, and only the person turns it into a ticket.
@@ -190,9 +190,9 @@ gap the dashboard finds: Urdu-language tickets close the loop about 20 points be
 | `declined`     | The person declined care                                            | terminal                                                                 |
 | `withdrawn`    | The person withdrew consent; the shared copy is deleted             | terminal                                                                 |
 
-Source: `RULES` in `apps/api/src/tickets/transitions.ts` at `ce088c9`, which also records who may fire each move. It
+Source: `RULES` in `apps/api/src/tickets/transitions.ts` at `fc1aedd`, which also records who may fire each move. It
 widens the product spec's table so a person can decline, reroute or be seen from any open waiting state, and withdraw
-from any state that is not terminal. The diagram is drawn by hand from the same `RULES` at `a40b68d`.
+from any state that is not terminal. The diagram is drawn by hand from the same `RULES` at `02515fb`.
 
 **What this tells us**
 - Every move has a named owner, and anyone else who tries it gets a 403; the system's only moves are marking a ticket
@@ -210,7 +210,7 @@ event that blocks matching, so a crisis never sits in a queue.
 ![Consent and sharing in three columns, the person's phone, the Ticket API and the clinic: sharing, where the phone and the API keep only the consented items, the API encrypts them, and every clinic read is checked and audited; and stopping, where revoking an item, the ticket or everything rewrites or deletes the shared copy and the clinic's reads then answer 410](images/consent-sharing.svg)
 
 Source: drawn by hand from `packages/consent`, `apps/api/src/crypto.ts` and the bundle and consent routes under
-`apps/api/src` at `a40b68d`, as described in sections 4.4, 4.5 and below.
+`apps/api/src` at `02515fb`, as described in sections 4.4, 4.5 and below.
 
 **What this tells us**
 - An item the person did not tick is dropped three times over: on the phone, on arrival, and again at every clinic read.
@@ -288,7 +288,7 @@ document generated from the routes' Zod schemas.
 | Clinic link (one ticket)  | open, act                                                                                                       |
 
 Source: the `REVIEWED` table (48 entries) and the demo-route list (2 entries) in `apps/api/test/access.test.ts` at
-`ce088c9`; that test fails if the live route registry and this list ever differ.
+`fc1aedd`; that test fails if the live route registry and this list ever differ.
 
 ## 10. Time, and the demo clock
 
@@ -310,12 +310,12 @@ Details: [`two-clocks.md`](two-clocks.md) and [`running-the-demo.md`](running-th
 | `pnpm gate:phase2/3/4`    | The person, closed-loop and receiving-side flows in a real Chromium, in Arabic and English, against the real API      |
 | `pnpm gate:c`             | The whole demo script end to end in Arabic and English, failing on any browser console error except two named, deliberately provoked 404s |
 
-Source: the command table in `CLAUDE.md` and `package.json` at `ce088c9`.
+Source: the command table in `CLAUDE.md` and `package.json` at `fc1aedd`.
 
 The browser gates hold 149 named acceptance tests across their four registries (30 + 65 + 34 + 20, each run in both
-languages) and include pixel snapshots of key screens at a 390×844 phone size. On commit `ce088c9`, all ten local gates
+languages) and include pixel snapshots of key screens at a 390×844 phone size. On commit `fc1aedd`, all ten local gates
 passed on 2026-11-13, and the four browser gates also passed in the Linux container CI uses. On GitHub that commit's
-`verify` job stopped early when one test timed out; the timeout was fixed in `bc1c505`, and CI has passed in full on every
+`verify` job stopped early when one test timed out; the timeout was fixed in `02e18f8`, and CI has passed in full on every
 push to the main branch since (see [`limitations.md`](limitations.md), item 22).
 
 Source: registry sizes from `apps/person/e2e/acceptance*.json`; local results from the gate log of 2026-11-13
@@ -374,4 +374,4 @@ run is in [`running-the-demo.md`](running-the-demo.md#the-hosted-demo).
 | CI          | GitHub Actions: `verify` plus the four browser gates in the official Playwright container |
 
 Source: the `package.json` files of `apps/*` and `packages/summary`, `.nvmrc`, `apps/api/drizzle/*.sql` and
-`.github/workflows/ci.yml` at `ce088c9`.
+`.github/workflows/ci.yml` at `fc1aedd`.
