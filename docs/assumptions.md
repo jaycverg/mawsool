@@ -91,4 +91,4 @@ to be wrong. What the prototype does not do is in [`limitations.md`](limitations
 
 Source: the product spec (`docs/product-spec.md`, including its "Open questions and facts to verify"), the settings file
 `packages/rules/src/config.ts`, the instrument sources `packages/instruments/SOURCES.md`, the seed
-(`apps/api/src/seed/generate.ts`) and the project rules in `CLAUDE.md`, all at commit `ce088c9`.
+(`apps/api/src/seed/generate.ts`) and the project rules in `CLAUDE.md`, all at commit `fc1aedd`.

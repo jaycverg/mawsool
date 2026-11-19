@@ -44,7 +44,7 @@ staff sign-in message, which is written to the server log and has no screen of i
 
 Source: `docs/running-the-demo.md`, the mock-label checks in `apps/person/e2e/gate-c.spec.ts` (with the crisis console's
 in `phase4-acceptance.spec.ts` and the text-reminder sample's in `phase3-acceptance.spec.ts`), and the seed
-(`apps/api/src/seed/generate.ts`) at commit `ce088c9`.
+(`apps/api/src/seed/generate.ts`) at commit `fc1aedd`.
 
 **What this tells us**
 - The ticket, consent, deadline and dashboard logic is real; what surrounds it is simulated.
@@ -86,11 +86,11 @@ in `phase4-acceptance.spec.ts` and the text-reminder sample's in `phase3-accepta
 21. **Demo clock overlap.** In demo mode, the every-minute deadline check can overlap a demo reset. This affects demos
     only.
 22. **A CI timeout, since fixed.** On 2026-11-14 the `verify` job on GitHub stopped when the first case of the test that
-    proves the "no AI outside the summary package" lint rule took 5.2 seconds against its 5-second limit. `bc1c505` loads
+    proves the "no AI outside the summary package" lint rule took 5.2 seconds against its 5-second limit. `02e18f8` loads
     ESLint once before those cases; CI has passed in full on every push to the main branch since.
 23. **Test precision.** Some browser and unit checks are weaker than they look: for example, real two-tab behaviour of some
     settings is not tested, and neither is the cancellation when registering a phone passes its 10-second limit.
 
 Source: the open items in the build's final report (2026-11-14), `CLAUDE.md`, `packages/instruments/SOURCES.md`,
 `docs/safe-messaging-checklist.md`, `docs/two-clocks.md`, `apps/person/components/CheckInFlow.tsx` (C-SSRS) and GitHub
-Actions run 43542562936, all at or for commit `ce088c9`.
+Actions run 43542562936, all at or for commit `fc1aedd` (the run lists it under its earlier ID, `ce088c9`).

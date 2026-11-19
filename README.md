@@ -83,3 +83,10 @@ packages/*       Shared types, questionnaires and scoring, matching rules, conse
 
 Checks: `pnpm verify` (lint, typecheck, unit tests, builds, start-up smoke test) and the gates described in
 [Technical documentation § 11](docs/technical-documentation.md#11-testing-and-verification).
+
+## Licence
+
+The code is MIT-licensed: see [LICENSE](LICENSE). That covers the team's own work only. Third-party material in the
+repository keeps its own terms: the questionnaire wording (PHQ-9, GAD-7, WHO-5, C-SSRS; sources and terms in
+[`packages/instruments/SOURCES.md`](packages/instruments/SOURCES.md)), the HL7 FHIR R4 JSON schema (CC0) and the open-source
+packages, each under its own licence.
